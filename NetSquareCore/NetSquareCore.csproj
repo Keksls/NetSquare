@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{F828690C-33D4-4C51-872E-CAE5EF3C7B7B}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>NetSquare.Core</RootNamespace>
+    <AssemblyName>NetSquareCore</AssemblyName>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="LiteDB, Version=4.1.4.0, Culture=neutral, PublicKeyToken=4ee40123013c9f27, processorArchitecture=MSIL">
+      <HintPath>..\packages\LiteDB.4.1.4\lib\net40\LiteDB.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json, Version=12.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Compression\DeflateCompressor.cs" />
+    <Compile Include="Encryption\AES_Encryptor.cs" />
+    <Compile Include="Encryption\CaesarChipher_Encryptor.cs" />
+    <Compile Include="Encryption\CustomSBC_Encryptor.cs" />
+    <Compile Include="Encryption\Encryption.cs" />
+    <Compile Include="Encryption\EncryptionEnum.cs" />
+    <Compile Include="Encryption\Encryptor.cs" />
+    <Compile Include="Encryption\KeyIV.cs" />
+    <Compile Include="Encryption\NoEncryption.cs" />
+    <Compile Include="Compression\CompressionEnum.cs" />
+    <Compile Include="Compression\Compressor.cs" />
+    <Compile Include="Compression\NoCompression.cs" />
+    <Compile Include="Compression\GZipCompressor.cs" />
+    <Compile Include="Encryption\OneToZeroByte_Encryptor.cs" />
+    <Compile Include="Encryption\ReverseByte_Encryptor.cs" />
+    <Compile Include="Encryption\Rijndael_Encryptor.cs" />
+    <Compile Include="Encryption\SimplePasswordedCipher_Encryptor.cs" />
+    <Compile Include="Encryption\XOR_Encryptor.cs" />
+    <Compile Include="HandShake.cs" />
+    <Compile Include="NetSquareDispatcher.cs" />
+    <Compile Include="Messages\MessageBlockData.cs" />
+    <Compile Include="Messages\NetworkMessage.cs" />
+    <Compile Include="NetSquareActionAttribute.cs" />
+    <Compile Include="NetSquareHeadAction.cs" />
+    <Compile Include="ProtocoleManager.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

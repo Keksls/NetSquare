@@ -1,0 +1,124 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+
+namespace NetSquare.Core
+{
+    public class NetSquareDispatcher
+    {
+        private Dictionary<ushort, NetSquareHeadAction> HeadActions;
+        public int Count { get { return HeadActions.Count; } }
+        private Action<NetSquareAction, NetworkMessage> executeInMainThreadCallback;
+
+        public NetSquareDispatcher()
+        {
+            HeadActions = new Dictionary<ushort, NetSquareHeadAction>();
+        }
+
+        /// <summary>
+        /// Set a callback to invoke Actions on for non thread safe applications
+        /// </summary>
+        /// <param name="MainThreadCallback">Callback that invoke NetSquareAction into main thread</param>
+        public void SetMainThreadCallback(Action<NetSquareAction, NetworkMessage> MainThreadCallback)
+        {
+            executeInMainThreadCallback = MainThreadCallback;
+        }
+
+        /// <summary>
+        /// Manualy add a Head Action
+        /// </summary>
+        /// <param name="HeadID">ID of the NetworkMessage</param>
+        /// <param name="HeadName">Name of the Network message (for debug only, you can let it null)</param>
+        /// <param name="HeadAction">NetSquareAction to call on network message received with correspondig HeadID</param>
+        /// <exception cref="Exception"></exception>
+        public void AddHeadAction(ushort HeadID, string HeadName, NetSquareAction HeadAction)
+        {
+            if (HeadActions.ContainsKey(HeadID))
+                throw new Exception("Head " + HeadID + " Already exists in Dispatcher");
+            HeadActions.Add(HeadID, new NetSquareHeadAction(HeadID, HeadName, HeadAction));
+        }
+
+        /// <summary>
+        /// Manualy remove an action
+        /// </summary>
+        /// <param name="HeadID">ID of the action to remove</param>
+        /// <returns>true if success</returns>
+        public bool RemoveHeadAction(ushort HeadID)
+        {
+            return HeadActions.Remove(HeadID);
+        }
+
+        /// <summary>
+        /// Did the dispatcher has an action related to the given Head ID
+        /// </summary>
+        /// <param name="HeadID">Head ID</param>
+        /// <returns>true if exists</returns>
+        public bool HasHeadAction(ushort HeadID)
+        {
+            return HeadActions.ContainsKey(HeadID);
+        }
+
+        /// <summary>
+        /// Bin every NetSquareActions methods on your project that has NetSquareAction Attribute
+        /// </summary>
+        public void AutoBindHeadActionsFromAttributes()
+        {
+            // Get all methods in the loaded assembly that have NetSquareAction Attribute
+            IEnumerable<MethodInfo> methods = from assembly in AppDomain.CurrentDomain.GetAssemblies()
+                                              from type in assembly.GetTypes()
+                                              from method in type.GetMethods()
+                                              where method.IsDefined(typeof(NetSquareActionAttribute), false)
+                                              select method;
+            foreach (MethodInfo method in methods)
+            {
+                AddHeadAction(method.GetCustomAttribute<NetSquareActionAttribute>().HeadID,
+                    method.Name,
+                    (NetSquareAction)method.CreateDelegate(typeof(NetSquareAction)));
+            }
+        }
+
+        /// <summary>
+        /// Invoke HeadAction of the given message according to it HeadID
+        /// </summary>
+        /// <param name="message">Network Message to raise</param>
+        /// <returns>true if success</returns>
+        public bool DispatchMessage(NetworkMessage message)
+        {
+            if (!HasHeadAction(message.Head))
+                return false;
+
+            if (executeInMainThreadCallback != null)
+                executeInMainThreadCallback?.Invoke(HeadActions[message.Head].HeadAction, message);
+            else
+                HeadActions[message.Head].HeadAction?.Invoke(message);
+            return true;
+        }
+
+        /// <summary>
+        /// Get the name of an action by HeadID
+        /// </summary>
+        /// <param name="ID">ID of the action (HeadID)</param>
+        /// <returns>name of the action</returns>
+        public string GetHeadName(ushort ID)
+        {
+            if (HasHeadAction(ID))
+                return HeadActions[ID].HeadName;
+            else
+                return "No Action registered with ID '" + ID + "'";
+        }
+
+        /// <summary>
+        /// Get NetSquareHeadAction by Head ID
+        /// </summary>
+        /// <param name="ID">ID of the action (HeadID)</param>
+        /// <returns>null of don't exists</returns>
+        public NetSquareHeadAction? GetHeadAction(ushort ID)
+        {
+            if (HasHeadAction(ID))
+                return HeadActions[ID];
+            else
+                return null;
+        }
+    }
+}
