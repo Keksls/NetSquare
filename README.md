@@ -1,92 +1,101 @@
-# DodgeFromLight_Server
+# NetSquare - a C# Tcp solution
 
-
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+## Server
+First Import NetSquareCore.dll and NetSquareServer.dll to your project.
+Instantiate a NetSquare_Server object by doing :
 ```
-cd existing_repo
-git remote add origin https://framagit.org/Hydrocode/dodgefromlight_server.git
-git branch -M main
-git push -uf origin main
+NetSquare_Server server = new NetSquare_Server();
+```
+Then start the server by giving it a port
+```
+server.Start(5555);
 ```
 
-## Integrate with your tools
+### Dispatcher
+NetSquare provide a dispatching system that will invoke methods for you.
+Just tag Methods with the NetSquareActionAttribute and give a unique ID.
+On server start, the dispatcher will map every methods that have this attribute and delegate them for being invoked when a client will send message that correspond to the given ID.
+All methods mapped by the attribut must be public and static, and must have a NetworkMessage parameter only.
+```
+[NetSquareAction(0)]
+public static void ClientSendText(NetworkMessage message)
+{
+    MessageBox.Show(message.GetString());
+}
+```
 
-- [ ] [Set up project integrations](https://framagit.org/Hydrocode/dodgefromlight_server/-/settings/integrations)
+You can manualy add NetSquareAction to the dispatcher by doing the following 
+```
+server.Dispatcher.AddHeadAction(1, "Ping", ClientPingMe);
+```
+Where ClientPingMe is a method that can be private and non static, but must still have a NetworkMessage parameter only.
 
-## Collaborate with your team
+### NetworkMessage
+NetSquare use a custom data model for sharing messages between clients and server.
+These are NetworkMessage. They handle serialization, Encryption and Compression for you (see 'Protocole' section for more about Compression and Encryption).
+NetworkMessage can serialize anything you want. It Handle primitive types and complex objects. Complex objects are serialized using Bson format. It's quite fast, but alwas prefere primitive types if you can (sending some positions or rotations must be sended with x, y and z as 3 float instead of sending a vector3. The message will be smaller and faster to serialize/deserialize).
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+#### Sending a message
+Server can send message to Specific client, using TcpClient instance or ClientID.
+When a client is connected to the server, the event will give you the network ID of the client. It will be unique, and NetSquare will handle it for you.
+It can send message to a ist of client or broadcast to anyone.
+Eg: sending a text message to a specific client :
+```
+server.SendToClient(new NetworkMessage(0).Set("Welcome to my NetSquare server"), clientID);
+```
+***this will send a string ("Welcome to my NetSquare server") to the client 'clientID'***
+You must give the message ID to the NertworkMessage Constructor. It's the ID that will help the dispatcher to invoke the right method. You can call 'Set' anytime you want. Set can take anything as parameter, primitive and complex types, and can be Stacked.
+```
+eg: .set([int]).set([string]).set([customType])
+```
 
-## Test and Deploy
+#### Reading a message
 
-Use the built-in continuous integration in GitLab.
+#### Configuration
+You can use configuration system to specify persistants parameters
+```
+NetSquareConfigurationManager.Configuration.BlackListFilePath = @"[current]\blackList.bl";
+NetSquareConfigurationManager.Configuration.LockConsole = false;
+NetSquareConfigurationManager.Configuration.Port = 5050;
+NetSquareConfigurationManager.Configuration.ProcessOffsetTime = 1;
+NetSquareConfigurationManager.Configuration.NbReceivingThreads = 4;
+NetSquareConfigurationManager.Configuration.NbQueueThreads = 8;
+NetSquareConfigurationManager.SaveConfiguration(config);
+```
+###### BlackListFilePath
+Path to the BlackList IP File. NetSquare use external API to determinate if a client is a knew abusive IP.
+You can manualy add IP to the BlackListed IP file. It's a json file that NetSquare created a first run to the given path.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+###### LockConsole
+If LockConsole is set to True and your server run to a Windows Console, the console will be locked for preventing user selection that lock main thread
 
-***
+###### Port
+The port you want to start server on
 
-# Editing this README
+###### ProcessOffsetTime
+Sleep time to wait in ms before checking received message queues. minimum 1. the more this number is low, the more fast will be the server
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!).  Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+###### NbReceivingThreads
+Number of thread that will handle client message reading. keep this number between 1 and the number of core of your chip. (1-4 is greate, default is 1. Change it for large number of clients).
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+###### NbQueueThreads
+Number of thread that will process received messages. After client send message, thos will be stored into some queues, waiting to be processed by dispatcher. This number represent the number of parralles traitments dispatcher will performe.
+Same as 'NbReceivingThreads', keep this number between 1 and the number of core of your chip. (1-4 is greate, default is 1. Change it for large number of clients).
 
-## Name
-Choose a self-explaining name for your project.
+#### Writer
+NetSquare provide a Writing solution for display debug informations into console and save logs.
+Instade of using Console.Write(), use Writer.Write().
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```
+Writer.StartRecordingLog();
+Writer.StartDisplayTitle();
+Writer.StopDisplayLog();
+```
+###### Start/StopRecordingLog()
+The Writer will start recording log into a specific thread for keeping smooth performances.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+###### Start/StopDisplayTitle()
+The Writer will display debug informations into console title. A bit performance costly but not to mutch.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+###### Start/StopDisplayLog()
+The Writer will display debug informations into console. Windows console Write is incredibly slow, use it only for debug.

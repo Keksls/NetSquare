@@ -35,6 +35,7 @@ namespace Server_Test_Winform
 
         private void btnStartServer_Click(object sender, EventArgs e)
         {
+            
             Writer.Write("Start Server at " + DateTime.Now.ToString());
             server.Start((int)tbPort.Value);
             btnStartServer.Enabled = false;
@@ -44,9 +45,7 @@ namespace Server_Test_Winform
         [NetSquareAction(0)]
         public static void ClientSendText(NetworkMessage message)
         {
-            string text = "";
-            message.Get(ref text);
-            MessageBox.Show(text);
+            MessageBox.Show(message.GetString());
         }
 
         public void ClientPingMe(NetworkMessage message)
