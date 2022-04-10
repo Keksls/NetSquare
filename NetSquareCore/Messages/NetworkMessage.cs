@@ -103,6 +103,11 @@ namespace NetSquare.Core
             currentReadingIndex = 10; // start + ClientID + Head + ReplyID
         }
 
+        public bool CanGetByte()
+        {
+            return currentReadingIndex + 1 <= Length;
+        }
+
         public byte GetByte()
         {
             currentReadingIndex++;
@@ -113,6 +118,11 @@ namespace NetSquare.Core
         {
             val = Data[currentReadingIndex];
             currentReadingIndex++;
+        }
+
+        public bool CanGetShort()
+        {
+            return currentReadingIndex + 2 <= Length;
         }
 
         public short GetShort()
@@ -127,6 +137,11 @@ namespace NetSquare.Core
             currentReadingIndex += 2;
         }
 
+        public bool CanGetint()
+        {
+            return currentReadingIndex + 4 <= Length;
+        }
+
         public int GetInt()
         {
             currentReadingIndex += 4;
@@ -137,6 +152,11 @@ namespace NetSquare.Core
         {
             val = BitConverter.ToInt32(Data, currentReadingIndex);
             currentReadingIndex += 4;
+        }
+
+        public bool CanGetLong()
+        {
+            return currentReadingIndex + 8 <= Length;
         }
 
         public long GetLong()
@@ -151,6 +171,11 @@ namespace NetSquare.Core
             currentReadingIndex += 8;
         }
 
+        public bool CanGetUShort()
+        {
+            return currentReadingIndex + 2 <= Length;
+        }
+
         public ushort GetUShort()
         {
             currentReadingIndex += 2;
@@ -161,6 +186,11 @@ namespace NetSquare.Core
         {
             val = BitConverter.ToUInt16(Data, currentReadingIndex);
             currentReadingIndex += 2;
+        }
+
+        public bool CanGetUInt()
+        {
+            return currentReadingIndex + 4 <= Length;
         }
 
         public uint GetUInt()
@@ -175,6 +205,11 @@ namespace NetSquare.Core
             currentReadingIndex += 4;
         }
 
+        public bool CanGetULong()
+        {
+            return currentReadingIndex + 8 <= Length;
+        }
+
         public ulong GetULong()
         {
             currentReadingIndex += 8;
@@ -185,6 +220,11 @@ namespace NetSquare.Core
         {
             val = BitConverter.ToUInt64(Data, currentReadingIndex);
             currentReadingIndex += 8;
+        }
+
+        public bool CanGetFloat()
+        {
+            return currentReadingIndex + 4 <= Length;
         }
 
         public float GetFloat()
@@ -199,6 +239,11 @@ namespace NetSquare.Core
             currentReadingIndex += 4;
         }
 
+        public bool CanGetBool()
+        {
+            return currentReadingIndex + 1 <= Length;
+        }
+
         public bool GetBool()
         {
             currentReadingIndex++;
@@ -211,6 +256,11 @@ namespace NetSquare.Core
             currentReadingIndex += 1;
         }
 
+        public bool CanGetChar()
+        {
+            return currentReadingIndex + 1 <= Length;
+        }
+
         public char GetChar()
         {
             currentReadingIndex += 2;
@@ -221,6 +271,11 @@ namespace NetSquare.Core
         {
             val = BitConverter.ToChar(Data, currentReadingIndex);
             currentReadingIndex += 2;
+        }
+
+        public bool CanGetString()
+        {
+            return currentReadingIndex + 8 <= Length;
         }
 
         public string GetString()
@@ -238,6 +293,11 @@ namespace NetSquare.Core
             Get(ref size);
             val = System.Text.Encoding.Default.GetString(Data, currentReadingIndex, size);
             currentReadingIndex += size;
+        }
+
+        public bool CanGetObject()
+        {
+            return currentReadingIndex + 8 <= Length;
         }
 
         /// <summary>

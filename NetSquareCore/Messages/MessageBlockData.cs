@@ -16,11 +16,21 @@ namespace NetSquare.Core
             Size = 1;
         }
 
+        public byte GetByte()
+        {
+            return data[0];
+        }
+
         public void SetShort(short val)
         {
             data = BitConverter.GetBytes(val);
             Type = MessageBlockType.Short;
             Size = 2;
+        }
+
+        public short GetShort()
+        {
+            return BitConverter.ToInt16(data, 0);
         }
 
         public void SetInt(int val)
@@ -30,11 +40,21 @@ namespace NetSquare.Core
             Size = 4;
         }
 
+        public int GetInt()
+        {
+            return BitConverter.ToInt32(data, 0);
+        }
+
         public void SetLong(long val)
         {
             data = BitConverter.GetBytes(val);
             Type = MessageBlockType.Long;
             Size = 8;
+        }
+
+        public ushort GetUShort()
+        {
+            return BitConverter.ToUInt16(data, 0);
         }
 
         public void SetUShort(ushort val)
@@ -44,11 +64,21 @@ namespace NetSquare.Core
             Size = 2;
         }
 
+        public uint GetUint()
+        {
+            return BitConverter.ToUInt32(data, 0);
+        }
+
         public void SetUInt(uint val)
         {
             data = BitConverter.GetBytes(val);
             Type = MessageBlockType.UInt;
             Size = 4;
+        }
+
+        public ulong GetUlong()
+        {
+            return BitConverter.ToUInt64(data, 0);
         }
 
         public void SetULong(ulong val)
@@ -58,6 +88,11 @@ namespace NetSquare.Core
             Size = 8;
         }
 
+        public float GetFloat()
+        {
+            return BitConverter.ToSingle(data, 0);
+        }
+
         public void SetFloat(float val)
         {
             data = BitConverter.GetBytes(val);
@@ -65,11 +100,21 @@ namespace NetSquare.Core
             Size = 4;
         }
 
+        public bool GetBool()
+        {
+            return BitConverter.ToBoolean(data, 0);
+        }
+
         public void SetBool(bool val)
         {
             data = BitConverter.GetBytes(val);
             Type = MessageBlockType.Bool;
             Size = 1;
+        }
+
+        public char Getchar()
+        {
+            return BitConverter.ToChar(data, 0);
         }
 
         public void SetChar(char val)

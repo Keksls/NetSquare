@@ -14,6 +14,7 @@ namespace NetSquareClient
         public event Action<NetworkMessage> UnregisteredMessageReceived;
         public uint ClientID { get; private set; }
         public NetSquareDispatcher Dispatcher;
+        public LobbiesManager LobbiesManager { get; private set; }
         private TcpClient TcpClient { get; set; }
         private int NbReplyAsked = 0;
         private bool connected = false;
@@ -22,6 +23,7 @@ namespace NetSquareClient
 
         public NetSquare_Client()
         {
+            LobbiesManager = new LobbiesManager(this);
             ClientID = 0;
             Dispatcher = new NetSquareDispatcher();
             Dispatcher.AutoBindHeadActionsFromAttributes();

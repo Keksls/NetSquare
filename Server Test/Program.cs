@@ -1,5 +1,6 @@
 ﻿using NetSquare.Core;
 using NetSquareServer;
+using NetSquareServer.Lobbies;
 using NetSquareServer.Utils;
 using System;
 using System.Collections.Concurrent;
@@ -55,14 +56,17 @@ namespace Server_Test
             server.OnClientDisconnected += Server_OnClientDisconnected;
 
             // Optionnal, set encryption and compression protocole
-            ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
+            //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+
+            // Create a test lobby
+            LobbiesManager.AddLobby();
 
             // Start Server
-            Writer.StartRecordingLog();
+            //Writer.StartRecordingLog();
             Writer.StartDisplayTitle();
             server.Start();
-            Writer.StopDisplayLog();
+            //Writer.StopDisplayLog();
         }
 
         private static void Server_OnClientDisconnected(uint clientID)

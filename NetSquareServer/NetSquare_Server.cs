@@ -223,19 +223,24 @@ namespace NetSquareServer
             server.Reply(msg.Head, msg.Serialize(), currentMessage.TcpClient);
         }
 
-        public void SendToClient(NetworkMessage msg, TcpClient Client)
+        public void SendToClient(NetworkMessage msg, TcpClient client)
         {
-            server.SendToClient(msg.Head, msg.Serialize(), Client);
+            server.SendToClient(msg.Head, msg.Serialize(), client);
         }
 
-        public void SendToClient(NetworkMessage msg, uint ClientID)
+        public void SendToClient(NetworkMessage msg, uint clientID)
         {
-            server.SendToClient(msg.Head, msg.Serialize(), Clients[ClientID].TCPClient);
+            server.SendToClient(msg.Head, msg.Serialize(), Clients[clientID].TCPClient);
         }
 
-        public void SendToClients(NetworkMessage msg, List<TcpClient> Client)
+        public void SendToClients(NetworkMessage msg, List<TcpClient> clients)
         {
-            server.SendToClients(msg.Head, msg.Serialize(), Client);
+            server.SendToClients(msg.Head, msg.Serialize(), clients);
+        }
+
+        public void SendToClients(NetworkMessage msg, IEnumerable<uint> clients)
+        {
+            server.SendToClients(msg.Head, msg.Serialize(), GetTcpClientsFromIDs(clients));
         }
 
         public void Broadcast(NetworkMessage msg)
@@ -318,6 +323,17 @@ namespace NetSquareServer
             foreach (var listner in server.Listeners)
                 nb += listner.VerifyingClientsCount;
             return nb;
+        }
+
+        public List<TcpClient> GetTcpClientsFromIDs(IEnumerable<uint> clientsIDs)
+        {
+            List<TcpClient> clients = new List<TcpClient>();
+            foreach (uint clientID in clientsIDs)
+            {
+                if (Clients.ContainsKey(clientID))
+                    clients.Add(Clients[clientID].TCPClient);
+            }
+            return clients;
         }
         #endregion
     }
