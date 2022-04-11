@@ -66,7 +66,7 @@ namespace Server_Test
             //Writer.StartRecordingLog();
             Writer.StartDisplayTitle();
             server.Start();
-            //Writer.StopDisplayLog();
+            Writer.StopDisplayLog();
         }
 
         private static void Server_OnClientDisconnected(uint clientID)

@@ -16,17 +16,17 @@ namespace NetSquareClient
         public NetSquareDispatcher Dispatcher;
         public LobbiesManager LobbiesManager { get; private set; }
         private TcpClient TcpClient { get; set; }
-        private int NbReplyAsked = 0;
+        private int NbReplyAsked = 1;
         private bool connected = false;
         private bool QueueStop { get; set; }
-        private static readonly Dictionary<int, Action<NetworkMessage>> ReplyCallBack = new Dictionary<int, Action<NetworkMessage>>();
+        private readonly Dictionary<int, Action<NetworkMessage>> ReplyCallBack = new Dictionary<int, Action<NetworkMessage>>();
 
         public NetSquare_Client()
         {
-            LobbiesManager = new LobbiesManager(this);
             ClientID = 0;
             Dispatcher = new NetSquareDispatcher();
             Dispatcher.AutoBindHeadActionsFromAttributes();
+            LobbiesManager = new LobbiesManager(this);
         }
 
         public void Connect(string hostNameOrIpAddress, int port)

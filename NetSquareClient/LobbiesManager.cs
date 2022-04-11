@@ -1,5 +1,6 @@
 ﻿using NetSquare.Core;
 using System;
+using System.Collections.Generic;
 
 namespace NetSquareClient
 {
@@ -9,11 +10,15 @@ namespace NetSquareClient
         public ushort CurrentLobbyID { get; private set; }
         public event Action<uint> OnClientJoinLobby;
         public event Action<uint> OnClientLeaveLobby;
+        public HashSet<uint> ClientsInLobby { get; private set; }
         private NetSquare_Client parentClient;
 
         public LobbiesManager(NetSquare_Client client)
         {
+            ClientsInLobby = new HashSet<uint>();
             parentClient = client;
+            parentClient.Dispatcher.AddHeadAction(65532, "ClientJoinCurrentLobby", ClientJoinCurrentLobby);
+            parentClient.Dispatcher.AddHeadAction(65531, "ClientLeaveCurrentLobby", ClientLeaveCurrentLobby);
         }
 
         /// <summary>
@@ -42,6 +47,32 @@ namespace NetSquareClient
                     Callback?.Invoke(false);
             });
         }
+        
+        /// <summary>
+        /// Try to leave the current lobby. Can fail if not in lobby.
+        /// if success, OnJoinLobby will be invoked, else OnFailJoinLobby will be invoked
+        /// </summary>
+        /// <param name="Callback">Callback raised after server try leave. if true, leave success. can be null</param>
+        public void TryleaveLobby(Action<bool> Callback)
+        {
+            if (!IsInLobby)
+            {
+                Callback?.Invoke(false);
+                return;
+            }
+
+            parentClient.SendMessage(new NetworkMessage(65533), (response) =>
+            {
+                if (response.GetBool())
+                {
+                    IsInLobby = false;
+                    CurrentLobbyID = 0;
+                    Callback?.Invoke(true);
+                }
+                else
+                    Callback?.Invoke(false);
+            });
+        }
 
         /// <summary>
         /// Send a networkMessage to any client in the same lobby I am. Must be in a lobby
@@ -61,7 +92,16 @@ namespace NetSquareClient
 
         private void ClientJoinCurrentLobby(NetworkMessage message)
         {
+            uint clientID = message.GetUInt();
+            ClientsInLobby.Add(clientID);
+            OnClientJoinLobby?.Invoke(clientID);
+        }
 
+        private void ClientLeaveCurrentLobby(NetworkMessage message)
+        {
+            uint clientID = message.GetUInt();
+            ClientsInLobby.Remove(clientID);
+            OnClientLeaveLobby?.Invoke(clientID);
         }
     }
 }

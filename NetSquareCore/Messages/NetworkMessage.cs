@@ -75,6 +75,7 @@ namespace NetSquare.Core
             Head = BitConverter.ToUInt16(msg, 4);
             ReplyID = BitConverter.ToInt32(msg, 6);
             Data = msg;
+            Length = Data.Length;
             RestartRead();
         }
 
@@ -91,6 +92,7 @@ namespace NetSquare.Core
             Head = BitConverter.ToUInt16(msg, 4);
             ReplyID = BitConverter.ToInt32(msg, 6);
             Data = msg;
+            Length = Data.Length;
             RestartRead();
         }
 
@@ -101,6 +103,14 @@ namespace NetSquare.Core
         public void RestartRead()
         {
             currentReadingIndex = 10; // start + ClientID + Head + ReplyID
+        }
+
+        /// <summary>
+        /// Set the reading index. use it if you want to go a specific index of the data array.
+        /// </summary>
+        public void SetReadingIndex(int readIndex)
+        {
+            currentReadingIndex = readIndex; // start + ClientID + Head + ReplyID
         }
 
         public bool CanGetByte()
@@ -428,6 +438,19 @@ namespace NetSquare.Core
         /// <returns></returns>
         public byte[] Serialize()
         {
+            // Reserialize a message, just add size
+            if (Blocks == null && Data != null)
+            {
+                Data = ProtocoleManager.Encrypt(Data);
+                Data = ProtocoleManager.Compress(Data);
+                // write size
+                byte[] finalArray = new byte[Data.Length + 4];
+                Array.Copy(BitConverter.GetBytes(Data.Length), 0, finalArray, 0, 4);
+                Array.Copy(Data, 0, finalArray, 4, Data.Length);
+                Array.Copy(BitConverter.GetBytes(Head), 0, finalArray, 8, 2);
+                return finalArray;
+            }
+
             // process Size
             Length = 10; // head size : ClientID + HeadAction + ReplyID (4 + 4 + 2 + 4)
             foreach (MessageBlockData block in Blocks)

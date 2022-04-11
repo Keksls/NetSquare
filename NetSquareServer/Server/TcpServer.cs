@@ -68,18 +68,26 @@ namespace NetSquareServer
             foreach (var listener in Listeners)
                 foreach (var pair in listener.ConnectedClients)
                     foreach (var client in pair.Value)
+                    {
+                        if (client == null)
+                            continue;
                         client.GetStream().Write(msg, 0, msg.Length);
+                    }
             Writer.Write(head + " <<<= Message Broadcasted. " + msg.Length + " bytes ", ConsoleColor.Magenta);
         }
 
         public void Reply(ushort head, byte[] msg, TcpClient _tcpClient)
         {
+            if (_tcpClient == null)
+                return;
             _tcpClient.GetStream().Write(msg, 0, msg.Length);
             Writer.Write(head + " <=> Reply " + msg.Length + " bytes ", ConsoleColor.DarkYellow);
         }
 
         public void SendToClient(ushort head, byte[] msg, TcpClient _tcpClient)
         {
+            if (_tcpClient == null)
+                return;
             _tcpClient.GetStream().Write(msg, 0, msg.Length);
             Writer.Write(head + " <= Message Sended. " + msg.Length + " bytes", ConsoleColor.DarkCyan);
         }
@@ -89,7 +97,11 @@ namespace NetSquareServer
             if (_tcpClient.Count > 0)
             {
                 foreach (var client in _tcpClient)
+                {
+                    if (client == null)
+                        continue;
                     client.GetStream().Write(msg, 0, msg.Length);
+                }
                 Writer.Write(head + " <<= Message Sended on map.  [" + _tcpClient.Count + "] - " + msg.Length + " bytes", ConsoleColor.Cyan);
             }
         }

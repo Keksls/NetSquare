@@ -1,6 +1,7 @@
 ﻿using NetSquare.Core;
 using NetSquareClient;
 using System;
+using System.Threading;
 
 namespace Client_Test
 {
@@ -9,10 +10,33 @@ namespace Client_Test
         static NetSquare_Client client;
         static void Main(string[] args)
         {
-            client = new NetSquare_Client();
-            client.Connect("192.168.8.101", 5050);
-            client.Connected += Client_Connected;
-            Console.ReadKey();
+            for (int i = 0; i < 100; i++)
+            {
+                Thread t = new Thread(() =>
+               {
+                   ClientRoutine routine = new ClientRoutine();
+                   routine.Start();
+               });
+                t.Start();
+                Thread.Sleep(100);
+            }
+            //client = new NetSquare_Client();
+            //Console.WriteLine(client.Dispatcher.Count + " action registered");
+            //client.LobbiesManager.OnClientJoinLobby += LobbiesManager_OnClientJoinLobby;
+            //client.LobbiesManager.OnClientLeaveLobby += LobbiesManager_OnClientLeaveLobby;
+            //client.Connect("192.168.8.101", 5050);
+            //client.Connected += Client_Connected;
+            //Console.ReadKey();
+        }
+
+        private static void LobbiesManager_OnClientJoinLobby(uint clientID)
+        {
+            Console.WriteLine("Client Join my lobby [" + clientID + "]");
+        }
+
+        private static void LobbiesManager_OnClientLeaveLobby(uint clientID)
+        {
+            Console.WriteLine("Client Leave my lobby [" + clientID + "]");
         }
 
         private static void Client_Connected(uint obj)

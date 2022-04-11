@@ -57,7 +57,7 @@ namespace NetSquareServer.Lobbies
         /// <param name="message">message to send</param>
         public void Broadcast(NetworkMessage message)
         {
-            NetSquare_Server.Instance.SendToClients(message, Clients);
+            NetSquare_Server.Instance.SendToClients(message, new HashSet<uint>(Clients));
         }
     }
 }

@@ -1,7 +1,6 @@
 ﻿using NetSquare.Core;
 using NetSquareClient;
 using System;
-using System.Collections.Generic;
 using System.Threading;
 
 namespace Client_Test
@@ -16,8 +15,8 @@ namespace Client_Test
             client.ConnectionFail += Client_ConnectionFail;
             client.Disconected += Client_Disconected;
 
-            ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
+            //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
             client.Connect("192.168.8.101", 5050);
         }
 
@@ -34,20 +33,23 @@ namespace Client_Test
         private void Client_Connected(uint ID)
         {
             Console.WriteLine("Connected with ID " + ID);
-            Thread.Sleep(1);
-            client.SendMessage(3);
-            for (int i = 0; i < 10; i++)
+            Thread.Sleep(10);
+            client.LobbiesManager.TryJoinLobby(1, (success) =>
             {
-                client.SendMessage(new NetworkMessage(0).Set("coucou grand bg de la cité &é\"'(-è_çà'")); // send coucou as text
-                client.SendMessage(new NetworkMessage(1)); // ping server
-                client.SendMessage(new NetworkMessage(2)
-                    .SetObject(new List<string>() { "coucou", "grand", "bg"})
-                    .Set("ouaip")
-                    .SetObject(new HashSet<long>() { long.MinValue, long.MaxValue}));
-                Thread.Sleep(1);
-            }
-            client.SendMessage(4);
-            client.Disconnect();
+                if (success)
+                {
+                    Random rnd = new Random();
+                    while (true)
+                    {
+                        client.LobbiesManager.Broadcast(new NetworkMessage(10).Set((float)rnd.Next(-1000, 1000) / 20f)
+                            .Set(1f)
+                            .Set((float)rnd.Next(-1000, 1000) / 20f));
+                        Thread.Sleep(rnd.Next(10, 100));
+                    }
+                }
+                else
+                    client.Disconnect();
+            });
         }
 
         [NetSquareAction(0)]

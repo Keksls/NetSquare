@@ -11,6 +11,20 @@ namespace NetSquareServer.Lobbies
         public static Dictionary<ushort, NetSquareLobby> Lobbies = new Dictionary<ushort, NetSquareLobby>(); // lobbyID => Lobby object
         private static Dictionary<uint, ushort> ClientsLobbies = new Dictionary<uint, ushort>(); // clientID => lobbyID
 
+        static LobbiesManager()
+        {
+            NetSquare_Server.Instance.OnClientDisconnected += Instance_OnClientDisconnected;
+        }
+
+        /// <summary>
+        /// Raised when a client disconnect the server. If the client is in a lobby, must tell anyone in the lobby
+        /// </summary>
+        /// <param name="clientID">ID of the disconnected client</param>
+        private static void Instance_OnClientDisconnected(uint clientID)
+        {
+            TryRemoveClientFromLobby(new NetworkMessage() { ClientID = clientID });
+        }
+
         /// <summary>
         /// Add a lobby
         /// </summary>
@@ -84,6 +98,7 @@ namespace NetSquareServer.Lobbies
                 {
                     ClientsLobbies.Remove(message.ClientID);
                     ClientsLobbies.Add(message.ClientID, lobbyID);
+                    lobby.Broadcast(new NetworkMessage(65532).Set(message.ClientID));
                     Writer.Write("Client " + message.ClientID + " join lobby " + lobbyID, ConsoleColor.Gray);
                 }
                 // reply to client the added state
@@ -110,7 +125,9 @@ namespace NetSquareServer.Lobbies
                 if (lobby != null)
                 {
                     // restore message head
-                    ushort headID = message.Blocks.Last().GetUShort();
+                    message.SetReadingIndex(message.Length - 2);
+                    ushort headID = message.GetUShort();
+                    message.RestartRead();
                     message.Head = headID;
                     lobby.Broadcast(message);
                 }
@@ -133,16 +150,20 @@ namespace NetSquareServer.Lobbies
                     NetSquareLobby lobby = GetLobby(lobbyID);
                     if (lobby != null)
                     {
-                        lobby.Broadcast(message);
                         // lobby exit so let's try add client into it
                         leave = lobby.TryLeaveLobby(message.ClientID);
-                        // remove clientID / lobbyID apping
                         ClientsLobbies.Remove(message.ClientID);
+                        // remove clientID / lobbyID apping
                         if (leave)
+                        {
                             Writer.Write("Client " + message.ClientID + " leave lobby " + lobbyID, ConsoleColor.Gray);
+                            // tell anyone in this lobby that a client just leave the lobby
+                            lobby.Broadcast(new NetworkMessage(65531).Set(message.ClientID));
+                        }
                     }
                     // reply to client the added state
-                    NetSquare_Server.Instance.Reply(message, new NetworkMessage().Set(leave));
+                    if (message.TcpClient != null)
+                        NetSquare_Server.Instance.Reply(message, new NetworkMessage().Set(leave));
                 }
             }
             catch (Exception ex)
