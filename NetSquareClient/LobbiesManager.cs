@@ -61,7 +61,7 @@ namespace NetSquareClient
                 return;
             }
 
-            parentClient.SendMessage(new NetworkMessage(65533), (response) =>
+            parentClient.SendMessage(new NetworkMessage(65534), (response) =>
             {
                 if (response.GetBool())
                 {
@@ -82,11 +82,8 @@ namespace NetSquareClient
         {
             if (!IsInLobby)
                 return;
-
-            // save head into message for construct head after server receive it
-            message.Set(message.Head);
-            // set head as broadcast message in lobby ID
-            message.Head = 65534;
+            // set TypeID as 1, because 1 is the broadcast ID
+            message.SetType(1);
             parentClient.SendMessage(message);
         }
 

@@ -129,7 +129,7 @@ namespace NetSquareClient
                 }
                 catch (Exception ex)
                 {
-                    
+                    Console.Write(ex.ToString());
                 }
                 Thread.Sleep(1);
             }
@@ -137,10 +137,10 @@ namespace NetSquareClient
 
         public void ProcessMessages(NetworkMessage message)
         {
-            if (message.ReplyID != 0 && ReplyCallBack.ContainsKey(message.ReplyID))
+            if (message.TypeID != 0 && ReplyCallBack.ContainsKey(message.TypeID))
             {
-                ReplyCallBack[message.ReplyID](message);
-                ReplyCallBack.Remove(message.ReplyID);
+                ReplyCallBack[message.TypeID](message);
+                ReplyCallBack.Remove(message.TypeID);
             }
             else
             {
@@ -180,7 +180,7 @@ namespace NetSquareClient
         public void SendMessage(NetworkMessage msg, Action<NetworkMessage> callback)
         {
             msg.ReplyTo(NbReplyAsked);
-            ReplyCallBack.Add(msg.ReplyID, callback);
+            ReplyCallBack.Add(msg.TypeID, callback);
             NbReplyAsked++;
             SendMessage(msg);
         }

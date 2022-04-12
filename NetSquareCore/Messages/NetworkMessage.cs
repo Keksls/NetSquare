@@ -1,17 +1,16 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Net.Sockets;
 
 namespace NetSquare.Core
 {
     public class NetworkMessage
     {
         public uint ClientID { get; set; }
-        public int ReplyID { get; set; }
+        public int TypeID { get; set; }
         public ushort Head { get; set; }
         public List<MessageBlockData> Blocks { get; set; }
-        public TcpClient TcpClient { get; set; }
+        public ConnectedClient Client { get; set; }
         public byte[] Data { get; set; }
         public int Length { get; set; }
         private int currentReadingIndex = 0;
@@ -22,7 +21,33 @@ namespace NetSquare.Core
         /// <param name="id"></param>
         public void ReplyTo(int id)
         {
-            ReplyID = id;
+            SetType(id + 10);
+        }
+
+        /// <summary>
+        /// Set the type of this message. 
+        /// 0 => simple message send to server
+        /// 1 => message that will be broadcasted to avery other clients on my lobby
+        /// 
+        /// 10 or + => message send to server, client wait for response. Response ID will be that ID
+        /// </summary>
+        /// <param name="typeID"></param>
+        public void SetType(int typeID)
+        {
+            TypeID = typeID;
+        }
+
+        /// <summary>
+        /// Set the type of this message. 
+        /// 0 => simple message send to server
+        /// 1 => message that will be broadcasted to avery other clients on my lobby
+        /// 
+        /// 10 or + => message send to server, client wait for response. Response ID will be that ID
+        /// </summary>
+        /// <param name="typeID"></param>
+        public void SetType(MessageType type)
+        {
+            TypeID = (int)type;
         }
 
         /// <summary>
@@ -35,6 +60,7 @@ namespace NetSquare.Core
             Head = headID;
             ClientID = clientID;
             Length = 0;
+            TypeID = 0;
             Blocks = new List<MessageBlockData>();
         }
 
@@ -46,6 +72,7 @@ namespace NetSquare.Core
             Head = 0;
             ClientID = 0;
             Length = 0;
+            TypeID = 0;
             Blocks = new List<MessageBlockData>();
         }
 
@@ -58,6 +85,7 @@ namespace NetSquare.Core
             Head = headID;
             ClientID = 0;
             Length = 0;
+            TypeID = 0;
             Blocks = new List<MessageBlockData>();
         }
 
@@ -66,14 +94,14 @@ namespace NetSquare.Core
         /// </summary>
         /// <param name="msg">byte array received from the TcpClient</param>
         /// <param name="client">TcpClient object that send this message</param>
-        public NetworkMessage(byte[] msg, TcpClient client)
+        public NetworkMessage(byte[] msg, ConnectedClient client)
         {
             msg = ProtocoleManager.Decompress(msg);
             msg = ProtocoleManager.Decrypt(msg);
-            TcpClient = client;
+            Client = client;
             ClientID = BitConverter.ToUInt32(msg, 0);
             Head = BitConverter.ToUInt16(msg, 4);
-            ReplyID = BitConverter.ToInt32(msg, 6);
+            TypeID = BitConverter.ToInt32(msg, 6);
             Data = msg;
             Length = Data.Length;
             RestartRead();
@@ -87,10 +115,10 @@ namespace NetSquare.Core
         {
             msg = ProtocoleManager.Decompress(msg);
             msg = ProtocoleManager.Decrypt(msg);
-            TcpClient = null;
+            Client = null;
             ClientID = BitConverter.ToUInt32(msg, 0);
             Head = BitConverter.ToUInt16(msg, 4);
-            ReplyID = BitConverter.ToInt32(msg, 6);
+            TypeID = BitConverter.ToInt32(msg, 6);
             Data = msg;
             Length = Data.Length;
             RestartRead();
@@ -463,7 +491,7 @@ namespace NetSquare.Core
             // write Head Action
             Array.Copy(BitConverter.GetBytes(Head), 0, Data, 4, 2);
             // write Client ID
-            Array.Copy(BitConverter.GetBytes(ReplyID), 0, Data, 6, 4);
+            Array.Copy(BitConverter.GetBytes(TypeID), 0, Data, 6, 4);
 
             // Write Blocks
             Length = 10;

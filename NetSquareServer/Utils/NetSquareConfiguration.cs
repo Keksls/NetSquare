@@ -9,10 +9,6 @@ namespace NetSquareServer
     public class NetSquareConfiguration
     {
         /// <summary>
-        /// nb of miliseconds to wait before two message handling
-        /// </summary>
-        public int ProcessOffsetTime { get; set; }
-        /// <summary>
         /// the port to start server on
         /// </summary>
         public int Port { get; set; }
@@ -27,17 +23,27 @@ namespace NetSquareServer
         /// <summary>
         /// Number of threads for message action handling
         /// </summary>
-        public byte NbQueueThreads { get; set; }
+        public int NbQueueThreads { get; set; }
         /// <summary>
         /// Number of threads for TcpListners message reception
         /// </summary>
-        public byte NbReceivingThreads { get; set; }
+        public int NbReceivingThreads { get; set; }
+        /// <summary>
+        /// Receiving buffer max size
+        /// </summary>
+        public int ReceivingBufferSize { get; set; }
+        /// <summary>
+        /// Number of threads for TcpListners message sending
+        /// </summary>
+        public int NbSendingThreads { get; set; }
 
         public NetSquareConfiguration()
         {
-            ProcessOffsetTime = 10;
             Port = 5555;
             NbReceivingThreads = 1;
+            NbSendingThreads = 1;
+            NbQueueThreads = 1;
+            ReceivingBufferSize = 1024;
             LockConsole = false;
             BlackListFilePath = Environment.CurrentDirectory + @"\BlackListedIP.json";
         }
@@ -72,11 +78,20 @@ namespace NetSquareServer
         }
 
         /// <summary>
-        /// nb of miliseconds to wait before two message handling
+        /// number of threads for message sending
         /// </summary>
-        public static void SetProcessOffsetTime(int ProcessOffsetTime)
+        public static void SetNbSendingThreadse(int NbSendingThreads)
         {
-            Configuration.ProcessOffsetTime = ProcessOffsetTime;
+            Configuration.NbSendingThreads = NbSendingThreads;
+            SaveConfiguration(Configuration);
+        }
+
+        /// <summary>
+        /// Receiving buffer max size
+        /// </summary>
+        public static void SetReceivingBufferSize(int ReceivingBufferSize)
+        {
+            Configuration.ReceivingBufferSize = ReceivingBufferSize;
             SaveConfiguration(Configuration);
         }
 
@@ -90,9 +105,9 @@ namespace NetSquareServer
         }
 
         /// <summary>
-        /// umber of threads for message action handling
+        /// number of threads for message action handling
         /// </summary>
-        public static void SetNbQueueThreads(byte NbThreads)
+        public static void SetNbQueueThreads(int NbThreads)
         {
             Configuration.NbQueueThreads = NbThreads;
             SaveConfiguration(Configuration);
@@ -101,7 +116,7 @@ namespace NetSquareServer
         /// <summary>
         /// Number of threads for TcpListners message reception
         /// </summary>
-        public static void SetNbReceivingThreads(byte NbThreads)
+        public static void SetNbReceivingThreads(int NbThreads)
         {
             Configuration.NbReceivingThreads = NbThreads;
             SaveConfiguration(Configuration);

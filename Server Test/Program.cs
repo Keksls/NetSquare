@@ -6,7 +6,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 
 namespace Server_Test
 {
@@ -17,36 +16,14 @@ namespace Server_Test
 
         static void Main(string[] args)
         {
-            //int[] testArray = new int[1000];
-            //for (int i = 0; i < testArray.Length; i++)
-            //    testArray[i] = i;
-
-            //StartStopWatch(null);
-            //for (int i = 0; i < 10000; i++)
-            //{
-            //    NetworkMessage msg = new NetworkMessage();
-            //    msg.Set(true).Set(float.MaxValue).SetObject(new List<string>() { "Hello", "World", "!" }).Set(uint.MaxValue).SetObject(testArray);
-            //    byte[] array = msg.Serialize();
-
-            //    byte[] arrayWithoutSize = new byte[array.Length - 4];
-            //    Array.Copy(array, 4, arrayWithoutSize, 0, arrayWithoutSize.Length);
-            //    NetworkMessage msg2 = new NetworkMessage(arrayWithoutSize);
-            //    bool boolVal = msg2.GetBool();
-            //    float floatVal = msg2.GetFloat();
-            //    List<string> listVal = msg2.GetObject<List<string>>();
-            //    uint uintVal = msg2.GetUInt();
-            //    int[] intArrayVal = msg2.GetObject<int[]>();
-            //}
-            //EndStopWatch(null);
-
-            // Optionnal, set configuration
+            // Set configuration
             NetSquareConfiguration config = NetSquareConfigurationManager.Configuration;
             config.BlackListFilePath = @"[current]\blackList.bl";
             config.LockConsole = false;
             config.Port = 5050;
-            config.ProcessOffsetTime = 1;
             config.NbReceivingThreads = 4;
-            config.NbQueueThreads = 8;
+            config.NbSendingThreads = 4;
+            config.NbQueueThreads = 4;
             NetSquareConfigurationManager.SaveConfiguration(config);
 
             // Instantiate NetSquare Server
@@ -60,13 +37,13 @@ namespace Server_Test
             //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
 
             // Create a test lobby
-            LobbiesManager.AddLobby();
+            LobbiesManager.AddLobby("Default Lobby", 128);
 
             // Start Server
             //Writer.StartRecordingLog();
+            server.Start(allowLocalIP:false);
+            //Writer.StopDisplayLog();
             Writer.StartDisplayTitle();
-            server.Start();
-            Writer.StopDisplayLog();
         }
 
         private static void Server_OnClientDisconnected(uint clientID)

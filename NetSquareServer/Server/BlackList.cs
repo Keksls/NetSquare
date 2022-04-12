@@ -38,9 +38,9 @@ namespace NetSquareServer
                 Writer.Write("IP already in BlackList : " + IP, ConsoleColor.DarkRed);
         }
 
-        public static bool IsBlackListed(TcpClient client)
+        public static bool IsBlackListed(Socket client)
         {
-            string IP = ((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
+            string IP = ((IPEndPoint)client.RemoteEndPoint).Address.ToString();
             Writer.Write("[" + IP + "] Checking blacklist... (" + DateTime.Now.ToString() + ")", ConsoleColor.DarkRed);
 
             if(IsLocalAddress(IP))

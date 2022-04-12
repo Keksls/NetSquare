@@ -50,6 +50,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Compression\DeflateCompressor.cs" />
+    <Compile Include="ConnectedClient.cs" />
     <Compile Include="Encryption\AES_Encryptor.cs" />
     <Compile Include="Encryption\CaesarChipher_Encryptor.cs" />
     <Compile Include="Encryption\CustomSBC_Encryptor.cs" />
@@ -68,6 +69,7 @@
     <Compile Include="Encryption\SimplePasswordedCipher_Encryptor.cs" />
     <Compile Include="Encryption\XOR_Encryptor.cs" />
     <Compile Include="HandShake.cs" />
+    <Compile Include="Messages\NetSquareMessageTypes.cs" />
     <Compile Include="NetSquareDispatcher.cs" />
     <Compile Include="Messages\MessageBlockData.cs" />
     <Compile Include="Messages\NetworkMessage.cs" />

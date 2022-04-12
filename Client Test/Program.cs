@@ -10,7 +10,11 @@ namespace Client_Test
         static NetSquare_Client client;
         static void Main(string[] args)
         {
-            for (int i = 0; i < 100; i++)
+            Console.WriteLine("How many clients : ");
+            string clients = Console.ReadLine();
+            int nbCLients = 10;
+            int.TryParse(clients, out nbCLients);
+            for (int i = 0; i < nbCLients; i++)
             {
                 Thread t = new Thread(() =>
                {

@@ -93,6 +93,8 @@ namespace NetSquareServer.Lobbies
                     throw new Exception("Lobby " + lobbyID + " don't exists");
                 // lobby exit so let's try add client into it
                 bool added = lobby.TryJoinLobby(message.ClientID);
+                // reply to client the added state
+                NetSquare_Server.Instance.Reply(message, new NetworkMessage().Set(added));
                 // add clientID / lobbyID mapping
                 if (added)
                 {
@@ -101,8 +103,6 @@ namespace NetSquareServer.Lobbies
                     lobby.Broadcast(new NetworkMessage(65532).Set(message.ClientID));
                     Writer.Write("Client " + message.ClientID + " join lobby " + lobbyID, ConsoleColor.Gray);
                 }
-                // reply to client the added state
-                NetSquare_Server.Instance.Reply(message, new NetworkMessage().Set(added));
             }
             catch (Exception ex)
             {
@@ -116,21 +116,13 @@ namespace NetSquareServer.Lobbies
         /// broadcast message from client to any client in the same lobby
         /// </summary>
         /// <param name="message">message we want to broadcast</param>
-        [NetSquareAction(65534)]
         public static void BroadcastToLobby(NetworkMessage message)
         {
             if (IsClientInLobby(message.ClientID))
             {
                 NetSquareLobby lobby = GetLobby(GetClientLobby(message.ClientID));
                 if (lobby != null)
-                {
-                    // restore message head
-                    message.SetReadingIndex(message.Length - 2);
-                    ushort headID = message.GetUShort();
-                    message.RestartRead();
-                    message.Head = headID;
                     lobby.Broadcast(message);
-                }
             }
         }
 
@@ -138,7 +130,7 @@ namespace NetSquareServer.Lobbies
         /// message from client for leaving current lobby
         /// </summary>
         /// <param name="message">empty message</param>
-        [NetSquareAction(65533)]
+        [NetSquareAction(65534)]
         public static void TryRemoveClientFromLobby(NetworkMessage message)
         {
             try
@@ -162,7 +154,7 @@ namespace NetSquareServer.Lobbies
                         }
                     }
                     // reply to client the added state
-                    if (message.TcpClient != null)
+                    if (message.Client != null)
                         NetSquare_Server.Instance.Reply(message, new NetworkMessage().Set(leave));
                 }
             }

@@ -8,6 +8,7 @@ namespace Client_Test
     public class ClientRoutine
     {
         NetSquare_Client client;
+        bool connected = false;
         public void Start()
         {
             client = new NetSquare_Client();
@@ -23,6 +24,7 @@ namespace Client_Test
         private void Client_Disconected()
         {
             Console.WriteLine("Client Disconnected");
+            connected = false;
         }
 
         private void Client_ConnectionFail()
@@ -32,14 +34,16 @@ namespace Client_Test
 
         private void Client_Connected(uint ID)
         {
+            connected = true;
             Console.WriteLine("Connected with ID " + ID);
             Thread.Sleep(10);
             client.LobbiesManager.TryJoinLobby(1, (success) =>
             {
                 if (success)
                 {
+                    Console.WriteLine("Client " + ID + " Join lobby");
                     Random rnd = new Random();
-                    while (true)
+                    while (connected)
                     {
                         client.LobbiesManager.Broadcast(new NetworkMessage(10).Set((float)rnd.Next(-1000, 1000) / 20f)
                             .Set(1f)
@@ -48,7 +52,10 @@ namespace Client_Test
                     }
                 }
                 else
+                {
+                    Console.WriteLine("Client " + ID + " Fail lobby");
                     client.Disconnect();
+                }
             });
         }
 

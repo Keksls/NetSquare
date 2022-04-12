@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Threading;
@@ -12,7 +11,7 @@ namespace NetSquareServer.Utils
     {
         private static RichTextBox textBox;
         private static bool saveLog = false;
-        private static bool displayLog = true;
+        public static bool DisplayLog { get; private set; }
         public static bool DisplayTitle { get; private set; }
         private static string logPath = Environment.CurrentDirectory + @"\server.log";
         private static string logPrevPath = Environment.CurrentDirectory + @"\server_prev.log";
@@ -68,12 +67,12 @@ namespace NetSquareServer.Utils
 
         public static void StartDisplayLog()
         {
-            displayLog = true;
+            DisplayLog = true;
         }
 
         public static void StopDisplayLog()
         {
-            displayLog = false;
+            DisplayLog = false;
         }
 
         public static void StartDisplayTitle()
@@ -104,7 +103,7 @@ namespace NetSquareServer.Utils
 
         public static void Write(string text, ConsoleColor color, bool inline = true)
         {
-            if (displayLog)
+            if (DisplayLog)
             {
                 if (textBox == null)
                 {
