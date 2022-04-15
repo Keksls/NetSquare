@@ -1,44 +1,26 @@
 ﻿using NetSquare.Core;
 using NetSquareServer.Utils;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading;
 
 namespace NetSquareServer.Server
 {
-    public struct SendingMessage
-    {
-        public byte[] NetworkMessage { get; set; }
-        public ConnectedClient Client { get; set; }
-
-        public SendingMessage(byte[] message, ConnectedClient client)
-        {
-            Client = client;
-            NetworkMessage = message;
-        }
-    }
-
     public class MessageSender
     {
-        public ConcurrentQueue<SendingMessage> Queue = new ConcurrentQueue<SendingMessage>();
+        public List<ConnectedClient> Clients = new List<ConnectedClient>();
         public int SenderID { get; private set; }
         public bool Started { get; private set; }
-        public int NbMessages { get { return Queue.Count; } }
+        public int NbClients { get { return Clients.Count; } }
         public Thread ProcessQueueThread { get; private set; }
-        private readonly object sendSyncRoot = new object();
-        private SendingMessage currentMessage;
+        private MessageSenderManager manager;
 
-        public MessageSender(int senderID)
+        public MessageSender(int senderID, MessageSenderManager _manager)
         {
+            manager = _manager;
             Started = false;
             SenderID = senderID;
-        }
-
-        public void AddMessage(SendingMessage msg)
-        {
-            Queue.Enqueue(msg);
         }
 
         public void StopSender()
@@ -46,9 +28,22 @@ namespace NetSquareServer.Server
             Started = false;
         }
 
-        public void ClearQueue()
+        public void ClearClients()
         {
-            Queue = new ConcurrentQueue<SendingMessage>();
+            lock (Clients)
+                Clients = new List<ConnectedClient>();
+        }
+
+        public void AddClient(ConnectedClient client)
+        {
+            lock (Clients)
+                Clients.Add(client);
+        }
+
+        public void RemoveClient(ConnectedClient client)
+        {
+            lock (Clients)
+                Clients.Remove(client);
         }
 
         public void StartSender()
@@ -63,23 +58,23 @@ namespace NetSquareServer.Server
         {
             while (Started)
             {
-                while (Queue.TryDequeue(out currentMessage))
+                lock (Clients)
                 {
-                    try
+                    for (int i = 0; i < Clients.Count; i++)
                     {
-                        if (currentMessage.Client != null && currentMessage.Client.Socket.Connected)
+                        try
                         {
-                            lock (currentMessage.Client.sendSyncRoot)
-                                currentMessage.Client.Socket.Send(currentMessage.NetworkMessage);
+                            if (Clients[i].ProcessSendingQueue())
+                                manager.NbSended++;
                         }
-                    }
-                    catch (SocketException)
-                    {
-                        Writer.Write("Sending Queue switch disconnected client", ConsoleColor.Red);
-                    }
-                    catch (Exception ex)
-                    {
-                        Writer.Write("Sending Queue fail : \n\r" + ex.ToString(), ConsoleColor.Red);
+                        catch (SocketException)
+                        {
+                            Writer.Write("Sending Queue switch disconnected client", ConsoleColor.Red);
+                        }
+                        catch (Exception ex)
+                        {
+                            Writer.Write("Sending Queue fail : \n\r" + ex.ToString(), ConsoleColor.Red);
+                        }
                     }
                 }
                 Thread.Sleep(1);
@@ -90,22 +85,25 @@ namespace NetSquareServer.Server
 
     public class MessageSenderManager
     {
-        private MessageSender[] senders;
         public int NbSenders { get; private set; }
         public bool SendersStarted { get; private set; }
         public int EmptiestSenderID { get; private set; }
-        public int NbMessages { get; private set; }
+        public int NbClients { get; private set; }
+        public long NbSended { get; internal set; }
+        private MessageSender[] senders;
+        private Dictionary<uint, int> ClientSenders = new Dictionary<uint, int>();
 
         public MessageSenderManager(int nbSenders)
         {
             NbSenders = nbSenders;
             senders = new MessageSender[nbSenders];
             for (int i = 0; i < nbSenders; i++)
-                senders[i] = new MessageSender(i);
+                senders[i] = new MessageSender(i, this);
         }
 
         public void StartSenders()
         {
+            NbSended = 0;
             SendersStarted = true;
             EmptiestSenderID = 0;
             min = int.MaxValue;
@@ -113,7 +111,7 @@ namespace NetSquareServer.Server
             processEmptiestQueueIDThread.Start();
             foreach (MessageSender sender in senders)
             {
-                sender.ClearQueue();
+                sender.ClearClients();
                 sender.StartSender();
             }
         }
@@ -124,20 +122,39 @@ namespace NetSquareServer.Server
             foreach (MessageSender sender in senders)
             {
                 sender.StopSender();
-                sender.ClearQueue();
+                sender.ClearClients();
             }
             EmptiestSenderID = 0;
         }
 
+        public void AddClient(ConnectedClient client)
+        {
+            int senderID = EmptiestSenderID;
+            lock (ClientSenders)
+            {
+                ClientSenders.Add(client.ID, senderID);
+                senders[senderID].AddClient(client);
+            }
+        }
+
+        public void RemoveClient(ConnectedClient client)
+        {
+            lock (ClientSenders)
+            {
+                int senderID = ClientSenders[client.ID];
+                senders[senderID].RemoveClient(client);
+            }
+        }
+
         public void SendMessage(byte[] message, ConnectedClient client)
         {
-            senders[EmptiestSenderID].AddMessage(new SendingMessage(message, client));
+            client.AddMessage(message);
         }
 
         public void SendMessage(byte[] message, List<ConnectedClient> clients)
         {
             foreach (ConnectedClient client in clients)
-                senders[EmptiestSenderID].AddMessage(new SendingMessage(message, client));
+                client.AddMessage(message);
         }
 
         int min;
@@ -145,19 +162,28 @@ namespace NetSquareServer.Server
         {
             while (SendersStarted)
             {
-                NbMessages = 0;
+                NbClients = 0;
                 min = int.MaxValue;
                 for (int i = 0; i < NbSenders; i++)
                 {
-                    NbMessages += senders[i].NbMessages;
-                    if (senders[i].NbMessages < min)
+                    NbClients += senders[i].NbClients;
+                    if (senders[i].NbClients < min)
                     {
-                        min = senders[i].NbMessages;
+                        min = senders[i].NbClients;
                         EmptiestSenderID = i;
                     }
                 }
-                Thread.Sleep(1);
+                Thread.Sleep(10);
             }
+        }
+
+        public int GetNbMessagesToSend()
+        {
+            int nbMessagesToSend = 0;
+            for (int i = 0; i < NbSenders; i++)
+                for (int j = 0; j < senders[i].Clients.Count; j++)
+                    nbMessagesToSend += senders[i].Clients[j].NbMessagesToSend;
+            return nbMessagesToSend;
         }
     }
 }

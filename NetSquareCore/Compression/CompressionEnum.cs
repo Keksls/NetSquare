@@ -4,6 +4,7 @@
     {
         NoCompression = 0,
         GZipCompression = 1,
-        DeflateCompression = 2
+        DeflateCompression = 2,
+        LZ4Compression = 3
     }
 }

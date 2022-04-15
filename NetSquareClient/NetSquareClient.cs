@@ -1,5 +1,6 @@
 ﻿using NetSquare.Core;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading;
@@ -8,156 +9,217 @@ namespace NetSquareClient
 {
     public class NetSquare_Client
     {
-        public event Action Disconected;
-        public event Action<uint> Connected;
-        public event Action ConnectionFail;
-        public event Action<NetworkMessage> UnregisteredMessageReceived;
-        public uint ClientID { get; private set; }
-        public NetSquareDispatcher Dispatcher;
-        public LobbiesManager LobbiesManager { get; private set; }
-        private TcpClient TcpClient { get; set; }
-        private int NbReplyAsked = 1;
-        private bool connected = false;
-        private bool QueueStop { get; set; }
-        private readonly Dictionary<int, Action<NetworkMessage>> ReplyCallBack = new Dictionary<int, Action<NetworkMessage>>();
+        #region Events
+        public event Action OnDisconected;
+        public event Action<uint> OnConnected;
+        public event Action OnConnectionFail;
+        public event Action<NetworkMessage> OnUnregisteredMessageReceived;
+        #endregion
 
+        #region Variables
+        public NetSquareDispatcher Dispatcher;
+        public WorldsManager WorldsManager { get; private set; }
+        public ConnectedClient Client { get; private set; }
+        public uint ClientID { get { return Client != null ? Client.ID : 0; } }
+        public bool IsConnected { get { return Client.Socket.Connected; } }
+        public int NbSendingMessages { get { return Client != null ? Client.NbMessagesToSend : 0; } }
+        public int NbProcessingMessages { get { return messagesQueue.Count; } }
+        private int nbReplyAsked = 1;
+        private bool isStarted { get; set; }
+        private ConcurrentQueue<NetworkMessage> messagesQueue = new ConcurrentQueue<NetworkMessage>();
+        private Dictionary<int, NetSquareAction> replyCallBack = new Dictionary<int, NetSquareAction>();
+        #endregion
+
+        /// <summary>
+        /// Instantiate a new NetSquare client
+        /// </summary>
         public NetSquare_Client()
         {
-            ClientID = 0;
             Dispatcher = new NetSquareDispatcher();
             Dispatcher.AutoBindHeadActionsFromAttributes();
-            LobbiesManager = new LobbiesManager(this);
+            WorldsManager = new WorldsManager(this);
         }
 
+        #region Connection / Disconnection
+        /// <summary>
+        /// Connect this client to the given NetSquare server IP and port
+        /// </summary>
+        /// <param name="hostNameOrIpAddress">HostName or IP Adress to connect on</param>
+        /// <param name="port">Port to connect on</param>
         public void Connect(string hostNameOrIpAddress, int port)
         {
-            TcpClient = new TcpClient();
-            TcpClient.Connect(hostNameOrIpAddress, port);
+            try
+            {
+                TcpClient tcpClient = new TcpClient();
+                tcpClient.Connect(hostNameOrIpAddress, port);
 
-            // start routine that will validate server connection
-            Thread runLoopThread = new Thread(ValidateConnection);
-            runLoopThread.Start();
+                // start routine that will validate server connection
+                Thread runLoopThread = new Thread(() => { ValidateConnection(tcpClient); });
+                runLoopThread.Start();
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
         }
 
+        /// <summary>
+        /// Disconnect this client from server
+        /// </summary>
         public void Disconnect()
         {
-            if (TcpClient == null)
+            isStarted = false;
+            OnDisconected?.Invoke();
+            if (Client == null)
                 return;
-            TcpClient.Close();
-            TcpClient.Dispose();
-            TcpClient = null;
+            Client.Socket.Close();
+            Client.Socket.Dispose();
+            Client = null;
         }
+        #endregion
 
-        void ValidateConnection()
+        #region Message Logic
+        /// <summary>
+        /// Validate NetSquare handShake to server. Ensure that we are connected to a netSquare server
+        /// </summary>
+        private void ValidateConnection(TcpClient tcpClient)
         {
             long timeEnd = DateTime.Now.AddSeconds(30).Ticks;
             int step = 0;
             int key = 0;
-            while (TcpClient != null && TcpClient.Connected && DateTime.Now.Ticks < timeEnd)
+            while (tcpClient != null && tcpClient.Connected && DateTime.Now.Ticks < timeEnd)
             {
                 // Handle Byte Avaliable
-                if (step == 0 && TcpClient.Available >= 8)
+                if (step == 0 && tcpClient.Available >= 8)
                 {
                     byte[] array = new byte[8];
-                    TcpClient.Client.Receive(array, 0, 8, SocketFlags.None);
+                    tcpClient.Client.Receive(array, 0, 8, SocketFlags.None);
                     int rnd1 = BitConverter.ToInt32(array, 0);
                     int rnd2 = BitConverter.ToInt32(array, 4);
                     key = HandShake.GetKey(rnd1, rnd2);
                     byte[] rep = BitConverter.GetBytes(key);
-                    TcpClient.GetStream().Write(rep, 0, rep.Length);
+                    tcpClient.Client.Send(rep, 0, rep.Length, SocketFlags.None);
                     step = 1;
                 }
-                else if (step == 1 && TcpClient.Available >= 4)
+                else if (step == 1 && tcpClient.Available >= 4)
                 {
                     byte[] array = new byte[4];
-                    TcpClient.Client.Receive(array, 0, 4, SocketFlags.None);
+                    tcpClient.Client.Receive(array, 0, 4, SocketFlags.None);
                     uint clientID = BitConverter.ToUInt32(array, 0);
                     // let's reply server same ID as validation
-                    ClientID = clientID;
-                    // start main receiving message loop
-                    Thread runLoopThread = new Thread(RunLoopStep);
+                    Client = new ConnectedClient()
+                    {
+                        ID = clientID,
+                        Socket = tcpClient.Client
+                    };
+                    Client.OnMessageReceived += Client_OnMessageReceived;
+                    // start receiving message loop
+                    Thread runLoopThread = new Thread(ReceivingSendingLoop);
+                    runLoopThread.IsBackground = true;
                     runLoopThread.Start();
-                    Connected?.Invoke(clientID);
+                    // start processing message loop
+                    Thread processingThread = new Thread(ProcessMessagesLoop);
+                    processingThread.IsBackground = true;
+                    processingThread.Start();
+                    OnConnected?.Invoke(clientID);
                     break;
                 }
             }
-            if (ClientID == 0)
-                ConnectionFail?.Invoke();
+            if (Client == null)
+                OnConnectionFail?.Invoke();
         }
 
-        void RunLoopStep()
+        /// <summary>
+        /// invoked when new message was received from server
+        /// </summary>
+        /// <param name="message"></param>
+        private void Client_OnMessageReceived(NetworkMessage message)
         {
-            byte[] bytesReceived = new byte[0];
-            int currentLenght = -1;
-            int nbBytesReceived = 0;
-            while (!QueueStop)
+            messagesQueue.Enqueue(message);
+        }
+
+        /// <summary>
+        /// Loop that receive and send messages from/to server
+        /// </summary>
+        private void ReceivingSendingLoop()
+        {
+            isStarted = true;
+            while (isStarted)
             {
                 try
                 {
-                    // Handle Disconenction
-                    if (TcpClient == null || !TcpClient.Connected)
+                    // Handle Disconnect
+                    if (Client == null || !Client.Socket.Connected)
                     {
-                        if (Disconected != null && connected)
-                            Disconected?.Invoke();
+                        Disconnect();
                         return;
                     }
-                    connected = TcpClient.Connected;
 
-                    // Handle message lenght
-                    if (TcpClient != null && currentLenght == -1 && TcpClient.Available >= 4)
+                    Client.ReceiveMessage();
+                    Client.ProcessSendingQueue();
+                }
+                catch { }
+                Thread.Sleep(1);
+            }
+        }
+
+        /// <summary>
+        /// Loop that process the received messages
+        /// </summary>
+        private void ProcessMessagesLoop()
+        {
+            NetworkMessage message = null;
+            while (isStarted)
+            {
+                try
+                {
+                    while (messagesQueue.TryDequeue(out message))
                     {
-                        byte[] lenthArray = new byte[4];
-                        TcpClient.Client.Receive(lenthArray, 0, 4, SocketFlags.None);
-                        currentLenght = BitConverter.ToInt32(lenthArray, 0);
-                        bytesReceived = new byte[currentLenght];
-                        nbBytesReceived = 0;
-                    }
-
-                    // handle receive message data
-                    while (currentLenght != -1 && TcpClient != null && TcpClient.Available > 0 && TcpClient.Connected)
-                    {
-                        TcpClient.Client.Receive(bytesReceived, nbBytesReceived, 1, SocketFlags.None);
-                        nbBytesReceived++;
-
-                        // all message recieved
-                        if (nbBytesReceived == currentLenght)
+                        // reply message
+                        if (replyCallBack.ContainsKey(message.TypeID))
                         {
-                            currentLenght = -1;
-                            ProcessMessages(new NetworkMessage(bytesReceived));
+                            Dispatcher.ExecuteinMainThread(replyCallBack[message.TypeID], message);
+                            replyCallBack.Remove(message.TypeID);
+                        }
+                        // sync message
+                        else if (message.TypeID == 2)
+                        {
+                            Dispatcher.ExecuteinMainThread((msg) =>
+                            {
+                                WorldsManager.Fire_OnSyncronize(msg);
+                            }, message);
+                        }
+                        // default message, let's use dispatcher to handle it
+                        else
+                        {
+                            if (!Dispatcher.DispatchMessage(message))
+                                OnUnregisteredMessageReceived?.Invoke(message);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.Write(ex.ToString());
+                    try
+                    {
+                        // catch arror if client not started in console env
+                        Console.WriteLine(ex.ToString());
+                    }
+                    catch { }
                 }
                 Thread.Sleep(1);
             }
         }
+        #endregion
 
-        public void ProcessMessages(NetworkMessage message)
-        {
-            if (message.TypeID != 0 && ReplyCallBack.ContainsKey(message.TypeID))
-            {
-                ReplyCallBack[message.TypeID](message);
-                ReplyCallBack.Remove(message.TypeID);
-            }
-            else
-            {
-                if (!Dispatcher.DispatchMessage(message))
-                    UnregisteredMessageReceived?.Invoke(message);
-            }
-        }
-
+        #region Sending messages
         /// <summary>
         /// Send a message to server without waiting for response
         /// </summary>
         /// <param name="msg">message to send</param>
         public void SendMessage(NetworkMessage msg)
         {
-            msg.ClientID = ClientID;
-            byte[] data = msg.Serialize();
-            TcpClient.GetStream().Write(data, 0, data.Length);
+            msg.ClientID = Client.ID;
+            Client.AddMessage(msg);
         }
 
         /// <summary>
@@ -167,9 +229,8 @@ namespace NetSquareClient
         public void SendMessage(ushort HeadID)
         {
             NetworkMessage msg = new NetworkMessage(HeadID);
-            msg.ClientID = ClientID;
-            byte[] data = msg.Serialize();
-            TcpClient.GetStream().Write(data, 0, data.Length);
+            msg.ClientID = Client.ID;
+            Client.AddMessage(msg);
         }
 
         /// <summary>
@@ -177,12 +238,13 @@ namespace NetSquareClient
         /// </summary>
         /// <param name="msg">message to send</param>
         /// <param name="callback">callback to invoke when server respond</param>
-        public void SendMessage(NetworkMessage msg, Action<NetworkMessage> callback)
+        public void SendMessage(NetworkMessage msg, NetSquareAction callback)
         {
-            msg.ReplyTo(NbReplyAsked);
-            ReplyCallBack.Add(msg.TypeID, callback);
-            NbReplyAsked++;
+            msg.ReplyTo(nbReplyAsked);
+            nbReplyAsked++;
+            replyCallBack.Add(msg.TypeID, callback);
             SendMessage(msg);
         }
+        #endregion
     }
 }

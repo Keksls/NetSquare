@@ -36,6 +36,10 @@ namespace NetSquareServer
         /// Number of threads for TcpListners message sending
         /// </summary>
         public int NbSendingThreads { get; set; }
+        /// <summary>
+        /// Frequency of var synchronization
+        /// </summary>
+        public int SynchronizingFrequency { get; set; }
 
         public NetSquareConfiguration()
         {
@@ -75,6 +79,19 @@ namespace NetSquareServer
                 Configuration = JsonConvert.DeserializeObject<NetSquareConfiguration>(File.ReadAllText(configurationPath));
                 Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
             }
+            else
+            {
+                Configuration = new NetSquareConfiguration();
+            }
+        }
+
+        /// <summary>
+        /// Frequency of var synchronization
+        /// </summary>
+        public static void SetSynchronizingFrequency(int SynchronizingFrequency)
+        {
+            Configuration.SynchronizingFrequency = SynchronizingFrequency;
+            SaveConfiguration(Configuration);
         }
 
         /// <summary>

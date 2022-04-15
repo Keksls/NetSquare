@@ -41,7 +41,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="LobbiesManager.cs" />
+    <Compile Include="WorldsManager.cs" />
     <Compile Include="NetSquareClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
@@ -50,6 +50,9 @@
       <Project>{f828690c-33d4-4c51-872e-cae5ef3c7b7b}</Project>
       <Name>NetSquareCore</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

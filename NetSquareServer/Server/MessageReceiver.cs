@@ -14,14 +14,11 @@ namespace NetSquareServer.Server
         public bool Started { get; private set; }
         public int NbClients { get { return Clients.Count; } }
         public Thread ReceiverThread { get; private set; }
-        public int BufferSize { get; private set; }
-        private int currentLenght = -1;
         private NetSquare_Server server;
 
         public MessageReceiver(NetSquare_Server _server, int receiverID, int bufferSize)
         {
             server = _server;
-            BufferSize = bufferSize;
             Started = false;
             ReceiverID = receiverID;
         }
@@ -29,6 +26,12 @@ namespace NetSquareServer.Server
         public void AddClient(ConnectedClient client)
         {
             Clients.Add(client);
+            client.OnMessageReceived += Client_OnMessageReceived;
+        }
+
+        private void Client_OnMessageReceived(NetworkMessage message)
+        {
+            server.MessageReceive(message);
         }
 
         public void StopReceiver()
@@ -55,58 +58,23 @@ namespace NetSquareServer.Server
             {
                 try
                 {
-                    byte[] bytesReceived = new byte[0];
                     for (int clientIndex = 0; clientIndex < Clients.Count; clientIndex++)
                     {
                         // get current client
                         ConnectedClient c = Clients[clientIndex];
+                        if (c == null)
+                            continue;
 
                         // Handle Disconnect
                         if (!c.Socket.IsConnected())
                         {
+                            c.OnMessageReceived += Client_OnMessageReceived;
                             Clients.Remove(c);
                             server.Server_ClientDisconnected(c);
                             continue;
                         }
 
-                        // check if client send something
-                        if (c.Socket.Available == 0)
-                            continue;
-
-                        // get message size
-                        currentLenght = -1;
-                        if (currentLenght == -1 && c.Socket.Available > 4)
-                        {
-                            byte[] nextByte = new byte[4];
-                            lock (c.receiveSyncRoot)
-                                c.Socket.Receive(nextByte, 0, 4, SocketFlags.None);
-                            currentLenght = BitConverter.ToInt32(nextByte, 0);
-                            bytesReceived = new byte[currentLenght];
-                        }
-
-                        int i = 0;
-                        // get message Data
-                        while (currentLenght != -1 && c.Socket.Available > 0 && c.Socket.Connected)
-                        {
-                            // get size of byte array to receive for this loop / message
-                            int nbBytesToReceive = c.Socket.Available;
-                            if (nbBytesToReceive > BufferSize)
-                                nbBytesToReceive = BufferSize;
-                            if (nbBytesToReceive > currentLenght)
-                                nbBytesToReceive = currentLenght;
-                            // lock the sync object for prevent thread lock if sending thread send on same socket durring reception
-                            lock (c.receiveSyncRoot)
-                                c.Socket.Receive(bytesReceived, i, nbBytesToReceive, SocketFlags.None);
-                            // count how many bytes we receive for this message
-                            i += nbBytesToReceive;
-
-                            // all message recieved
-                            if (i == currentLenght)
-                            {
-                                currentLenght = -1;
-                                server.MessageReceive(bytesReceived, c);
-                            }
-                        }
+                        c.ReceiveMessage();
                     }
 
                     Thread.Sleep(1);

@@ -51,14 +51,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Lobbies\LobbiesManager.cs" />
-    <Compile Include="Lobbies\NetSquareLobby.cs" />
+    <Compile Include="Lobbies\WorldsManager.cs" />
+    <Compile Include="Lobbies\NetSquareWorld.cs" />
+    <Compile Include="Lobbies\Synchronizer.cs" />
     <Compile Include="NetSquare_Server.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Server\BlackList.cs" />
     <Compile Include="Server\MessageQueue.cs" />
     <Compile Include="Server\MessageReceiver.cs" />
     <Compile Include="Server\MessageSender.cs" />
+    <Compile Include="Server\ServerStatistics.cs" />
     <Compile Include="Server\TcpConnector.cs" />
     <Compile Include="Server\TcpListenerEx.cs" />
     <Compile Include="Utils\NetSquareConfiguration.cs" />

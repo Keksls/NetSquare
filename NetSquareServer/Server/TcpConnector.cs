@@ -12,15 +12,15 @@ namespace NetSquareServer
         public bool Started { get; private set; }
         public int VerifyingClients { get; private set; }
         private TcpListenerEx _listener = null;
-        private NetSquare_Server parent = null;
+        private NetSquare_Server server = null;
         internal IPAddress IPAddress { get; private set; }
         internal int Port { get; private set; }
         internal TcpListenerEx Listener { get { return _listener; } }
 
-        public TcpConnector(NetSquare_Server parentServer, IPAddress ipAddress, int port)
+        public TcpConnector(NetSquare_Server _server, IPAddress ipAddress, int port)
         {
             Started = true;
-            parent = parentServer;
+            server = _server;
             IPAddress = ipAddress;
             Port = port;
             _listener = new TcpListenerEx(ipAddress, port);
@@ -86,8 +86,7 @@ namespace NetSquareServer
                         if (client.Available >= 4)
                         {
                             byte[] array = new byte[4];
-                            lock (client)
-                                client.Receive(array, 0, 4, SocketFlags.None);
+                            client.Receive(array, 0, 4, SocketFlags.None);
                             int clientKey = BitConverter.ToInt32(array, 0);
                             if (clientKey == key)
                                 isClientOK = true;
@@ -102,7 +101,7 @@ namespace NetSquareServer
                     {
                         Writer.Write("Client awnser good handshake key. Accept it.", ConsoleColor.Green);
 
-                        uint clientID = NetSquare_Server.Instance.AddClient(new ConnectedClient() { Socket = client });
+                        uint clientID = server.AddClient(new ConnectedClient() { Socket = client });
 
                         // client disconnect
                         if (!client.IsConnected())
@@ -114,8 +113,8 @@ namespace NetSquareServer
                         client.Send(BitConverter.GetBytes(clientID), 0, 4, SocketFlags.None);
 
                         VerifyingClients--;
-                        parent.MessageReceiverManager.AddClient(NetSquare_Server.Instance.GetClient(clientID));
-                        parent.Server_ClientConnected(NetSquare_Server.Instance.GetClient(clientID), clientID);
+                        server.MessageReceiverManager.AddClient(server.GetClient(clientID));
+                        server.Server_ClientConnected(server.GetClient(clientID), clientID);
                     }
                     // no awnser, awnser error, disconnected or timeout
                     else
@@ -125,7 +124,7 @@ namespace NetSquareServer
                         client.Dispose();
                     }
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     Writer.Write("Fail to HandShake client :\n\r" + ex.ToString(), ConsoleColor.Red);
                 }

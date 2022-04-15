@@ -58,10 +58,12 @@ namespace NetSquareServer.Server
                             
                             // BroadcastMessage
                             if (currentMessage.TypeID == 1)
-                                LobbiesManager.BroadcastToLobby(currentMessage);
+                                server.Worlds.BroadcastToWorld(currentMessage);
+                            else if(currentMessage.TypeID == 2)
+                                server.SynchronizeMessage(currentMessage);
                             else if (!server.Dispatcher.DispatchMessage(currentMessage))
                             {
-                                Writer.Write("Trying to Process message with head '" + currentMessage.Head.ToString() + "' but no action related... Message skipped.", ConsoleColor.DarkMagenta);
+                                Writer.Write("Trying to Process message with head '" + currentMessage.HeadID.ToString() + "' but no action related... Message skipped.", ConsoleColor.DarkMagenta);
                                 server.Reply(currentMessage, new NetworkMessage(0, currentMessage.ClientID).Set(false));
                             }
                             currentMessage = null;
@@ -143,7 +145,6 @@ namespace NetSquareServer.Server
                         EmptiestQueueID = i;
                     }
                 }
-                server.UpdateTitle();
                 Thread.Sleep(1);
             }
         }

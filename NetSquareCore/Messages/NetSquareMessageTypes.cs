@@ -3,6 +3,7 @@
     public enum MessageType
     {
         Default = 0,
-        BroadcastCurrentLobby = 1
+        BroadcastCurrentWorld = 1,
+        SynchronizeMessageCurrentWorld = 2
     }
 }

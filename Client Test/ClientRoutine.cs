@@ -12,9 +12,9 @@ namespace Client_Test
         public void Start()
         {
             client = new NetSquare_Client();
-            client.Connected += Client_Connected;
-            client.ConnectionFail += Client_ConnectionFail;
-            client.Disconected += Client_Disconected;
+            client.OnConnected += Client_Connected;
+            client.OnConnectionFail += Client_ConnectionFail;
+            client.OnDisconected += Client_Disconected;
 
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
             //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
@@ -34,22 +34,29 @@ namespace Client_Test
 
         private void Client_Connected(uint ID)
         {
+            float x = 0, y = 0, z = 0;
+            Random rnd = new Random();
+
             connected = true;
             Console.WriteLine("Connected with ID " + ID);
             Thread.Sleep(10);
-            client.LobbiesManager.TryJoinLobby(1, (success) =>
+            client.WorldsManager.TryJoinWorld(1, (success) =>
             {
                 if (success)
                 {
                     Console.WriteLine("Client " + ID + " Join lobby");
-                    Random rnd = new Random();
-                    while (connected)
+                    Thread t = new Thread(() =>
                     {
-                        client.LobbiesManager.Broadcast(new NetworkMessage(10).Set((float)rnd.Next(-1000, 1000) / 20f)
-                            .Set(1f)
-                            .Set((float)rnd.Next(-1000, 1000) / 20f));
-                        Thread.Sleep(rnd.Next(10, 100));
-                    }
+                        while (connected)
+                        {
+                            x = ((float)rnd.Next(-1000, 1000)) / 20f;
+                            y = 1f;
+                            z = ((float)rnd.Next(-1000, 1000)) / 20f;
+                            client.WorldsManager.Synchronize(new NetworkMessage(10).Set(x).Set(y).Set(z));
+                            Thread.Sleep(10);
+                        }
+                    });
+                    t.Start();
                 }
                 else
                 {
@@ -59,12 +66,17 @@ namespace Client_Test
             });
         }
 
-        [NetSquareAction(0)]
+        [NetSquareAction((ushort)MessagesTypes.WelcomeMessage)]
         public static void ReceivingDebugMessageFromServer(NetworkMessage message)
         {
             string text = "";
             message.Get(ref text);
             Console.WriteLine(text);
         }
+    }
+
+    enum MessagesTypes
+    {
+        WelcomeMessage = 0
     }
 }

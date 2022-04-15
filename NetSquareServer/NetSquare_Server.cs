@@ -12,6 +12,7 @@ using NetSquareServer.Server;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Linq;
+using NetSquareServer.Lobbies;
 
 namespace NetSquareServer
 {
@@ -26,7 +27,6 @@ namespace NetSquareServer
         [DllImport("kernel32.dll")]
         static extern IntPtr GetStdHandle(int nStdHandle);
 
-        public static NetSquare_Server Instance;
         public uint ClientIDCounter { get; private set; }
         public event Action BeforeLoadConfiguration_StepOne;
         public event Action AfterLoadConfiguration_StepTwo;
@@ -36,16 +36,24 @@ namespace NetSquareServer
         public bool IsStarted { get { return Listeners.Any(l => l.Listener.Active); } }
         public List<TcpConnector> Listeners = new List<TcpConnector>();
         public NetSquareDispatcher Dispatcher;
-        public MessageQueueManager MessageQueueManager;
-        public MessageSenderManager MessageSenderManager;
-        public MessageReceiverManager MessageReceiverManager;
+        internal MessageQueueManager MessageQueueManager;
+        internal MessageSenderManager MessageSenderManager;
+        internal MessageReceiverManager MessageReceiverManager;
+        internal Synchronizer Synchronizer;
+        public WorldsManager Worlds;
+        public ServerStatisticsManager Statistics;
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
         #endregion
 
         public NetSquare_Server()
         {
             Dispatcher = new NetSquareDispatcher();
-            Instance = this;
+            Worlds = new WorldsManager(this);
+            MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
+            MessageSenderManager = new MessageSenderManager(NetSquareConfigurationManager.Configuration.NbSendingThreads);
+            MessageReceiverManager = new MessageReceiverManager(this, NetSquareConfigurationManager.Configuration.NbReceivingThreads, NetSquareConfigurationManager.Configuration.ReceivingBufferSize);
+            Synchronizer = new Synchronizer(this);
+            Statistics = new ServerStatisticsManager();
         }
 
         private void ServerRoutine(int port, bool allowLocalIP)
@@ -86,16 +94,14 @@ namespace NetSquareServer
                 Dispatcher.AutoBindHeadActionsFromAttributes();
                 Writer.Write(Dispatcher.Count.ToString(), ConsoleColor.Green);
 
-                MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
-                MessageSenderManager = new MessageSenderManager(NetSquareConfigurationManager.Configuration.NbSendingThreads);
-                MessageReceiverManager = new MessageReceiverManager(this, NetSquareConfigurationManager.Configuration.NbReceivingThreads, NetSquareConfigurationManager.Configuration.ReceivingBufferSize);
-
                 if (StartTcpServer(port > 0 ? port : NetSquareConfigurationManager.Configuration.Port, allowLocalIP))
                 {
                     Writer.Write_Server("Processing Message Queue...", ConsoleColor.DarkYellow, false);
                     MessageQueueManager.StartQueues();
                     MessageSenderManager.StartSenders();
                     MessageReceiverManager.StartReceivers();
+                    Synchronizer.StartSynchronizing(NetSquareConfigurationManager.Configuration.SynchronizingFrequency);
+                    Statistics.StartReceivingStatistics(this, 100);
                     Writer.Write("Started", ConsoleColor.Green);
                 }
                 else
@@ -197,7 +203,7 @@ namespace NetSquareServer
         #region Sending and Rep
         public void Reply(NetworkMessage messageFrom, NetworkMessage message)
         {
-            message.Head = messageFrom.Head;
+            message.HeadID = messageFrom.HeadID;
             message.SetType(messageFrom.TypeID);
             MessageSenderManager.SendMessage(message.Serialize(), messageFrom.Client);
         }
@@ -226,28 +232,34 @@ namespace NetSquareServer
         {
             MessageSenderManager.SendMessage(message.Serialize(), GetAllClients());
         }
+
+        public void SynchronizeMessage(NetworkMessage message)
+        {
+            Synchronizer.AddMessage(message);
+        }
         #endregion
 
         #region ServerEvent
-        public void Server_ClientDisconnected(ConnectedClient e)
+        public void Server_ClientDisconnected(ConnectedClient client)
         {
-            OnClientDisconnected?.Invoke(e.ID);
+            OnClientDisconnected?.Invoke(client.ID);
             // supprime des clients connectés
-            ConnectedClient client = null;
-            while (!Clients.TryRemove(e.ID, out client))
+            ConnectedClient c = null;
+            while (!Clients.TryRemove(client.ID, out c))
                 Thread.Sleep(1);
+            MessageSenderManager.RemoveClient(client);
             Writer.Write("Client disconnected Good!", ConsoleColor.Green);
         }
 
-        public void Server_ClientConnected(ConnectedClient e, uint id)
+        public void Server_ClientConnected(ConnectedClient client, uint id)
         {
             Writer.Write("New client connected !", ConsoleColor.Green);
             OnClientConnected?.Invoke(id);
         }
 
-        public void MessageReceive(byte[] data, ConnectedClient client)
+        public void MessageReceive(NetworkMessage message)
         {
-            MessageQueueManager.MessageReceived(new NetworkMessage(data, client));
+            MessageQueueManager.MessageReceived(message);
         }
         #endregion
 
@@ -265,12 +277,10 @@ namespace NetSquareServer
         public uint AddClient(ConnectedClient client)
         {
             uint id = ClientIDCounter++;
-            lock (Clients)
-            {
-                client.ID = id;
-                while (!Clients.TryAdd(client.ID, client))
-                    Thread.Sleep(1);
-            }
+            client.ID = id;
+            while (!Clients.TryAdd(client.ID, client))
+                Thread.Sleep(1);
+            MessageSenderManager.AddClient(client);
             return id;
         }
 
@@ -325,36 +335,37 @@ namespace NetSquareServer
                     listenIps.Add(l.IPAddress);
             return listenIps.OrderByDescending(ip => RankIpAddress(ip)).ToList();
         }
-
-        public void UpdateTitle()
-        {
-            if (!Writer.DisplayTitle)
-                return;
-            string title = "NetSquare Server - ";
-            int nbConnected = MessageReceiverManager.NbClients;
-            int nbVerifying = GetNbVerifyingClients();
-            title += "Listner : " + Listeners.Count + " - Connected : " + nbConnected + " - Verrigying : " + nbVerifying + " - Processing : " + MessageQueueManager.NbMessages
-                + " - Sending : " + MessageSenderManager.NbMessages;
-            Writer.Title(title);
-        }
         #endregion
 
         #region private Utils
         private void DrawHeader(string version)
         {
             Writer.Title("NetSquare Server " + version);
-            Writer.Write("\n");
-            Writer.Write(@"   _   _      _   _____  ", ConsoleColor.Cyan);
-            Writer.Write(@"  | \ | |    | | /  ___| ", ConsoleColor.Magenta);
-            Writer.Write(@"  |  \| | ___| |_\ `--.  __ _ _   _  __ _ _ __ ___ ", ConsoleColor.Cyan);
-            Writer.Write(@"  | . ` |/ _ \ __|`--. \/ _` | | | |/ _` | '__/ _ \", ConsoleColor.Magenta);
-            Writer.Write(@"  | |\  |  __/ |_/\__/ / (_| | |_| | (_| | | |  __/", ConsoleColor.Cyan);
-            Writer.Write(@"  \_| \_/\___|\__\____/ \__, |\__,_|\__,_|_|  \___|", ConsoleColor.Magenta);
-            Writer.Write(@"                           | |                    ", ConsoleColor.Cyan);
-            Writer.Write(@"                           |_|                    ", ConsoleColor.Magenta);
-            Writer.Write(@"                          by ", ConsoleColor.Cyan, false);
-            Writer.Write(@"Keks                                     ", ConsoleColor.Magenta, false);
-            Writer.Write(version + "\n\n", ConsoleColor.Cyan);
+            //Writer.Write("\n");
+            //Writer.Write(@"   _   _      _   _____  ", ConsoleColor.Cyan);
+            //Writer.Write(@"  | \ | |    | | /  ___| ", ConsoleColor.Magenta);
+            //Writer.Write(@"  |  \| | ___| |_\ `--.  __ _ _   _  __ _ _ __ ___ ", ConsoleColor.Cyan);
+            //Writer.Write(@"  | . ` |/ _ \ __|`--. \/ _` | | | |/ _` | '__/ _ \", ConsoleColor.Magenta);
+            //Writer.Write(@"  | |\  |  __/ |_/\__/ / (_| | |_| | (_| | | |  __/", ConsoleColor.Cyan);
+            //Writer.Write(@"  \_| \_/\___|\__\____/ \__, |\__,_|\__,_|_|  \___|", ConsoleColor.Magenta);
+            //Writer.Write(@"                           | |                    ", ConsoleColor.Cyan);
+            //Writer.Write(@"                           |_|                    ", ConsoleColor.Magenta);
+            //Writer.Write(@"                          by ", ConsoleColor.Cyan, false);
+            //Writer.Write(@"Keks                                     ", ConsoleColor.Magenta, false);
+            //Writer.Write(version + "\n\n", ConsoleColor.Cyan);
+
+
+            Writer.Write(@"   _   _      _  ", ConsoleColor.White, false);Writer.Write(@" _____  ", ConsoleColor.Red);
+            Writer.Write(@"  | \ | |    | | ", ConsoleColor.White, false);Writer.Write(@"/  ___| ", ConsoleColor.Red);
+            Writer.Write(@"  |  \| | ___| |_", ConsoleColor.White, false);Writer.Write(@"\ `--.  __ _ _   _  __ _ _ __ ___ ", ConsoleColor.Red);
+            Writer.Write(@"  | . ` |/ _ \ __|", ConsoleColor.White, false);Writer.Write(@"`--. \/ _` | | | |/ _` | '__/ _ \", ConsoleColor.Red);
+            Writer.Write(@"  | |\  |  __/ |_", ConsoleColor.White, false);Writer.Write(@"/\__/ / (_| | |_| | (_| | | |  __/", ConsoleColor.Red);
+            Writer.Write(@"  \_| \_/\___|\__", ConsoleColor.White, false);Writer.Write(@"\____/ \__, |\__,_|\__,_|_|  \___|", ConsoleColor.Red);
+            Writer.Write(@"                 ", ConsoleColor.White, false);Writer.Write(@"          | |                    ", ConsoleColor.Red);
+            Writer.Write(@"                 ", ConsoleColor.White, false);Writer.Write(@"          |_|                    ", ConsoleColor.Red);
+            Writer.Write(@"                          by ", ConsoleColor.White, false);
+            Writer.Write(@"Keks                                     ", ConsoleColor.Red, false);
+            Writer.Write(version + "\n\n", ConsoleColor.White);
         }
 
         private int RankIpAddress(IPAddress addr)

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NetSquare.Core.Messages;
+using System;
 
 namespace NetSquare.Core
 {
@@ -20,6 +21,15 @@ namespace NetSquare.Core
         public NetSquareActionAttribute(ushort ID)
         {
             HeadID = ID;
+        }
+
+        /// <summary>
+        /// Use this attribute to link method to a particular HeadID or a networkMessage received by NetSquare
+        /// </summary>
+        /// <param name="ID">ID of the NetworkMessage. Must be unique</param>
+        public NetSquareActionAttribute(Enum ID)
+        {
+            HeadID = Convert.ToUInt16(ID);
         }
     }
 }

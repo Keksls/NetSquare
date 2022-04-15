@@ -31,9 +31,24 @@ namespace NetSquare.Core
         /// <param name="HeadID">ID of the NetworkMessage</param>
         /// <param name="HeadName">Name of the Network message (for debug only, you can let it null)</param>
         /// <param name="HeadAction">NetSquareAction to call on network message received with correspondig HeadID</param>
-        /// <exception cref="Exception"></exception>
+        /// <exception cref="Exception">Already Exist exception</exception>
         public void AddHeadAction(ushort HeadID, string HeadName, NetSquareAction HeadAction)
         {
+            if (HeadActions.ContainsKey(HeadID))
+                throw new Exception("Head " + HeadID + " Already exists in Dispatcher");
+            HeadActions.Add(HeadID, new NetSquareHeadAction(HeadID, HeadName, HeadAction));
+        }
+
+        /// <summary>
+        /// Manualy add a Head Action
+        /// </summary>
+        /// <param name="HeadID">ID of the NetworkMessage</param>
+        /// <param name="HeadName">Name of the Network message (for debug only, you can let it null)</param>
+        /// <param name="HeadType">NetSquareAction to call on network message received with correspondig HeadID</param>
+        /// <exception cref="Exception">Already Exist exception</exception>
+        public void AddHeadAction(Enum HeadType, string HeadName, NetSquareAction HeadAction)
+        {
+            ushort HeadID = Convert.ToUInt16(HeadType);
             if (HeadActions.ContainsKey(HeadID))
                 throw new Exception("Head " + HeadID + " Already exists in Dispatcher");
             HeadActions.Add(HeadID, new NetSquareHeadAction(HeadID, HeadName, HeadAction));
@@ -85,14 +100,24 @@ namespace NetSquare.Core
         /// <returns>true if success</returns>
         public bool DispatchMessage(NetworkMessage message)
         {
-            if (!HasHeadAction(message.Head))
+            if (!HasHeadAction(message.HeadID))
                 return false;
-
-            if (executeInMainThreadCallback != null)
-                executeInMainThreadCallback?.Invoke(HeadActions[message.Head].HeadAction, message);
-            else
-                HeadActions[message.Head].HeadAction?.Invoke(message);
+            ExecuteinMainThread(HeadActions[message.HeadID].HeadAction, message);
             return true;
+        }
+
+        /// <summary>
+        /// Execute a NetSquareAction into main thread.
+        /// This need to register a SetMainThreadCallback call once to work
+        /// </summary>
+        /// <param name="action">Callback action to invoke in main thread</param>
+        /// <param name="message">Message to give to the callback action</param>
+        public void ExecuteinMainThread(NetSquareAction action, NetworkMessage message)
+        {
+            if (executeInMainThreadCallback != null)
+                executeInMainThreadCallback?.Invoke(action, message);
+            else
+                action?.Invoke(message);
         }
 
         /// <summary>
