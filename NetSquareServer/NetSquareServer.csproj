@@ -58,11 +58,10 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Server\BlackList.cs" />
     <Compile Include="Server\MessageQueue.cs" />
-    <Compile Include="Server\MessageReceiver.cs" />
-    <Compile Include="Server\MessageSender.cs" />
     <Compile Include="Server\ServerStatistics.cs" />
-    <Compile Include="Server\TcpConnector.cs" />
+    <Compile Include="Server\TcpListener.cs" />
     <Compile Include="Server\TcpListenerEx.cs" />
+    <Compile Include="Server\UdpListener.cs" />
     <Compile Include="Utils\NetSquareConfiguration.cs" />
     <Compile Include="Utils\SocketExtentions.cs" />
     <Compile Include="Utils\Writer.cs" />

@@ -7,7 +7,7 @@ using System.Threading;
 
 namespace NetSquareServer
 {
-    public class TcpConnector
+    public class TcpListener
     {
         public bool Started { get; private set; }
         public int VerifyingClients { get; private set; }
@@ -17,7 +17,7 @@ namespace NetSquareServer
         internal int Port { get; private set; }
         internal TcpListenerEx Listener { get { return _listener; } }
 
-        public TcpConnector(NetSquare_Server _server, IPAddress ipAddress, int port)
+        public TcpListener(NetSquare_Server _server, IPAddress ipAddress, int port)
         {
             Started = true;
             server = _server;
@@ -49,6 +49,14 @@ namespace NetSquareServer
                             ValidateClient(newClient);
                     });
                     t.Start();
+                }
+
+                // Handle Disconnect
+                var ids = server.Clients.Keys;
+                foreach (uint clientID in ids)
+                {
+                    if (!server.Clients[clientID].TcpSocket.Connected)
+                        server.Server_ClientDisconnected(server.Clients[clientID]);
                 }
 
                 Thread.Sleep(1);
@@ -101,7 +109,9 @@ namespace NetSquareServer
                     {
                         Writer.Write("Client awnser good handshake key. Accept it.", ConsoleColor.Green);
 
-                        uint clientID = server.AddClient(new ConnectedClient() { Socket = client });
+                        ConnectedClient cClient = new ConnectedClient();
+                        cClient.SetClient(client);
+                        uint clientID = server.AddClient(cClient);
 
                         // client disconnect
                         if (!client.IsConnected())
@@ -113,7 +123,6 @@ namespace NetSquareServer
                         client.Send(BitConverter.GetBytes(clientID), 0, 4, SocketFlags.None);
 
                         VerifyingClients--;
-                        server.MessageReceiverManager.AddClient(server.GetClient(clientID));
                         server.Server_ClientConnected(server.GetClient(clientID), clientID);
                     }
                     // no awnser, awnser error, disconnected or timeout

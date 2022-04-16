@@ -21,7 +21,6 @@ namespace Server_Test
             config.BlackListFilePath = @"[current]\blackList.bl";
             config.LockConsole = false;
             config.Port = 5050;
-            config.NbReceivingThreads = 4;
             config.NbSendingThreads = 4;
             config.NbQueueThreads = 4;
             config.SynchronizingFrequency = 10;
@@ -41,8 +40,8 @@ namespace Server_Test
 
             // Start Server
             //Writer.StartRecordingLog();
-            server.Start(allowLocalIP: false);
-            Writer.StopDisplayLog();
+            server.Start(allowLocalIP: true);
+            //Writer.StopDisplayLog();
             Writer.StartDisplayTitle();
         }
 

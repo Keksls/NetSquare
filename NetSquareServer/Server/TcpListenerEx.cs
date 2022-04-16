@@ -7,7 +7,7 @@ namespace NetSquareServer
 	/// Wrapper around TcpListener that exposes the Active property
 	/// See: http://stackoverflow.com/questions/7630094/is-there-a-property-method-for-determining-if-a-tcplistener-is-currently-listeni
 	/// </summary>
-	public class TcpListenerEx : TcpListener
+	public class TcpListenerEx : System.Net.Sockets.TcpListener
 	{
 		/// <summary>
 		/// Initializes a new instance of the <see cref="T:System.Net.Sockets.TcpListener"/> class with the specified local endpoint.

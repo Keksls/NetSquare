@@ -101,7 +101,7 @@ namespace NetSquareClient
                 return;
             // set TypeID as 2, because 2 is the sync ID
             message.SetType(MessageType.SynchronizeMessageCurrentWorld);
-            client.SendMessage(message);
+            client.SendMessageUDP(message);
         }
 
         internal void Fire_OnSyncronize(NetworkMessage message)

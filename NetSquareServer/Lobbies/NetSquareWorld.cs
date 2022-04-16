@@ -61,5 +61,23 @@ namespace NetSquareServer.Lobbies
         {
             server.SendToClients(message, new HashSet<uint>(Clients));
         }
+
+        /// <summary>
+        /// Send message to anyone in this world
+        /// </summary>
+        /// <param name="message">message to send</param>
+        public void Broadcast(byte[] message)
+        {
+            server.SendToClients(message, new HashSet<uint>(Clients));
+        }
+
+        /// <summary>
+        /// Send message to anyone in this world
+        /// </summary>
+        /// <param name="message">message to send</param>
+        public void BroadcastUDP(NetworkMessage message)
+        {
+            server.SendToClientsUDP(message, new HashSet<uint>(Clients));
+        }
     }
 }

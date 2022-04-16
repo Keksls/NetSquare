@@ -129,12 +129,35 @@ namespace NetSquare.Core
             ReadHead();
         }
 
-        public void SetData(byte[] data)
+        public void SetHead(byte[] data, int offset, int size)
         {
-            data = ProtocoleManager.Decompress(data);
-            data = ProtocoleManager.Decrypt(data);
-            Data = data;
+            Header = new byte[12];
+            Buffer.BlockCopy(data, offset, Header, 0, size);
+            ReadHead();
+        }
+
+        public void SetData(byte[] data, bool FromSerializedMessage = true)
+        {
+            if (FromSerializedMessage)
+            {
+                data = ProtocoleManager.Decompress(data);
+                data = ProtocoleManager.Decrypt(data);
+                Data = data;
+            }
+            else
+            {
+                Data = data;
+                Data = ProtocoleManager.Encrypt(Data);
+                Data = ProtocoleManager.Compress(Data);
+            }
             RestartRead();
+        }
+
+        public void SetData(byte[] datagram, int offset, bool FromSerializedMessage = true)
+        {
+            byte[] data = new byte[datagram.Length - offset];
+            Buffer.BlockCopy(datagram, offset, data, 0, data.Length);
+            SetData(data, FromSerializedMessage);
         }
 
         internal void ReadHead()
@@ -149,11 +172,11 @@ namespace NetSquare.Core
         /// Get message header with following : size, clientID, HeadID, TypeID
         /// </summary>
         /// <returns></returns>
-        internal byte[] GetHead()
+        public byte[] GetHead(int headOffset = 12)
         {
             Header = new byte[12];
             // write message Size
-            Buffer.BlockCopy(BitConverter.GetBytes((ushort)(Data.Length + 12)), 0, Header, 0, 2);
+            Buffer.BlockCopy(BitConverter.GetBytes((ushort)(Data.Length + headOffset)), 0, Header, 0, 2);
             // write Client ID
             Buffer.BlockCopy(BitConverter.GetBytes(ClientID), 0, Header, 2, 4);
             // write Head Action
@@ -161,6 +184,27 @@ namespace NetSquare.Core
             // write Client ID
             Buffer.BlockCopy(BitConverter.GetBytes(TypeID), 0, Header, 8, 4);
             return Header;
+        }
+        #endregion
+
+        #region Datagram
+        public bool SafeSetDatagram(byte[] data)
+        {
+            try
+            {
+                // check if at least we got full head
+                if (data.Length < 12)
+                    return false;
+                // set head
+                SetHead(data, 0, 12);
+                // check if lenght == to datagram lenght
+                if (Length != data.Length)
+                    return false;
+                // set data from datagram
+                SetData(data, 12);
+                return true;
+            }
+            catch { return false; }
         }
         #endregion
 
@@ -406,7 +450,7 @@ namespace NetSquare.Core
                 currentReadingIndex += size;
                 return Messages.NetSquareMessageSerialization.Serializer.Deserialize<T>(stream);
             }
-           // return JsonConvert.DeserializeObject<T>(GetString());
+            // return JsonConvert.DeserializeObject<T>(GetString());
         }
         #endregion
 

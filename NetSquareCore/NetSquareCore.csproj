@@ -93,6 +93,7 @@
     <Compile Include="Encryption\Rijndael_Encryptor.cs" />
     <Compile Include="Encryption\SimplePasswordedCipher_Encryptor.cs" />
     <Compile Include="Encryption\XOR_Encryptor.cs" />
+    <Compile Include="eProtocoleType.cs" />
     <Compile Include="HandShake.cs" />
     <Compile Include="Messages\eMessagesType.cs" />
     <Compile Include="Messages\NetSquareMessageTypes.cs" />

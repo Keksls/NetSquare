@@ -25,10 +25,6 @@ namespace NetSquareServer
         /// </summary>
         public int NbQueueThreads { get; set; }
         /// <summary>
-        /// Number of threads for TcpListners message reception
-        /// </summary>
-        public int NbReceivingThreads { get; set; }
-        /// <summary>
         /// Receiving buffer max size
         /// </summary>
         public int ReceivingBufferSize { get; set; }
@@ -44,7 +40,6 @@ namespace NetSquareServer
         public NetSquareConfiguration()
         {
             Port = 5555;
-            NbReceivingThreads = 1;
             NbSendingThreads = 1;
             NbQueueThreads = 1;
             ReceivingBufferSize = 1024;
@@ -127,15 +122,6 @@ namespace NetSquareServer
         public static void SetNbQueueThreads(int NbThreads)
         {
             Configuration.NbQueueThreads = NbThreads;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// Number of threads for TcpListners message reception
-        /// </summary>
-        public static void SetNbReceivingThreads(int NbThreads)
-        {
-            Configuration.NbReceivingThreads = NbThreads;
             SaveConfiguration(Configuration);
         }
 

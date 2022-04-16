@@ -55,6 +55,9 @@ namespace NetSquareServer.Server
                                 Writer.Write("NullQueuedMessageException on queue " + QueueID, ConsoleColor.Red);
                                 continue;
                             }
+
+                            if (currentMessage.Client == null || !currentMessage.Client.TcpSocket.Connected)
+                                continue;
                             
                             // BroadcastMessage
                             if (currentMessage.TypeID == 1)

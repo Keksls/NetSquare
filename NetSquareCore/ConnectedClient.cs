@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Sockets;
 
 namespace NetSquare.Core
@@ -7,82 +8,111 @@ namespace NetSquare.Core
     public class ConnectedClient
     {
         public uint ID { get; set; }
-        public Socket Socket { get; set; }
-        public int NbMessagesToSend { get { return sendingQueue.Count; } }
+        public Socket TcpSocket { get; private set; }
+        public IPEndPoint EndPoint { get; private set; }
+        public int NbMessagesToSend { get { return SendingQueue.Count; } }
+        public int NbMessagesSended { get; private set; }
+        public long NbMessagesReceived { get; private set; }
         public event Action<NetworkMessage> OnMessageReceived;
-        private ConcurrentQueue<byte[]> sendingQueue;
-        private byte[] receivingMessageBuffer;
-        private byte[] currentSendingMessage;
-        private NetworkMessage receivingMessage;
-        private bool isReceivingMessage = false;
+        private ConcurrentQueue<byte[]> SendingQueue;
+        private byte[] receivingTCPMessageBuffer;
+        private byte[] currentSendingTCPMessage;
+        private NetworkMessage receivingTCPMessage;
         private bool isSendingMessage = false;
 
         public ConnectedClient()
         {
-            sendingQueue = new ConcurrentQueue<byte[]>();
+            SendingQueue = new ConcurrentQueue<byte[]>();
         }
 
-        public void AddMessage(NetworkMessage msg)
+        public void AddTCPMessage(NetworkMessage msg)
         {
-            sendingQueue.Enqueue(msg.Serialize());
+            AddTCPMessage(msg.Serialize());
         }
 
-        public void AddMessage(byte[] msg)
+        public void AddTCPMessage(byte[] msg)
         {
-            sendingQueue.Enqueue(msg);
+            if (isSendingMessage || SendingQueue.Count > 0)
+                SendingQueue.Enqueue(msg);
+            else
+                sendMessage(msg);
         }
 
-        public bool ProcessSendingQueue()
+        public void SetClient(Socket tcpClient)
         {
-            if (isSendingMessage)
-                return false;
+            TcpSocket = tcpClient;
+            EndPoint = (IPEndPoint)TcpSocket.RemoteEndPoint;
+            NbMessagesSended = 0;
+            StartReceivingMessages();
+        }
 
-            if (sendingQueue.TryDequeue(out currentSendingMessage))
+        #region TCP
+        // ==================================== Send
+        private void sendMessage(byte[] message)
+        {
+            isSendingMessage = true;
+            try
             {
-                isSendingMessage = true;
-                Socket.BeginSend(currentSendingMessage, 0, currentSendingMessage.Length, SocketFlags.None, new AsyncCallback(MessageSended), Socket);
-                return true;
+                TcpSocket.BeginSend(message, 0, message.Length, SocketFlags.None, MessageSended, TcpSocket);
             }
-            return false;
+            // client disconnected
+            catch (SocketException) { }
         }
 
         private void MessageSended(IAsyncResult res)
         {
-            Socket.EndSend(res);
-            isSendingMessage = false;
-        }
-
-        public void ReceiveMessage()
-        {
-            if (isReceivingMessage)
-                return;
-
-            if (Socket.Available > 0)
+            TcpSocket.EndSend(res);
+            NbMessagesSended++;
+            if (SendingQueue.Count > 0)
             {
-                isReceivingMessage = true;
-                receivingMessageBuffer = new byte[12];
-                Socket.BeginReceive(receivingMessageBuffer, 0, 12, SocketFlags.None, new AsyncCallback(MessageLenghtReceived), Socket);
+                while (!SendingQueue.TryDequeue(out currentSendingTCPMessage))
+                    continue;
+                sendMessage(currentSendingTCPMessage);
             }
+            else
+                isSendingMessage = false;
         }
 
-        private void MessageLenghtReceived(IAsyncResult res)
+        // ====================================== Receive
+        private void StartReceivingMessages()
         {
-            Socket.EndReceive(res);
+            receivingTCPMessageBuffer = new byte[12];
+            TcpSocket.BeginReceive(receivingTCPMessageBuffer, 0, 12, SocketFlags.None, MessageHeaderReceived, TcpSocket);
+        }
 
-            receivingMessage = new NetworkMessage();
-            receivingMessage.SetHead(receivingMessageBuffer);
-            receivingMessageBuffer = new byte[receivingMessage.Length - 12];
-            Socket.BeginReceive(receivingMessageBuffer, 0, receivingMessageBuffer.Length, SocketFlags.None, new AsyncCallback(MessageDataReceived), Socket);
+        private void MessageHeaderReceived(IAsyncResult res)
+        {
+            try
+            {
+                TcpSocket.EndReceive(res);
+                receivingTCPMessage = new NetworkMessage();
+                receivingTCPMessage.Client = this;
+                receivingTCPMessage.SetHead(receivingTCPMessageBuffer);
+                receivingTCPMessageBuffer = new byte[receivingTCPMessage.Length - 12];
+                TcpSocket.BeginReceive(receivingTCPMessageBuffer, 0, receivingTCPMessageBuffer.Length, SocketFlags.None, MessageDataReceived, TcpSocket);
+            }
+            catch (SocketException)
+            {
+                // client disconnected
+            }
         }
 
         private void MessageDataReceived(IAsyncResult res)
         {
-            Socket.EndReceive(res);
-            receivingMessage.Client = this;
-            receivingMessage.SetData(receivingMessageBuffer);
-            OnMessageReceived?.Invoke(receivingMessage);
-            receivingMessage = null;
-            isReceivingMessage = false;
+            try
+            {
+                TcpSocket.EndReceive(res);
+                NbMessagesReceived++;
+                receivingTCPMessage.SetData(receivingTCPMessageBuffer);
+                OnMessageReceived?.Invoke(receivingTCPMessage);
+                receivingTCPMessage = null;
+                StartReceivingMessages();
+            }
+            catch (SocketException)
+            {
+                // client disconnected
+            }
         }
+        #endregion
     }
 }

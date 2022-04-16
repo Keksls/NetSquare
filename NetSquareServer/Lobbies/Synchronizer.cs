@@ -19,6 +19,10 @@ namespace NetSquareServer.Lobbies
             Messages = new Dictionary<ushort, Dictionary<uint, NetworkMessage>>();
         }
 
+        /// <summary>
+        /// Start synchronizer
+        /// </summary>
+        /// <param name="frequency">frequency of the synchronization (Hz => times / s)</param>
         public void StartSynchronizing(int frequency)
         {
             if (frequency <= 0)
@@ -32,12 +36,33 @@ namespace NetSquareServer.Lobbies
             syncThread.Start();
         }
 
+        /// <summary>
+        /// Remove every received message for a given clientID (call it on client Disconnect)
+        /// </summary>
+        /// <param name="ClientID">ID of the disconnected client</param>
+        public void RemoveMessagesFromClient(uint ClientID)
+        {
+            lock (Messages)
+            {
+                foreach (var pair in Messages)
+                    if (pair.Value.ContainsKey(ClientID))
+                        pair.Value.Remove(ClientID);
+            }
+        }
+
+        /// <summary>
+        /// Stop synchronization
+        /// </summary>
         public void Stop()
         {
             Synchronizing = false;
             Messages = new Dictionary<ushort, Dictionary<uint, NetworkMessage>>();
         }
 
+        /// <summary>
+        /// Add a message (from a client) to the synchronization queue
+        /// </summary>
+        /// <param name="message">message to sync</param>
         public void AddMessage(NetworkMessage message)
         {
             lock (Messages)
@@ -61,28 +86,45 @@ namespace NetSquareServer.Lobbies
             {
                 foreach (NetSquareWorld lobby in server.Worlds.Worlds.Values)
                 {
-                    Dictionary<ushort, NetworkMessage> packed = PackMessages(lobby);
-                    foreach (NetworkMessage message in packed.Values)
+                    Dictionary<ushort, byte[]> packed = PackMessages(lobby);
+                    foreach (byte[] message in packed.Values)
                         lobby.Broadcast(message);
                 }
                 Thread.Sleep(Frequency);
             }
         }
 
-        private Dictionary<ushort, NetworkMessage> PackMessages(NetSquareWorld lobby)
+        private Dictionary<ushort, byte[]> PackMessages(NetSquareWorld lobby)
         {
-            Dictionary<ushort, NetworkMessage> messages = new Dictionary<ushort, NetworkMessage>();
+            Dictionary<ushort, byte[]> messages = new Dictionary<ushort, byte[]>();
             lock (Messages)
             {
                 foreach (var msgPair in Messages)
                 {
                     NetworkMessage packed = new NetworkMessage(msgPair.Key);
                     packed.SetType(MessageType.SynchronizeMessageCurrentWorld);
-                    // foreach messages by clients, grouped by HeadID
+
+                    // get lenght
+                    int fullLenght = 12;
                     foreach (var msg in msgPair.Value)
-                        packed.Set(packed.ConcatArrays(BitConverter.GetBytes(msg.Key), msg.Value.Data));
+                        fullLenght += msg.Value.Data.Length + 4; // lenght of the message  + clietnID size (uint => 4 bytes)
+
+                    // pack data
+                    byte[] msgData = new byte[fullLenght];
+                    int index = 12;
+                    foreach (var msg in msgPair.Value)
+                    {
+                        Buffer.BlockCopy(BitConverter.GetBytes(msg.Key), 0, msgData, index, 4);
+                        index += 4;
+                        Buffer.BlockCopy(msg.Value.Data, 0, msgData, index, msg.Value.Data.Length);
+                        index += msg.Value.Data.Length;
+                    }
+                    packed.SetData(msgData, false);
+                    // write header
+                    Buffer.BlockCopy(packed.GetHead(0), 0, msgData, 0, 12);
+
                     // add packed message to packed groups
-                    messages.Add(msgPair.Key, packed);
+                    messages.Add(msgPair.Key, msgData);
                 }
                 Messages.Clear();
             }

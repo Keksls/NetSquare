@@ -10,14 +10,15 @@ namespace NetSquareServer.Server
         public int NbClientsConnected;
         public int NbProcessingMessages;
         public int NbMessagesToSend;
-        public int NbSendingThreads;
         public long NbMessagesSended;
+        public long NbMessagesReceived;
 
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
             sb.Append("-Listeners : ").Append(NbListeners)
                 .Append(" - Clients : ").Append(NbClientsConnected)
+                .Append(" - Received : ").Append(NbMessagesReceived)
                 .Append(" - Processing : ").Append(NbProcessingMessages)
                 .Append(" - ToSend : ").Append(NbMessagesToSend)
                 .Append(" - Sended : ").Append(NbMessagesSended);
@@ -60,14 +61,26 @@ namespace NetSquareServer.Server
         {
             while (!stopOrder)
             {
+                int toSend = 0;
+                long sended = 0;
+                long received = 0;
+                foreach (var client in server.Clients)
+                {
+                    toSend += client.Value.NbMessagesToSend;
+                    sended += client.Value.NbMessagesSended;
+                    received += client.Value.NbMessagesReceived;
+                }
+                sended += server.UdpListener.NbMessageSended;
+                received += server.UdpListener.NbMessageReceived;
+
                 CurrentStatistics = new ServerStatistics()
                 {
                     NbClientsConnected = server.Clients.Count,
                     NbListeners = server.Listeners.Count,
-                    NbMessagesSended = server.MessageSenderManager.NbSended,
-                    NbMessagesToSend = server.MessageSenderManager.GetNbMessagesToSend(),
                     NbProcessingMessages = server.MessageQueueManager.NbMessages,
-                    NbSendingThreads = server.MessageSenderManager.NbSenders
+                    NbMessagesToSend = toSend,
+                    NbMessagesSended = sended,
+                    NbMessagesReceived = received
                 };
                 OnGetStatistics?.Invoke(CurrentStatistics);
                 Thread.Sleep(intervalMs);

@@ -18,7 +18,7 @@ namespace Client_Test
 
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
             //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
-            client.Connect("192.168.8.101", 5050);
+            client.Connect("127.0.0.1", 5050);
         }
 
         private void Client_Disconected()
@@ -53,6 +53,9 @@ namespace Client_Test
                             y = 1f;
                             z = ((float)rnd.Next(-1000, 1000)) / 20f;
                             client.WorldsManager.Synchronize(new NetworkMessage(10).Set(x).Set(y).Set(z));
+                            client.WorldsManager.Synchronize(new NetworkMessage(11).Set(x));
+                            client.WorldsManager.Synchronize(new NetworkMessage(12).Set(y));
+                            client.WorldsManager.Synchronize(new NetworkMessage(13).Set(z));
                             Thread.Sleep(10);
                         }
                     });
