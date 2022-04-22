@@ -4,6 +4,7 @@
     {
         Default = 0,
         BroadcastCurrentWorld = 1,
-        SynchronizeMessageCurrentWorld = 2
+        SynchronizeMessageCurrentWorld = 2,
+        SetClientPosition = 3
     }
 }

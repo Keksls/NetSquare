@@ -70,8 +70,8 @@ namespace NetSquareServer.Server
                     sended += client.Value.NbMessagesSended;
                     received += client.Value.NbMessagesReceived;
                 }
-                sended += server.UdpListener.NbMessageSended;
-                received += server.UdpListener.NbMessageReceived;
+                //sended += server.UdpListener.NbMessageSended;
+                //received += server.UdpListener.NbMessageReceived;
 
                 CurrentStatistics = new ServerStatistics()
                 {

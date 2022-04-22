@@ -25,7 +25,7 @@ namespace NetSquareServer
             Port = port;
             _listener = new TcpListenerEx(ipAddress, port);
             _listener.Start();
-            ThreadPool.QueueUserWorkItem((sender) => { NewClientLoop(); });
+            ThreadPool.QueueUserWorkItem((sender) => { HandleConnectionAndDisconnection(); });
         }
 
         public void Stop()
@@ -33,7 +33,7 @@ namespace NetSquareServer
             Started = false;
         }
 
-        private void NewClientLoop()
+        private void HandleConnectionAndDisconnection()
         {
             while (Started)
             {
@@ -55,8 +55,12 @@ namespace NetSquareServer
                 var ids = server.Clients.Keys;
                 foreach (uint clientID in ids)
                 {
-                    if (!server.Clients[clientID].TcpSocket.Connected)
-                        server.Server_ClientDisconnected(server.Clients[clientID]);
+                    try
+                    {
+                        if (!server.Clients[clientID].TcpSocket.Connected)
+                            server.Server_ClientDisconnected(server.Clients[clientID]);
+                    }
+                    catch { }
                 }
 
                 Thread.Sleep(1);
@@ -110,7 +114,7 @@ namespace NetSquareServer
                         Writer.Write("Client awnser good handshake key. Accept it.", ConsoleColor.Green);
 
                         ConnectedClient cClient = new ConnectedClient();
-                        cClient.SetClient(client);
+                        cClient.SetClient(client, false);
                         uint clientID = server.AddClient(cClient);
 
                         // client disconnect
@@ -120,7 +124,7 @@ namespace NetSquareServer
                             VerifyingClients--;
                             return;
                         }
-                        client.Send(BitConverter.GetBytes(clientID), 0, 4, SocketFlags.None);
+                        client.Send(new UInt24(clientID).GetBytes(), 0, 3, SocketFlags.None);
 
                         VerifyingClients--;
                         server.Server_ClientConnected(server.GetClient(clientID), clientID);

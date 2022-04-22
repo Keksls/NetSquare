@@ -51,9 +51,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Lobbies\WorldsManager.cs" />
-    <Compile Include="Lobbies\NetSquareWorld.cs" />
-    <Compile Include="Lobbies\Synchronizer.cs" />
+    <Compile Include="Worlds\SpatialClient.cs" />
+    <Compile Include="Worlds\Spatializer.cs" />
+    <Compile Include="Worlds\WorldsManager.cs" />
+    <Compile Include="Worlds\NetSquareWorld.cs" />
+    <Compile Include="Worlds\Synchronizer.cs" />
     <Compile Include="NetSquare_Server.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Server\BlackList.cs" />
@@ -61,7 +63,6 @@
     <Compile Include="Server\ServerStatistics.cs" />
     <Compile Include="Server\TcpListener.cs" />
     <Compile Include="Server\TcpListenerEx.cs" />
-    <Compile Include="Server\UdpListener.cs" />
     <Compile Include="Utils\NetSquareConfiguration.cs" />
     <Compile Include="Utils\SocketExtentions.cs" />
     <Compile Include="Utils\Writer.cs" />

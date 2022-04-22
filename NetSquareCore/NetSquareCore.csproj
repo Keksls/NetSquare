@@ -98,12 +98,14 @@
     <Compile Include="Messages\eMessagesType.cs" />
     <Compile Include="Messages\NetSquareMessageTypes.cs" />
     <Compile Include="Messages\NetSquareMessageSerialization.cs" />
+    <Compile Include="Messages\UInt24.cs" />
     <Compile Include="NetSquareDispatcher.cs" />
-    <Compile Include="Messages\MessageBlockData.cs" />
     <Compile Include="Messages\NetworkMessage.cs" />
     <Compile Include="NetSquareActionAttribute.cs" />
     <Compile Include="NetSquareHeadAction.cs" />
+    <Compile Include="Position.cs" />
     <Compile Include="ProtocoleManager.cs" />
+    <Compile Include="UDPClient.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />

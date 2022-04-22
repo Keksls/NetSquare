@@ -1,9 +1,10 @@
 ﻿using NetSquare.Core;
-using NetSquareServer.Lobbies;
+using NetSquareServer.Worlds;
 using NetSquareServer.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
+using NetSquare.Core.Messages;
 
 namespace NetSquareServer.Server
 {
@@ -60,9 +61,9 @@ namespace NetSquareServer.Server
                                 continue;
                             
                             // BroadcastMessage
-                            if (currentMessage.TypeID == 1)
+                            if (currentMessage.TypeID.UInt32 == 1)
                                 server.Worlds.BroadcastToWorld(currentMessage);
-                            else if(currentMessage.TypeID == 2)
+                            else if(currentMessage.TypeID.UInt32 == 2 && currentMessage.HeadID != (ushort)NetSquareMessageType.ClientSetPosition)
                                 server.SynchronizeMessage(currentMessage);
                             else if (!server.Dispatcher.DispatchMessage(currentMessage))
                             {

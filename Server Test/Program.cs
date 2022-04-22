@@ -14,6 +14,10 @@ namespace Server_Test
             //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.LZ4Compression);
             //SerializationPerformances sp = new SerializationPerformances();
             //sp.TestPerformances(10000);
+            //sp.TestArrayPerfo(1000000);
+            //Console.ReadKey();
+            //sp.TestContainPerfo();
+            //sp.HashSetContainsPerfo();
             //Console.ReadKey();
 
             // Set configuration
@@ -27,16 +31,18 @@ namespace Server_Test
             NetSquareConfigurationManager.SaveConfiguration(config);
 
             // Instantiate NetSquare Server
-            server = new NetSquare_Server();
+            server = new NetSquare_Server(synchronizeUsingUDP: false);
             server.OnClientConnected += Server_OnClientConnected;
             server.OnClientDisconnected += Server_OnClientDisconnected;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;
-            server.Worlds.AddWorld("Default World", 1024);
+
+            server.Worlds.AddWorld("Default World", 1024, true, 20, 1);
             server.Worlds.OnClientJoinWorld += OnClientJoinWorld;
+            server.Worlds.OnSendWorldClients += OnClientJoinWorld;
 
             // Optionnal, set encryption and compression protocole
-            //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            // ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
+            // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
 
             // Start Server
             //Writer.StartRecordingLog();
@@ -48,8 +54,15 @@ namespace Server_Test
         #region Server Events
         private static void OnClientJoinWorld(ushort lobbyID, uint clientID, NetworkMessage message)
         {
-            // add random color to network message that will be sended on client join lobby
-            message.Set(GetRandomColorArray());
+            try
+            {
+                // add random color to network message that will be sended on client join lobby
+                message.Set(GetRandomColorArray());
+                // set position
+                var pos = server.Worlds.GetWorld(1).Spatializer.Clients[clientID].Position;
+                message.Set(pos.x).Set(pos.y).Set(pos.z);
+            }
+            catch { }
         }
 
         private static void Statistics_OnGetStatistics(ServerStatistics statistics)

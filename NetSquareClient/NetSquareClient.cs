@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -12,7 +11,7 @@ namespace NetSquareClient
     {
         #region Events
         public event Action OnDisconected;
-        public event Action<uint> OnConnected;
+        public event Action<UInt24> OnConnected;
         public event Action OnConnectionFail;
         public event Action<NetworkMessage> OnUnregisteredMessageReceived;
         #endregion
@@ -23,32 +22,28 @@ namespace NetSquareClient
         public ConnectedClient Client { get; private set; }
         public int Port { get; private set; }
         public string IPAdress { get; private set; }
-        public uint ClientID { get { return Client != null ? Client.ID : 0; } }
+        public UInt24 ClientID { get { return Client != null ? Client.ID : new UInt24(0); } }
         public bool IsConnected { get { return Client.TcpSocket.Connected; } }
         public int NbSendingMessages { get { return Client != null ? Client.NbMessagesToSend : 0; } }
         public int NbProcessingMessages { get { return messagesQueue.Count; } }
         public eProtocoleType ProtocoleType;
-        private int nbReplyAsked = 1;
+        private uint nbReplyAsked = 1;
         private bool isStarted { get; set; }
         private ConcurrentQueue<NetworkMessage> messagesQueue = new ConcurrentQueue<NetworkMessage>();
-        private Dictionary<int, NetSquareAction> replyCallBack = new Dictionary<int, NetSquareAction>();
-        private ConcurrentQueue<byte[]> udpSendingQueue = new ConcurrentQueue<byte[]>();
-        private byte[] currentSendingUDPMessage;
-        private NetworkMessage receivingUDPMessage;
-        private bool isSendingMessage = false;
-        private UdpClient UdpClient;
-        private IPEndPoint serverEndPoint;
+        private Dictionary<uint, NetSquareAction> replyCallBack = new Dictionary<uint, NetSquareAction>();
         #endregion
 
         /// <summary>
         /// Instantiate a new NetSquare client
         /// </summary>
-        public NetSquare_Client(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP)
+        public NetSquare_Client(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP, bool synchronizeUsingUDP = true)
         {
+            if (synchronizeUsingUDP)
+                protocoleType = eProtocoleType.TCP_AND_UDP;
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
             Dispatcher.AutoBindHeadActionsFromAttributes();
-            WorldsManager = new WorldsManager(this);
+            WorldsManager = new WorldsManager(this, synchronizeUsingUDP);
         }
 
         #region Connection / Disconnection
@@ -65,7 +60,7 @@ namespace NetSquareClient
                 IPAdress = hostNameOrIpAddress;
                 TcpClient tcpClient = new TcpClient();
                 tcpClient.Connect(hostNameOrIpAddress, port);
-                
+
                 // start routine that will validate server connection
                 Thread runLoopThread = new Thread(() => { ValidateConnection(tcpClient); });
                 runLoopThread.Start();
@@ -114,25 +109,25 @@ namespace NetSquareClient
                     tcpClient.Client.Send(rep, 0, rep.Length, SocketFlags.None);
                     step = 1;
                 }
-                else if (step == 1 && tcpClient.Available >= 4)
+                else if (step == 1 && tcpClient.Available >= 3)
                 {
-                    byte[] array = new byte[4];
-                    tcpClient.Client.Receive(array, 0, 4, SocketFlags.None);
-                    uint clientID = BitConverter.ToUInt32(array, 0);
+                    byte[] array = new byte[3];
+                    tcpClient.Client.Receive(array, 0, 3, SocketFlags.None);
+                    UInt24 clientID = new UInt24(array, 0);
                     // let's reply server same ID as validation
                     Client = new ConnectedClient()
                     {
                         ID = clientID
                     };
-                    Client.SetClient(tcpClient.Client);
-                    // start udp client
-                    if (ProtocoleType == eProtocoleType.TCP_AND_UDP)
-                    {
-                        UdpClient = new UdpClient();
-                        serverEndPoint = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
-                        UdpClient.Connect(IPAdress, Port + 1);
-                        StartReceiveUDPMessage();
-                    }
+                    Client.SetClient(tcpClient.Client, true);
+                    //// start udp client
+                    //if (ProtocoleType == eProtocoleType.TCP_AND_UDP)
+                    //{
+                    //    UdpClient = new UdpClient();
+                    //    serverEndPoint = (IPEndPoint)tcpClient.Client.RemoteEndPoint;
+                    //    UdpClient.Connect(IPAdress, Port + 1);
+                    //    StartReceiveUDPMessage();
+                    //}
                     Client.OnMessageReceived += Client_OnMessageReceived;
                     // start processing message loop
                     Thread processingThread = new Thread(ProcessMessagesLoop);
@@ -169,13 +164,13 @@ namespace NetSquareClient
                     while (messagesQueue.TryDequeue(out message))
                     {
                         // reply message
-                        if (replyCallBack.ContainsKey(message.TypeID))
+                        if (replyCallBack.ContainsKey(message.TypeID.UInt32))
                         {
-                            Dispatcher.ExecuteinMainThread(replyCallBack[message.TypeID], message);
-                            replyCallBack.Remove(message.TypeID);
+                            Dispatcher.ExecuteinMainThread(replyCallBack[message.TypeID.UInt32], message);
+                            replyCallBack.Remove(message.TypeID.UInt32);
                         }
                         // sync message
-                        else if (message.TypeID == 2)
+                        else if (message.TypeID.UInt32 == 2)
                         {
                             Dispatcher.ExecuteinMainThread((msg) =>
                             {
@@ -235,7 +230,7 @@ namespace NetSquareClient
         {
             msg.ReplyTo(nbReplyAsked);
             nbReplyAsked++;
-            replyCallBack.Add(msg.TypeID, callback);
+            replyCallBack.Add(msg.TypeID.UInt32, callback);
             SendMessage(msg);
         }
         #endregion
@@ -248,7 +243,7 @@ namespace NetSquareClient
         public void SendMessageUDP(NetworkMessage msg)
         {
             msg.ClientID = Client.ID;
-            SendOrEnqueueUDPMessage(msg.Serialize());
+            SendOrEnqueueUDPMessage(msg.HeadID, msg.Serialize());
         }
 
         /// <summary>
@@ -259,62 +254,16 @@ namespace NetSquareClient
         {
             NetworkMessage msg = new NetworkMessage(HeadID);
             msg.ClientID = Client.ID;
-            SendOrEnqueueUDPMessage(msg.Serialize());
+            SendOrEnqueueUDPMessage(HeadID, msg.Serialize());
         }
 
         /// <summary>
         /// Send a message to server without waiting for response, sended in UDP, faster but no way to know is server received it
         /// </summary>
         /// <param name="msg">message to send</param>
-        private void SendOrEnqueueUDPMessage(byte[] msg)
+        private void SendOrEnqueueUDPMessage(ushort HeadID, byte[] msg)
         {
-            if (isSendingMessage || udpSendingQueue.Count > 0)
-                udpSendingQueue.Enqueue(msg);
-            else
-                SendUDPMessage(msg);
-        }
-        #endregion
-
-        #region UDP
-        private void SendUDPMessage(byte[] message)
-        {
-            isSendingMessage = true;
-            UdpClient.BeginSend(message, message.Length, UDPMessageSended, UdpClient);
-        }
-
-        private void UDPMessageSended(IAsyncResult res)
-        {
-            UdpClient.EndSend(res);
-
-            if (udpSendingQueue.Count > 0)
-            {
-                while (!udpSendingQueue.TryDequeue(out currentSendingUDPMessage))
-                    continue;
-                SendUDPMessage(currentSendingUDPMessage);
-            }
-            else
-                isSendingMessage = false;
-        }
-        public void StartReceiveUDPMessage()
-        {
-            UdpClient.BeginReceive(UDPMessageDataReceived, UdpClient);
-        }
-
-        private void UDPMessageDataReceived(IAsyncResult res)
-        {
-            try
-            {
-                byte[] datagram = UdpClient.EndReceive(res, ref serverEndPoint);
-                receivingUDPMessage = new NetworkMessage();
-                if (receivingUDPMessage.SafeSetDatagram(datagram))
-                    Client_OnMessageReceived(receivingUDPMessage);
-                receivingUDPMessage = null;
-                StartReceiveUDPMessage();
-            }
-            catch (SocketException)
-            {
-                // client disconnected
-            }
+            Client.AddUDPMessage(HeadID, msg);
         }
         #endregion
     }

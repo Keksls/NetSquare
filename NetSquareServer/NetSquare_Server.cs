@@ -12,7 +12,7 @@ using NetSquareServer.Server;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Linq;
-using NetSquareServer.Lobbies;
+using NetSquareServer.Worlds;
 
 namespace NetSquareServer
 {
@@ -36,7 +36,6 @@ namespace NetSquareServer
         public bool IsStarted { get { return Listeners.Any(l => l.Listener.Active); } }
         public HashSet<string> ServerIPs { get; private set; }
         public List<TcpListener> Listeners = new List<TcpListener>();
-        public UdpListener UdpListener { get; private set; }
         public NetSquareDispatcher Dispatcher;
         public eProtocoleType ProtocoleType { get; private set; }
         internal MessageQueueManager MessageQueueManager;
@@ -46,13 +45,15 @@ namespace NetSquareServer
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
         #endregion
 
-        public NetSquare_Server(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP)
+        public NetSquare_Server(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP, bool synchronizeUsingUDP = true)
         {
+            if (synchronizeUsingUDP)
+                protocoleType = eProtocoleType.TCP_AND_UDP;
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
             Worlds = new WorldsManager(this);
             MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
-            Synchronizer = new Synchronizer(this);
+            Synchronizer = new Synchronizer(this, synchronizeUsingUDP);
             Statistics = new ServerStatisticsManager();
         }
 
@@ -101,16 +102,6 @@ namespace NetSquareServer
                 {
                     Writer.Write("ERROR : Can't Start TCP Server...", ConsoleColor.Red);
                     return;
-                }
-
-                // Start UDP Server
-                if (ProtocoleType == eProtocoleType.TCP_AND_UDP)
-                {
-                    if (!StartUDPServer(port + 1))
-                    {
-                        Writer.Write("ERROR : Can't Start UDP Server...", ConsoleColor.Red);
-                        return;
-                    }
                 }
 
                 Writer.Write_Server("Processing Message Queue...", ConsoleColor.DarkYellow, false);
@@ -203,22 +194,6 @@ namespace NetSquareServer
             }
         }
 
-        private bool StartUDPServer(int port)
-        {
-            Writer.Write_Server("Starting UDP server on port " + port.ToString() + "...", ConsoleColor.DarkYellow);
-            try
-            {
-                UdpListener = new UdpListener(this);
-                UdpListener.Start(port);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Writer.Write_Server("FAIL\n\r" + ex.Message, ConsoleColor.Red);
-                return false;
-            }
-        }
-
         public void Stop()
         {
             Listeners.ForEach(l => l.Stop());
@@ -243,9 +218,16 @@ namespace NetSquareServer
             client?.AddTCPMessage(message);
         }
 
+        public void SendToClient(byte[] message, uint clientID)
+        {
+            if (Clients.ContainsKey(clientID))
+                Clients[clientID]?.AddTCPMessage(message);
+        }
+
         public void SendToClient(NetworkMessage message, uint clientID)
         {
-            Clients[clientID]?.AddTCPMessage(message);
+            if (Clients.ContainsKey(clientID))
+                Clients[clientID]?.AddTCPMessage(message);
         }
 
         public void SendToClients(NetworkMessage message, List<ConnectedClient> clients)
@@ -257,14 +239,27 @@ namespace NetSquareServer
         public void SendToClients(NetworkMessage message, IEnumerable<uint> clients)
         {
             foreach (uint clientID in clients)
-                Clients[clientID]?.AddTCPMessage(message);
+                if (Clients.ContainsKey(clientID))
+                    Clients[clientID]?.AddTCPMessage(message);
         }
 
         public void SendToClients(byte[] message, IEnumerable<uint> clients)
         {
             foreach (uint clientID in clients)
                 if (Clients.ContainsKey(clientID))
-                    Clients[clientID]?.AddTCPMessage(message);
+                        Clients[clientID]?.AddTCPMessage(message);
+        }
+
+        public void Broadcast(NetworkMessage message)
+        {
+            foreach (var pair in Clients)
+                if (Clients.ContainsKey(pair.Key))
+                    Clients[pair.Key]?.AddTCPMessage(message);
+        }
+
+        public void SynchronizeMessage(NetworkMessage message)
+        {
+            Synchronizer.AddMessage(message);
         }
 
         public void SendToClientsUDP(NetworkMessage message, IEnumerable<uint> clients)
@@ -274,31 +269,45 @@ namespace NetSquareServer
                     SendToClientUDP(message, Clients[clientID]);
         }
 
-        public void Broadcast(NetworkMessage message)
-        {
-            foreach (var pair in Clients)
-                Clients[pair.Key]?.AddTCPMessage(message);
-        }
-
-        public void SynchronizeMessage(NetworkMessage message)
-        {
-            Synchronizer.AddMessage(message);
-        }
-
         public void SendToClientUDP(NetworkMessage message, ConnectedClient client)
         {
             message.Client = client;
-            UdpListener.SendMessage(message);
+            client.AddUDPMessage(message);
+        }
+
+        public void SendToClientUDP(ushort headID, byte[] message, uint clientID)
+        {
+            if (Clients.ContainsKey(clientID))
+                GetClient(clientID).AddUDPMessage(headID, message);
+        }
+
+        public void SendToClientUDP(NetworkMessage message, uint clientID)
+        {
+            message.Client = GetClient(clientID);
+            if (message.Client != null)
+                message.Client.AddUDPMessage(message);
+        }
+
+        public void SendToClientsUDP(ushort headID, byte[] message, IEnumerable<uint> clients)
+        {
+            foreach (uint clientID in clients)
+                if (Clients.ContainsKey(clientID))
+                    SendToClientUDP(headID, message, Clients[clientID]);
+        }
+
+        public void SendToClientUDP(ushort headID, byte[] message, ConnectedClient client)
+        {
+            client.AddUDPMessage(headID, message);
         }
         #endregion
 
         #region ServerEvent
         public void Server_ClientDisconnected(ConnectedClient client)
         {
-            OnClientDisconnected?.Invoke(client.ID);
+            OnClientDisconnected?.Invoke(client.ID.UInt32);
             // supprime des clients connectés
             ConnectedClient c = null;
-            while (!Clients.TryRemove(client.ID, out c))
+            while (!Clients.TryRemove(client.ID.UInt32, out c))
                 Thread.Sleep(1);
             Synchronizer.RemoveMessagesFromClient(client.ID);
             client.OnMessageReceived -= MessageReceive;
@@ -332,11 +341,11 @@ namespace NetSquareServer
 
         public uint AddClient(ConnectedClient client)
         {
-            uint id = ClientIDCounter++;
+            UInt24 id = new UInt24(ClientIDCounter++);
             client.ID = id;
-            while (!Clients.TryAdd(client.ID, client))
+            while (!Clients.TryAdd(client.ID.UInt32, client))
                 Thread.Sleep(1);
-            return id;
+            return id.UInt32;
         }
 
         public int GetNbVerifyingClients()

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Reflection;
 
 namespace Server_Test
 {
@@ -98,6 +99,141 @@ namespace Server_Test
             }
             Console.WriteLine("Full " + nbMessages + " messages : " + sw.ElapsedMilliseconds + " ms");
             Console.WriteLine("Serialized size : " + messagesArray[1].Data.Length);
+        }
+
+        public unsafe void TestArrayPerfo(int nbtests)
+        {
+            FieldInfo field = typeof(List<byte[]>).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance);
+            List<byte[]> blocks = new List<byte[]>();
+            List<byte> bytes = new List<byte>();
+            byte[] finalDirect = new byte[0];
+            byte[] blocksToAdd = System.Text.Encoding.UTF8.GetBytes("this is a byte array manipulation performances test");
+            Stopwatch sw = new Stopwatch();
+
+            // test blocks
+            sw.Start();
+            for (int i = 0; i < nbtests; i++)
+                blocks.Add(blocksToAdd);
+            byte[] final1 = new byte[blocks.Count * blocksToAdd.Length];
+            for (int i = 0; i < nbtests; i++)
+                Buffer.BlockCopy(blocks[i], 0, final1, i * blocksToAdd.Length, blocksToAdd.Length);
+            sw.Stop();
+            Console.WriteLine("List of bytes v1 duration : " + sw.ElapsedMilliseconds + " ms");
+
+            blocks = new List<byte[]>();
+            // test blocks
+            sw.Reset();
+            sw.Start();
+            for (int i = 0; i < nbtests; i++)
+                blocks.Add(blocksToAdd);
+            byte[][] jagged = field.GetValue(blocks) as byte[][];
+            byte[] final_2 = new byte[blocks.Count * blocksToAdd.Length];
+            for (int i = 0; i < nbtests; i++)
+                Buffer.BlockCopy(jagged[i], 0, final_2, i * blocksToAdd.Length, blocksToAdd.Length);
+
+            //fixed(byte* tmpPtr = tmp[0])
+            //{
+            //    fixed (byte* tmpPtr2 = final1_2)
+            //        Buffer.MemoryCopy(tmpPtr, tmpPtr2, final1_2.Length, final1_2.Length);
+            //        //tmpPtr2 = tmpPtr;
+            //}
+            sw.Stop();
+            Console.WriteLine("List of bytes v2 duration : " + sw.ElapsedMilliseconds + " ms");
+
+            // test Bytes
+            sw.Reset();
+            sw.Start();
+            for (int i = 0; i < nbtests; i++)
+                bytes.AddRange(blocksToAdd);
+            byte[] final2 = bytes.ToArray();
+            sw.Stop();
+            Console.WriteLine("List of byte duration : " + sw.ElapsedMilliseconds + " ms");
+
+            // test Bytes
+            sw.Reset();
+            sw.Start();
+            for (int i = 0; i < nbtests; i++)
+                for (int j = 0; j < blocksToAdd.Length; j++)
+                    bytes.Add(blocksToAdd[j]);
+            byte[] final2_2 = bytes.ToArray();
+            sw.Stop();
+            Console.WriteLine("List of byte v2 duration : " + sw.ElapsedMilliseconds + " ms");
+
+            // test Bytes
+            sw.Reset();
+            sw.Start();
+            finalDirect = new byte[0];
+            for (int i = 0; i < nbtests; i++)
+            {
+                Array.Resize<byte>(ref finalDirect, finalDirect.Length + blocksToAdd.Length);
+                Buffer.BlockCopy(blocksToAdd, 0, finalDirect, i * blocksToAdd.Length, blocksToAdd.Length);
+            }
+            sw.Stop();
+            Console.WriteLine("Resize array duration : " + sw.ElapsedMilliseconds + " ms");
+
+        }
+
+        public void TestContainPerfo()
+        {
+            HashSet<int> intSet = new HashSet<int>();
+            HashSet<uint> uintSet = new HashSet<uint>();
+            HashSet<string> stringSet = new HashSet<string>();
+            for (int i = 0; i < 1000000; i++)
+            {
+                intSet.Add(i);
+                uintSet.Add((uint)i);
+                stringSet.Add(i.ToString());
+            }
+            Stopwatch sw = new Stopwatch();
+
+            sw.Start();
+            for (int i = 0; i < 1000000; i++)
+                intSet.Contains(i);
+            sw.Stop();
+            Console.WriteLine("int : " + sw.ElapsedMilliseconds);
+            sw.Reset();
+            sw.Start();
+
+            for (uint i = 0; i < 1000000; i++)
+                uintSet.Contains(i);
+            sw.Stop();
+            Console.WriteLine("uint : " + sw.ElapsedMilliseconds);
+            sw.Reset();
+            sw.Start();
+
+            for (int i = 0; i < 1000000; i++)
+                stringSet.Contains("1");
+            sw.Stop();
+            Console.WriteLine("string : " + sw.ElapsedMilliseconds);
+            sw.Reset();
+        }
+
+        public void HashSetContainsPerfo()
+        {
+            HashSet<int> intSet = new HashSet<int>();
+            for (int i = 0; i < 1000000; i++)
+                if (intSet.Add(i)) { }
+
+            Stopwatch sw = new Stopwatch();
+
+            sw.Start();
+            for (int i = 0; i < 1000000; i++)
+                intSet.Contains(i);
+            sw.Stop();
+            Console.WriteLine("int : " + sw.ElapsedMilliseconds);
+            sw.Reset();
+            sw.Start();
+
+
+            sw.Start();
+            for (int i = 0; i < 1000000; i++)
+            {
+                intSet.Add(i);
+            }
+            sw.Stop();
+            Console.WriteLine("int : " + sw.ElapsedMilliseconds);
+            sw.Reset();
+            sw.Start();
         }
     }
 

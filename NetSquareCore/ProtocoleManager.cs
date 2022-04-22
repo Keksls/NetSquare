@@ -11,6 +11,7 @@ namespace NetSquare.Core
         private static Compressor compressor;
         private static eEncryption encryptorType;
         private static Encryptor encryptor;
+        public static bool NoCompressorOrEncryptor { get { return compressorType == eCompression.NoCompression && encryptorType == eEncryption.NoEncryption; } }
 
         static ProtocoleManager()
         {
