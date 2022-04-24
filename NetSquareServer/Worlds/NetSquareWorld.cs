@@ -15,6 +15,7 @@ namespace NetSquareServer.Worlds
         public bool UseSpatializer { get; private set; }
         public float SpatializerMaxDistance { get; private set; }
         public Spatializer Spatializer { get; private set; }
+        public Synchronizer Synchronizer { get; private set; }
         internal NetSquare_Server server;
 
         /// <summary>
@@ -23,7 +24,7 @@ namespace NetSquareServer.Worlds
         /// <param name="id">ID of the world (must be unique)</param>
         /// <param name="name">Name of the World</param>
         /// <param name="maxClients">Number max oc clients in this world</param>
-        public NetSquareWorld(NetSquare_Server _server, ushort id, string name = "", ushort maxClients = 128, bool useSpatializer = false, float spatializerMaxDistance = 100f, int spatializerFrequency = 2)
+        public NetSquareWorld(NetSquare_Server _server, ushort id, string name = "", ushort maxClients = 128)
         {
             if (string.IsNullOrEmpty(name))
                 name = "World " + id;
@@ -31,8 +32,28 @@ namespace NetSquareServer.Worlds
             MaxClientsInWorld = maxClients;
             Clients = new HashSet<uint>();
             server = _server;
-            if (useSpatializer)
-                StartUsingSpatializer(spatializerMaxDistance, spatializerFrequency);
+        }
+
+        /// <summary>
+        /// Start synchronizer
+        /// </summary>
+        /// <param name="frequency">frequency of the synchronization (Hz => times / s)</param>
+        public void StartUsingSynchronizer(int frequency = -1, bool synchronizeUsingUdp = false)
+        {
+            if (frequency <= 0)
+                frequency = NetSquareConfigurationManager.Configuration.SynchronizingFrequency;
+            if(frequency > 60)
+                frequency = 60;
+            Synchronizer = new Synchronizer(server, this, synchronizeUsingUdp);
+            Synchronizer.StartSynchronizing(frequency);
+        }
+
+        /// <summary>
+        /// Stop synchronization for this world
+        /// </summary>
+        public void StopUsingSynchronizer()
+        {
+            Synchronizer.Stop();
         }
 
         /// <summary>
@@ -93,7 +114,6 @@ namespace NetSquareServer.Worlds
         {
             if (Clients.Remove(clientID))
             {
-
                 Spatializer?.RemoveClient(clientID);
                 return true;
             }

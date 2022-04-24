@@ -21,8 +21,8 @@ namespace Client_Test
             client.OnDisconected += Client_Disconected;
             //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
 
-            // ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
+            ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
             client.Connect("127.0.0.1", 5050);
         }
 
@@ -79,9 +79,9 @@ namespace Client_Test
 
         int nbStep = 100;
         int index = -1;
-        Position startPos;
+        Position startPos = Position.zero;
         Position targetPos;
-        Position currentPos;
+        Position currentPos = Position.zero;
         private void GetNextTargetPoint()
         {
             index++;
@@ -89,11 +89,13 @@ namespace Client_Test
                 index = 0;
             if (index == 0)
             {
-                startPos.Set(currentPos);
                 x = ((float)rnd.Next(-1000, 1000)) / 20f;
                 y = 1f;
                 z = ((float)rnd.Next(-1000, 1000)) / 20f;
                 targetPos = new Position(x, y, z);
+                if (currentPos.Equals(Position.zero))
+                    currentPos.Set(targetPos);
+                startPos.Set(currentPos);
             }
 
             currentPos = Position.Lerp(startPos, targetPos, (float)index / (float)nbStep);

@@ -1,10 +1,8 @@
 ﻿using NetSquare.Core;
-using NetSquare.Core.Messages;
 using NetSquareCore;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 
 namespace NetSquareServer.Worlds
@@ -53,7 +51,12 @@ namespace NetSquareServer.Worlds
         {
             SpatialClient client;
             while (!Clients.TryRemove(clientID, out client))
-                continue;
+            {
+                if (!Clients.ContainsKey(clientID))
+                    return;
+                else
+                    continue;
+            }
         }
 
         /// <summary>

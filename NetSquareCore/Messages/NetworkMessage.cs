@@ -66,6 +66,16 @@ namespace NetSquare.Core
         {
             TypeID = new UInt24((uint)type);
         }
+
+        /// <summary>
+        /// Set this message as a synchronization message
+        /// </summary>
+        /// <returns>itself</returns>
+        public NetworkMessage SetAsSynchronizationMessage()
+        {
+            SetType(MessageType.SynchronizeMessageCurrentWorld);
+            return this;
+        }
         #endregion
 
         #region Constructors
@@ -694,13 +704,14 @@ namespace NetSquare.Core
             return Data;
         }
 
-        public NetworkMessage Pack(List<NetworkMessage> messages)
+        public NetworkMessage Pack(IEnumerable<NetworkMessage> messages, bool alreadySerialized = false)
         {
             Packed = true;
             int lenght = 10;
             foreach (NetworkMessage message in messages)
             {
-                message.Serialize(true);
+                if (!alreadySerialized)
+                    message.Serialize(true);
                 lenght += message.Data.Length - 4; // blockSize (3 bits) + clientID (3 bits)  - headSize (10 bits)
             }
 

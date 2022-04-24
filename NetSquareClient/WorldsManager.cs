@@ -30,6 +30,7 @@ namespace NetSquareClient
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsJoinWorld, "ClientJoinCurrentWorld", ClientsJoinCurrentWorld);
         }
 
+        #region Public Network Methods
         /// <summary>
         /// Try to Join a world. Can fail if worldID don't exists or client already in world.
         /// if success, OnJoinWorld will be invoked, else OnFailJoinWorld will be invoked
@@ -138,7 +139,6 @@ namespace NetSquareClient
         {
             if (!IsInWorld)
                 return;
-            // set TypeID as 3, because 3 is the set position
             NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetPosition, client.ClientID)
                 .Set(x).Set(y).Set(z);
             message.SetType(MessageType.SynchronizeMessageCurrentWorld);
@@ -147,7 +147,9 @@ namespace NetSquareClient
             else
                 client.SendMessage(message);
         }
+        #endregion
 
+        #region Private Utils
         internal void Fire_OnSyncronize(NetworkMessage message)
         {
             OnSynchronize?.Invoke(message);
@@ -190,8 +192,10 @@ namespace NetSquareClient
         {
             if (OnClientMove == null)
                 return;
-            while (message.CanGetUInt24())
-                OnClientMove(message.GetUInt24(), message.GetFloat(), message.GetFloat(), message.GetFloat());
+            List<NetworkMessage> unpacked = message.Unpack();
+            foreach(var block in unpacked)
+                OnClientMove(block.ClientID, block.GetFloat(), block.GetFloat(), block.GetFloat());
         }
+        #endregion
     }
 }

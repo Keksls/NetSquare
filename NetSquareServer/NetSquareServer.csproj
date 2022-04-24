@@ -53,6 +53,7 @@
   <ItemGroup>
     <Compile Include="Worlds\SpatialClient.cs" />
     <Compile Include="Worlds\Spatializer.cs" />
+    <Compile Include="Worlds\SynchronizedMessage.cs" />
     <Compile Include="Worlds\WorldsManager.cs" />
     <Compile Include="Worlds\NetSquareWorld.cs" />
     <Compile Include="Worlds\Synchronizer.cs" />

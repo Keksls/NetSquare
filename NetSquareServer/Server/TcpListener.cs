@@ -60,7 +60,9 @@ namespace NetSquareServer
                         if (!server.Clients[clientID].TcpSocket.Connected)
                             server.Server_ClientDisconnected(server.Clients[clientID]);
                     }
-                    catch { }
+                    catch(Exception ex) {
+                        Writer.Write(ex.ToString(), ConsoleColor.Red);
+                    }
                 }
 
                 Thread.Sleep(1);

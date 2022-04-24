@@ -64,7 +64,7 @@ namespace NetSquareServer.Server
                             if (currentMessage.TypeID.UInt32 == 1)
                                 server.Worlds.BroadcastToWorld(currentMessage);
                             else if(currentMessage.TypeID.UInt32 == 2 && currentMessage.HeadID != (ushort)NetSquareMessageType.ClientSetPosition)
-                                server.SynchronizeMessage(currentMessage);
+                                server.Worlds.ReceiveSyncronizationMessage(currentMessage);
                             else if (!server.Dispatcher.DispatchMessage(currentMessage))
                             {
                                 Writer.Write("Trying to Process message with head '" + currentMessage.HeadID.ToString() + "' but no action related... Message skipped.", ConsoleColor.DarkMagenta);

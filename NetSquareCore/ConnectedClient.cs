@@ -26,11 +26,19 @@ namespace NetSquare.Core
             receivingTCPMessageBuffer = new byte[11];
         }
 
+        /// <summary>
+        /// enqueue a TCP message to send
+        /// </summary>
+        /// <param name="msg">message to send</param>
         public void AddTCPMessage(NetworkMessage msg)
         {
             AddTCPMessage(msg.Serialize());
         }
 
+        /// <summary>
+        /// enqueue a TCP message to send
+        /// </summary>
+        /// <param name="msg">message to send</param>
         public void AddTCPMessage(byte[] msg)
         {
             if (isSendingTCPMessage)
@@ -39,21 +47,39 @@ namespace NetSquare.Core
                 sendMessage(msg);
         }
 
+        /// <summary>
+        /// enqueue an UDP message to send
+        /// </summary>
+        /// <param name="msg">message to send</param>
         public void AddUDPMessage(NetworkMessage msg)
         {
             UDP.SendMessage(msg);
         }
 
+        /// <summary>
+        /// enqueue an UDP message to send
+        /// </summary>
+        /// <param name="headID">headID of the message to send</param>
+        /// <param name="msg">message to send</param>
         public void AddUDPMessage(ushort headID, byte[] msg)
         {
             UDP.SendMessage(headID, msg);
         }
 
+        /// <summary>
+        /// event fiered when a message juste received
+        /// </summary>
+        /// <param name="message">message received</param>
         internal void Fire_OnMessageReceived(NetworkMessage message)
         {
             OnMessageReceived?.Invoke(message);
         }
 
+        /// <summary>
+        /// set tcp client and start UDP if necessary (used by NetSquare, don't use it yourself)
+        /// </summary>
+        /// <param name="tcpClient">TCP client</param>
+        /// <param name="isClient">if true, invoked by netsquareClient, else by netSquare setver</param>
         public void SetClient(Socket tcpClient, bool isClient)
         {
             TcpSocket = tcpClient;
@@ -76,7 +102,7 @@ namespace NetSquare.Core
                 TcpSocket.BeginSend(message, 0, message.Length, SocketFlags.None, MessageSended, TcpSocket);
             }
             // client disconnected
-            catch (SocketException) { }
+            catch (Exception) { }
         }
 
         private void MessageSended(IAsyncResult res)
@@ -123,7 +149,7 @@ namespace NetSquare.Core
                     receivingTCPMessageBuffer[1] = (byte)(ushort)nsgSize;
                     TcpSocket.BeginReceive(receivingTCPMessageBuffer, 2, receivingTCPMessageBuffer.Length - 2, SocketFlags.None, MessageDataReceived, TcpSocket);
                 }
-                catch (SocketException)
+                catch (Exception)
                 {
                     // client disconnected
                 }

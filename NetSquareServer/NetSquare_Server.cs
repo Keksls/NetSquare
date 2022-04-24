@@ -39,21 +39,18 @@ namespace NetSquareServer
         public NetSquareDispatcher Dispatcher;
         public eProtocoleType ProtocoleType { get; private set; }
         internal MessageQueueManager MessageQueueManager;
-        internal Synchronizer Synchronizer;
         public WorldsManager Worlds;
         public ServerStatisticsManager Statistics;
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
         #endregion
 
-        public NetSquare_Server(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP, bool synchronizeUsingUDP = true)
+        public NetSquare_Server(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP)
         {
-            if (synchronizeUsingUDP)
-                protocoleType = eProtocoleType.TCP_AND_UDP;
+            protocoleType = eProtocoleType.TCP_AND_UDP;
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
             Worlds = new WorldsManager(this);
             MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
-            Synchronizer = new Synchronizer(this, synchronizeUsingUDP);
             Statistics = new ServerStatisticsManager();
         }
 
@@ -106,7 +103,6 @@ namespace NetSquareServer
 
                 Writer.Write_Server("Processing Message Queue...", ConsoleColor.DarkYellow, false);
                 MessageQueueManager.StartQueues();
-                Synchronizer.StartSynchronizing(NetSquareConfigurationManager.Configuration.SynchronizingFrequency);
                 Statistics.StartReceivingStatistics(this, 100);
                 Writer.Write("Started", ConsoleColor.Green);
             }
@@ -247,7 +243,7 @@ namespace NetSquareServer
         {
             foreach (uint clientID in clients)
                 if (Clients.ContainsKey(clientID))
-                        Clients[clientID]?.AddTCPMessage(message);
+                    Clients[clientID]?.AddTCPMessage(message);
         }
 
         public void Broadcast(NetworkMessage message)
@@ -255,11 +251,6 @@ namespace NetSquareServer
             foreach (var pair in Clients)
                 if (Clients.ContainsKey(pair.Key))
                     Clients[pair.Key]?.AddTCPMessage(message);
-        }
-
-        public void SynchronizeMessage(NetworkMessage message)
-        {
-            Synchronizer.AddMessage(message);
         }
 
         public void SendToClientsUDP(NetworkMessage message, IEnumerable<uint> clients)
@@ -304,15 +295,20 @@ namespace NetSquareServer
         #region ServerEvent
         public void Server_ClientDisconnected(ConnectedClient client)
         {
-            OnClientDisconnected?.Invoke(client.ID.UInt32);
+            if (!Clients.ContainsKey(client.ID.UInt32))
+                return;
             // supprime des clients connectés
             ConnectedClient c = null;
             while (!Clients.TryRemove(client.ID.UInt32, out c))
-                Thread.Sleep(1);
-            Synchronizer.RemoveMessagesFromClient(client.ID);
+                continue;
+            // remove client from world
+            Worlds.ClientDisconnected(client.ID);
+            // unregister client event
             client.OnMessageReceived -= MessageReceive;
+            // try clean disconnect if not already
             try { client.TcpSocket.Disconnect(false); } catch { }
-            Writer.Write("Client disconnected Good!", ConsoleColor.Green);
+            OnClientDisconnected?.Invoke(client.ID.UInt32);
+            Writer.Write("Client " + client.ID.UInt32 + " disconnected", ConsoleColor.Green);
         }
 
         public void Server_ClientConnected(ConnectedClient client, uint id)

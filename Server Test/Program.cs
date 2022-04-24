@@ -2,6 +2,7 @@
 using NetSquareServer;
 using NetSquareServer.Server;
 using NetSquareServer.Utils;
+using NetSquareServer.Worlds;
 using System;
 
 namespace Server_Test
@@ -31,18 +32,19 @@ namespace Server_Test
             NetSquareConfigurationManager.SaveConfiguration(config);
 
             // Instantiate NetSquare Server
-            server = new NetSquare_Server(synchronizeUsingUDP: false);
+            server = new NetSquare_Server();
             server.OnClientConnected += Server_OnClientConnected;
-            server.OnClientDisconnected += Server_OnClientDisconnected;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;
 
-            server.Worlds.AddWorld("Default World", 1024, true, 20, 1);
+            NetSquareWorld world = server.Worlds.AddWorld("Default World", 1024);
+            world.StartUsingSynchronizer(10, false);
+            world.StartUsingSpatializer(20f, 1);
             server.Worlds.OnClientJoinWorld += OnClientJoinWorld;
             server.Worlds.OnSendWorldClients += OnClientJoinWorld;
 
             // Optionnal, set encryption and compression protocole
-            // ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+             ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
+             ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
 
             // Start Server
             //Writer.StartRecordingLog();
@@ -70,11 +72,6 @@ namespace Server_Test
             if (!Writer.DisplayTitle)
                 return;
             Writer.Title(statistics.ToString());
-        }
-
-        private static void Server_OnClientDisconnected(uint clientID)
-        {
-            Writer.Write("Client " + clientID + " disconnected");
         }
 
         private static void Server_OnClientConnected(uint clientID)
