@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package >
+  <metadata>
+    <id>NetSquare.Server</id>
+    <version>1.0.0</version>
+    <title>NetSquare.Server</title>
+    <authors>VRDTMStudio</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <iconUrl>file:///C:/Users/Keks/NetSquare/NetSquareServer/NetSquareIcon.png</iconUrl>
+    <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
+    <description>NetSquare as a verry fast and easy to use .NET Tcp/Udp solution for Server/client developpment. Unity compatible</description>
+    <releaseNotes>incrase synchronization and spatialization performances.</releaseNotes>
+    <copyright>Copyright © 2022</copyright>
+    <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
+    <dependencies>
+      <group targetFramework=".NETFramework4.6.1" />
+    </dependencies>
+    <references>
+      <reference file="Wire.dll" />
+      <reference file="System.Runtime.CompilerServices.Unsafe.dll" />
+      <reference file="System.Numerics.Vectors.dll" />
+      <reference file="System.Memory.dll" />
+      <reference file="System.Buffers.dll" />
+      <reference file="Newtonsoft.Json.dll" />
+      <reference file="NetSquareCore.dll" />
+      <reference file="K4os.Compression.LZ4.dll" />
+    </references>
+  </metadata>
+    <files>
+      <file src="bin\Debug\Wire.dll" target="lib\net461"/>
+      <file src="bin\Debug\System.Runtime.CompilerServices.Unsafe.dll" target="lib\net461"/>
+      <file src="bin\Debug\System.Numerics.Vectors.dll" target="lib\net461"/>
+      <file src="bin\Debug\System.Memory.dll" target="lib\net461"/>
+      <file src="bin\Debug\System.Buffers.dll" target="lib\net461"/>
+      <file src="bin\Debug\Newtonsoft.Json.dll" target="lib\net461"/>
+      <file src="bin\Debug\NetSquareCore.dll" target="lib\net461"/>
+      <file src="bin\Debug\K4os.Compression.LZ4.dll" target="lib\net461"/>
+    </files>
+</package>
