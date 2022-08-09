@@ -21,11 +21,10 @@ namespace Client_Test
                     ClientRoutine routine = new ClientRoutine();
                     routine.Start();
                     clients.Add(routine);
-                    Thread.Sleep(10);
+                    Thread.Sleep(1);
                 }
             });
             t.Start();
-
 
             Thread s = new Thread(() =>
             {

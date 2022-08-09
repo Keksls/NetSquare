@@ -8,6 +8,16 @@ namespace Server_Test
 {
     public class SerializationPerformances
     {
+        public void TestCustomObjectSerialization()
+        {
+            NetworkMessage message = new NetworkMessage();
+            message.SetObject<GameClient>(new GameClient());
+            var data = message.Serialize();
+            NetworkMessage msg = new NetworkMessage();
+            msg.SetData(data);
+            GameClient go = msg.GetObject<GameClient>();
+        }
+
         public void TestPerformances(int nbMessages)
         {
             Stopwatch sw = new Stopwatch();
@@ -253,5 +263,21 @@ namespace Server_Test
             Height = float.MaxValue;
             Description = "This is a class that will be user for testing NetSquare NetworkMessage seralization. It will be serialized, sended over network and deserialize for reading";
         }
+    }
+
+    [Serializable]
+    public class GameClient
+    {
+        public int ID { get; set; }
+        public string Account { get; set; }
+        public string Pseudo { get; set; }
+        public string Pass { get; set; }
+        public string Mail { get; set; }
+        public bool isInFight { get; set; }
+        public ushort mapID { get; set; }
+        public int CellX { get; set; }
+        public int CellY { get; set; }
+        public int Level { get; set; }
+        public int XP { get; set; }
     }
 }

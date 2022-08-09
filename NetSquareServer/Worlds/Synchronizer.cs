@@ -45,10 +45,10 @@ namespace NetSquareServer.Worlds
         /// Remove every received message for a given clientID (call it on client Disconnect)
         /// </summary>
         /// <param name="ClientID">ID of the disconnected client</param>
-        public void RemoveMessagesFromClient(UInt24 ClientID)
+        public void RemoveMessagesFromClient(uint ClientID)
         {
             foreach (var pair in Messages)
-                pair.Value.RemoveMessagesFromClient(ClientID.UInt32);
+                pair.Value.RemoveMessagesFromClient(ClientID);
         }
 
         /// <summary>
@@ -81,36 +81,47 @@ namespace NetSquareServer.Worlds
             {
                 syncWatch.Reset();
                 syncWatch.Start();
-                foreach (SynchronizedMessage message in Messages.Values)
+                // we use spatializer, let's send spatialized packed messages
+                if (World.UseSpatializer)
                 {
-                    // we use spatializer, let's send spatialized packed messages
-                    if (World.UseSpatializer)
+                    foreach (SynchronizedMessage message in Messages.Values)
                     {
-                        List<NetworkMessage> packedMessages = message.GetSpatializedPackedMessages(World.Spatializer.Clients.Values);
+                        // get spatialized messages
+                        List<NetworkMessage> packedMessages = new List<NetworkMessage>();
+                        World.Spatializer.ForEach((clientID, visibleIDs) =>
+                        {
+                            NetworkMessage msg = message.GetSpatializedPackedMessage(visibleIDs, clientID);
+                            if (msg != null)
+                                packedMessages.Add(msg);
+                        });
+
                         if (SynchronizeUsingUDP)
                         {
                             foreach (var packed in packedMessages)
-                                packed.Client.AddUDPMessage(packed);
+                                server.SafeGetClient(packed.ClientID)?.AddUDPMessage(packed);
                         }
                         else
                         {
                             foreach (var packed in packedMessages)
-                                packed.Client.AddTCPMessage(packed);
+                                server.SafeGetClient(packed.ClientID)?.AddTCPMessage(packed);
                         }
                     }
-                    else // don't use spatializer
+                }
+                else // don't use spatializer
+                {
+                    foreach (SynchronizedMessage message in Messages.Values)
                     {
                         if (SynchronizeUsingUDP)
                         {
                             NetworkMessage packed = message.GetPackedMessage();
                             foreach (uint clientID in World.Clients)
-                                server.GetClient(clientID).AddUDPMessage(packed);
+                                server.SafeGetClient(clientID)?.AddUDPMessage(packed);
                         }
                         else
                         {
                             NetworkMessage packed = message.GetPackedMessage();
                             foreach (uint clientID in World.Clients)
-                                server.GetClient(clientID).AddTCPMessage(packed);
+                                server.SafeGetClient(clientID)?.AddTCPMessage(packed);
                         }
                     }
                 }

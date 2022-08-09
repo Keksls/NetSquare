@@ -21,8 +21,8 @@ namespace Client_Test
             client.OnDisconected += Client_Disconected;
             //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
 
-            ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
+           // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
             client.Connect("127.0.0.1", 5050);
         }
 
@@ -41,10 +41,9 @@ namespace Client_Test
             Console.WriteLine("Client Connection fail");
         }
 
-        private void Client_Connected(UInt24 ID)
+        private void Client_Connected(uint ID)
         {
             Console.WriteLine("Connected with ID " + ID);
-            Thread.Sleep(10);
             GetNextTargetPoint();
             client.WorldsManager.TryJoinWorld(1, currentPos, (success) =>
             {

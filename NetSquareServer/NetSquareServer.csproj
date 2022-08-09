@@ -39,9 +39,13 @@
       <HintPath>..\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
+    </Reference>
     <Reference Include="System.ComponentModel.DataAnnotations" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Numerics" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -51,8 +55,15 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Worlds\SpatialClient.cs" />
-    <Compile Include="Worlds\Spatializer.cs" />
+    <Compile Include="Utils\Extentions.cs" />
+    <Compile Include="Worlds\Spatialization\Bounds.cs" />
+    <Compile Include="Worlds\Spatialization\ChunkedClient.cs" />
+    <Compile Include="Worlds\Spatialization\ChunkedSpatializer.cs" />
+    <Compile Include="Worlds\Spatialization\SimpleSpatializer.cs" />
+    <Compile Include="Worlds\Spatialization\SpatialChunk.cs" />
+    <Compile Include="Worlds\Spatialization\SpatialClient.cs" />
+    <Compile Include="Worlds\Spatialization\Spatializer.cs" />
+    <Compile Include="Worlds\StaticEntity.cs" />
     <Compile Include="Worlds\SynchronizedMessage.cs" />
     <Compile Include="Worlds\WorldsManager.cs" />
     <Compile Include="Worlds\NetSquareWorld.cs" />
@@ -65,9 +76,9 @@
     <Compile Include="Server\TcpListener.cs" />
     <Compile Include="Server\TcpListenerEx.cs" />
     <Compile Include="Utils\NetSquareConfiguration.cs" />
-    <Compile Include="Utils\SocketExtentions.cs" />
     <Compile Include="Utils\Writer.cs" />
     <None Include="App.config" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NetSquareCore\NetSquareCore.csproj">

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 
 namespace NetSquare.Core
 {
@@ -14,6 +15,27 @@ namespace NetSquare.Core
         public NetSquareDispatcher()
         {
             HeadActions = new Dictionary<ushort, NetSquareHeadAction>();
+        }
+
+        /// <summary>
+        /// Get a list of all registered head actions
+        /// </summary>
+        /// <returns></returns>
+        public List<NetSquareHeadAction> GetRegisteredActionsList()
+        {
+            return HeadActions.Values.ToList();
+        }
+
+        /// <summary>
+        /// Get a nice string list of all registered head actions
+        /// </summary>
+        /// <returns></returns>
+        public string GetRegisteredActionsString()
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach( var pair in HeadActions.OrderBy(a => a.Value.HeadID))
+                sb.AppendLine(" - [" + pair.Key + "] : " + pair.Value.HeadName + " (" + pair.Value.HeadAction.Method.Name + ")");
+            return sb.ToString();
         }
 
         /// <summary>

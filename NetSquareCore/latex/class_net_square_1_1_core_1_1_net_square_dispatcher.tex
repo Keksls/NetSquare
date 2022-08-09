@@ -1,0 +1,210 @@
+\hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher}{}\doxysection{Net\+Square.\+Core.\+Net\+Square\+Dispatcher Class Reference}
+\label{class_net_square_1_1_core_1_1_net_square_dispatcher}\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_a8d7a7cc6aad6116634f24094eb6290cd}{Set\+Main\+Thread\+Callback}} (Action$<$ Net\+Square\+Action, Network\+Message $>$ Main\+Thread\+Callback)
+\begin{DoxyCompactList}\small\item\em Set a callback to invoke Actions on for non thread safe applications \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_a59efddf50d46a92029e3a6f4c0f19d18}{Add\+Head\+Action}} (ushort Head\+ID, string Head\+Name, Net\+Square\+Action Head\+Action)
+\begin{DoxyCompactList}\small\item\em Manualy add a Head Action \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_a094e01612a52eb3fc997a87cea030841}{Add\+Head\+Action}} (Enum Head\+Type, string Head\+Name, Net\+Square\+Action Head\+Action)
+\begin{DoxyCompactList}\small\item\em Manualy add a Head Action \end{DoxyCompactList}\item 
+bool \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_adbe6eebd5a0e3c5ae674a8c340f3b00b}{Remove\+Head\+Action}} (ushort Head\+ID)
+\begin{DoxyCompactList}\small\item\em Manualy remove an action \end{DoxyCompactList}\item 
+bool \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_a946b2b90c2ec486ff62c5248605ca93b}{Has\+Head\+Action}} (ushort Head\+ID)
+\begin{DoxyCompactList}\small\item\em Did the dispatcher has an action related to the given Head ID \end{DoxyCompactList}\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_abceca19aa8e9cd58a7cbf7aaeb5205a0}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_abceca19aa8e9cd58a7cbf7aaeb5205a0}} 
+void {\bfseries Auto\+Bind\+Head\+Actions\+From\+Attributes} ()
+\begin{DoxyCompactList}\small\item\em Bin every Net\+Square\+Actions methods on your project that has Net\+Square\+Action Attribute \end{DoxyCompactList}\item 
+bool \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_acf3737e7bda1b2198f820ccd1d4a41e8}{Dispatch\+Message}} (Network\+Message message)
+\begin{DoxyCompactList}\small\item\em Invoke Head\+Action of the given message according to it Head\+ID \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_a390531690b566b8acdc5bce61f743ec7}{Executein\+Main\+Thread}} (Net\+Square\+Action action, Network\+Message message)
+\begin{DoxyCompactList}\small\item\em Execute a Net\+Square\+Action into main thread. This need to register a Set\+Main\+Thread\+Callback call once to work \end{DoxyCompactList}\item 
+string \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_a5086a4fbb31b43376958032e8f5ee6e4}{Get\+Head\+Name}} (ushort ID)
+\begin{DoxyCompactList}\small\item\em Get the name of an action by Head\+ID \end{DoxyCompactList}\item 
+\mbox{\hyperlink{struct_net_square_1_1_core_1_1_net_square_head_action}{Net\+Square\+Head\+Action}}? \mbox{\hyperlink{class_net_square_1_1_core_1_1_net_square_dispatcher_a9a8d42fa24114ce780ce5337ea66b000}{Get\+Head\+Action}} (ushort ID)
+\begin{DoxyCompactList}\small\item\em Get \mbox{\hyperlink{struct_net_square_1_1_core_1_1_net_square_head_action}{Net\+Square\+Head\+Action}} by Head ID \end{DoxyCompactList}\end{DoxyCompactItemize}
+\doxysubsection*{Properties}
+\begin{DoxyCompactItemize}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a36150003a084cf3113d561fa0b127212}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a36150003a084cf3113d561fa0b127212}} 
+int {\bfseries Count}\hspace{0.3cm}{\ttfamily  \mbox{[}get\mbox{]}}
+\end{DoxyCompactItemize}
+
+
+\doxysubsection{Member Function Documentation}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a094e01612a52eb3fc997a87cea030841}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a094e01612a52eb3fc997a87cea030841}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!AddHeadAction@{AddHeadAction}}
+\index{AddHeadAction@{AddHeadAction}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{AddHeadAction()}{AddHeadAction()}\hspace{0.1cm}{\footnotesize\ttfamily [1/2]}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Add\+Head\+Action (\begin{DoxyParamCaption}\item[{Enum}]{Head\+Type,  }\item[{string}]{Head\+Name,  }\item[{Net\+Square\+Action}]{Head\+Action }\end{DoxyParamCaption})}
+
+
+
+Manualy add a Head Action 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Head\+ID} & ID of the Network\+Message\\
+\hline
+{\em Head\+Name} & Name of the Network message (for debug only, you can let it null)\\
+\hline
+{\em Head\+Type} & Net\+Square\+Action to call on network message received with correspondig Head\+ID\\
+\hline
+\end{DoxyParams}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em Exception} & Already Exist exception\\
+\hline
+\end{DoxyExceptions}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a59efddf50d46a92029e3a6f4c0f19d18}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a59efddf50d46a92029e3a6f4c0f19d18}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!AddHeadAction@{AddHeadAction}}
+\index{AddHeadAction@{AddHeadAction}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{AddHeadAction()}{AddHeadAction()}\hspace{0.1cm}{\footnotesize\ttfamily [2/2]}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Add\+Head\+Action (\begin{DoxyParamCaption}\item[{ushort}]{Head\+ID,  }\item[{string}]{Head\+Name,  }\item[{Net\+Square\+Action}]{Head\+Action }\end{DoxyParamCaption})}
+
+
+
+Manualy add a Head Action 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Head\+ID} & ID of the Network\+Message\\
+\hline
+{\em Head\+Name} & Name of the Network message (for debug only, you can let it null)\\
+\hline
+{\em Head\+Action} & Net\+Square\+Action to call on network message received with correspondig Head\+ID\\
+\hline
+\end{DoxyParams}
+
+\begin{DoxyExceptions}{Exceptions}
+{\em Exception} & Already Exist exception\\
+\hline
+\end{DoxyExceptions}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_acf3737e7bda1b2198f820ccd1d4a41e8}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_acf3737e7bda1b2198f820ccd1d4a41e8}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!DispatchMessage@{DispatchMessage}}
+\index{DispatchMessage@{DispatchMessage}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{DispatchMessage()}{DispatchMessage()}}
+{\footnotesize\ttfamily bool Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Dispatch\+Message (\begin{DoxyParamCaption}\item[{Network\+Message}]{message }\end{DoxyParamCaption})}
+
+
+
+Invoke Head\+Action of the given message according to it Head\+ID 
+
+
+\begin{DoxyParams}{Parameters}
+{\em message} & Network Message to raise\\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+true if success
+\end{DoxyReturn}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a390531690b566b8acdc5bce61f743ec7}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a390531690b566b8acdc5bce61f743ec7}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!ExecuteinMainThread@{ExecuteinMainThread}}
+\index{ExecuteinMainThread@{ExecuteinMainThread}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{ExecuteinMainThread()}{ExecuteinMainThread()}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Executein\+Main\+Thread (\begin{DoxyParamCaption}\item[{Net\+Square\+Action}]{action,  }\item[{Network\+Message}]{message }\end{DoxyParamCaption})}
+
+
+
+Execute a Net\+Square\+Action into main thread. This need to register a Set\+Main\+Thread\+Callback call once to work 
+
+
+\begin{DoxyParams}{Parameters}
+{\em action} & Callback action to invoke in main thread\\
+\hline
+{\em message} & Message to give to the callback action\\
+\hline
+\end{DoxyParams}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a9a8d42fa24114ce780ce5337ea66b000}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a9a8d42fa24114ce780ce5337ea66b000}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!GetHeadAction@{GetHeadAction}}
+\index{GetHeadAction@{GetHeadAction}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{GetHeadAction()}{GetHeadAction()}}
+{\footnotesize\ttfamily \mbox{\hyperlink{struct_net_square_1_1_core_1_1_net_square_head_action}{Net\+Square\+Head\+Action}}? Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Get\+Head\+Action (\begin{DoxyParamCaption}\item[{ushort}]{ID }\end{DoxyParamCaption})}
+
+
+
+Get \mbox{\hyperlink{struct_net_square_1_1_core_1_1_net_square_head_action}{Net\+Square\+Head\+Action}} by Head ID 
+
+
+\begin{DoxyParams}{Parameters}
+{\em ID} & ID of the action (Head\+ID)\\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+null of don\textquotesingle{}t exists
+\end{DoxyReturn}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a5086a4fbb31b43376958032e8f5ee6e4}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a5086a4fbb31b43376958032e8f5ee6e4}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!GetHeadName@{GetHeadName}}
+\index{GetHeadName@{GetHeadName}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{GetHeadName()}{GetHeadName()}}
+{\footnotesize\ttfamily string Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Get\+Head\+Name (\begin{DoxyParamCaption}\item[{ushort}]{ID }\end{DoxyParamCaption})}
+
+
+
+Get the name of an action by Head\+ID 
+
+
+\begin{DoxyParams}{Parameters}
+{\em ID} & ID of the action (Head\+ID)\\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+name of the action
+\end{DoxyReturn}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a946b2b90c2ec486ff62c5248605ca93b}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a946b2b90c2ec486ff62c5248605ca93b}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!HasHeadAction@{HasHeadAction}}
+\index{HasHeadAction@{HasHeadAction}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{HasHeadAction()}{HasHeadAction()}}
+{\footnotesize\ttfamily bool Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Has\+Head\+Action (\begin{DoxyParamCaption}\item[{ushort}]{Head\+ID }\end{DoxyParamCaption})}
+
+
+
+Did the dispatcher has an action related to the given Head ID 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Head\+ID} & Head ID\\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+true if exists
+\end{DoxyReturn}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_adbe6eebd5a0e3c5ae674a8c340f3b00b}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_adbe6eebd5a0e3c5ae674a8c340f3b00b}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!RemoveHeadAction@{RemoveHeadAction}}
+\index{RemoveHeadAction@{RemoveHeadAction}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{RemoveHeadAction()}{RemoveHeadAction()}}
+{\footnotesize\ttfamily bool Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Remove\+Head\+Action (\begin{DoxyParamCaption}\item[{ushort}]{Head\+ID }\end{DoxyParamCaption})}
+
+
+
+Manualy remove an action 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Head\+ID} & ID of the action to remove\\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+true if success
+\end{DoxyReturn}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_net_square_dispatcher_a8d7a7cc6aad6116634f24094eb6290cd}\label{class_net_square_1_1_core_1_1_net_square_dispatcher_a8d7a7cc6aad6116634f24094eb6290cd}} 
+\index{NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}!SetMainThreadCallback@{SetMainThreadCallback}}
+\index{SetMainThreadCallback@{SetMainThreadCallback}!NetSquare.Core.NetSquareDispatcher@{NetSquare.Core.NetSquareDispatcher}}
+\doxysubsubsection{\texorpdfstring{SetMainThreadCallback()}{SetMainThreadCallback()}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Net\+Square\+Dispatcher.\+Set\+Main\+Thread\+Callback (\begin{DoxyParamCaption}\item[{Action$<$ Net\+Square\+Action, Network\+Message $>$}]{Main\+Thread\+Callback }\end{DoxyParamCaption})}
+
+
+
+Set a callback to invoke Actions on for non thread safe applications 
+
+
+\begin{DoxyParams}{Parameters}
+{\em Main\+Thread\+Callback} & Callback that invoke Net\+Square\+Action into main thread\\
+\hline
+\end{DoxyParams}
+
+
+The documentation for this class was generated from the following file\+:\begin{DoxyCompactItemize}
+\item 
+Net\+Square\+Dispatcher.\+cs\end{DoxyCompactItemize}

@@ -61,9 +61,9 @@ namespace NetSquareServer.Server
                                 continue;
                             
                             // BroadcastMessage
-                            if (currentMessage.TypeID.UInt32 == 1)
+                            if (currentMessage.TypeID == 1)
                                 server.Worlds.BroadcastToWorld(currentMessage);
-                            else if(currentMessage.TypeID.UInt32 == 2 && currentMessage.HeadID != (ushort)NetSquareMessageType.ClientSetPosition)
+                            else if(currentMessage.TypeID == 2 && currentMessage.HeadID != (ushort)NetSquareMessageType.ClientSetPosition)
                                 server.Worlds.ReceiveSyncronizationMessage(currentMessage);
                             else if (!server.Dispatcher.DispatchMessage(currentMessage))
                             {
@@ -87,20 +87,19 @@ namespace NetSquareServer.Server
 
     public class MessageQueueManager
     {
-        private MessageQueue[] queues;
+        public MessageQueue[] Queues;
         private NetSquare_Server server;
         public int NbQueues { get; private set; }
         public bool QueuesStarted { get; private set; }
         public int EmptiestQueueID { get; private set; }
-        public int NbMessages { get; private set; }
 
         public MessageQueueManager(NetSquare_Server _server, int nbQueues)
         {
             server = _server;
             NbQueues = nbQueues;
-            queues = new MessageQueue[nbQueues];
+            Queues = new MessageQueue[nbQueues];
             for (int i = 0; i < nbQueues; i++)
-                queues[i] = new MessageQueue(i, server);
+                Queues[i] = new MessageQueue(i, server);
         }
 
         public void StartQueues()
@@ -110,7 +109,7 @@ namespace NetSquareServer.Server
             min = int.MaxValue;
             Thread processEmptiestQueueIDThread = new Thread(ProcessEmptiestQueueID);
             processEmptiestQueueIDThread.Start();
-            foreach (MessageQueue queue in queues)
+            foreach (MessageQueue queue in Queues)
             {
                 queue.ClearQueue();
                 queue.StartQueue();
@@ -120,7 +119,7 @@ namespace NetSquareServer.Server
         public void StopQueues()
         {
             QueuesStarted = false;
-            foreach (MessageQueue queue in queues)
+            foreach (MessageQueue queue in Queues)
             {
                 queue.StopQueue();
                 queue.ClearQueue();
@@ -130,7 +129,7 @@ namespace NetSquareServer.Server
 
         public void MessageReceived(NetworkMessage message)
         {
-            queues[EmptiestQueueID].AddMessage(message);
+            Queues[EmptiestQueueID].AddMessage(message);
         }
 
         int min;
@@ -138,14 +137,12 @@ namespace NetSquareServer.Server
         {
             while (QueuesStarted)
             {
-                NbMessages = 0;
                 min = int.MaxValue;
                 for (int i = 0; i < NbQueues; i++)
                 {
-                    NbMessages += queues[i].NbMessages;
-                    if (queues[i].NbMessages < min)
+                    if (Queues[i].NbMessages < min)
                     {
-                        min = queues[i].NbMessages;
+                        min = Queues[i].NbMessages;
                         EmptiestQueueID = i;
                     }
                 }

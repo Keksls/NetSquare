@@ -1,0 +1,132 @@
+\hypertarget{class_net_square_1_1_core_1_1_connected_client}{}\doxysection{Net\+Square.\+Core.\+Connected\+Client Class Reference}
+\label{class_net_square_1_1_core_1_1_connected_client}\index{NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}}
+\doxysubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client_a2b02e3147d8a40e7aae6ecbe9953c9a7}{Add\+TCPMessage}} (Network\+Message msg)
+\begin{DoxyCompactList}\small\item\em enqueue a TCP message to send \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client_a6d705826f05090e1f5c2869f6095e37e}{Add\+TCPMessage}} (byte\mbox{[}$\,$\mbox{]} msg)
+\begin{DoxyCompactList}\small\item\em enqueue a TCP message to send \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client_aa2ce16c02821d26013c0b78b02da72a3}{Add\+UDPMessage}} (Network\+Message msg)
+\begin{DoxyCompactList}\small\item\em enqueue an UDP message to send \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client_abebb64debfa81486a70e6c838089f131}{Add\+UDPMessage}} (ushort head\+ID, byte\mbox{[}$\,$\mbox{]} msg)
+\begin{DoxyCompactList}\small\item\em enqueue an UDP message to send \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client_a0a1f5d5ad81a8bee5f24820baf53f6b4}{Set\+Client}} (Socket tcp\+Client, bool is\+Client)
+\begin{DoxyCompactList}\small\item\em set tcp client and start UDP if necessary (used by \mbox{\hyperlink{namespace_net_square}{Net\+Square}}, don\textquotesingle{}t use it yourself) \end{DoxyCompactList}\end{DoxyCompactItemize}
+\doxysubsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a3dde33ba42e4246ae052148db6ab7fbb}\label{class_net_square_1_1_core_1_1_connected_client_a3dde33ba42e4246ae052148db6ab7fbb}} 
+\mbox{\hyperlink{class_net_square_1_1_core_1_1_u_d_p_connection}{UDPConnection}} {\bfseries UDP}
+\end{DoxyCompactItemize}
+\doxysubsection*{Properties}
+\begin{DoxyCompactItemize}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a77f91697ce5cbaf0e201cc325f6a0798}\label{class_net_square_1_1_core_1_1_connected_client_a77f91697ce5cbaf0e201cc325f6a0798}} 
+UInt24 {\bfseries ID}\hspace{0.3cm}{\ttfamily  \mbox{[}get, set\mbox{]}}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_aa5fe16faba1ea3bb640bafcfdea1b8a6}\label{class_net_square_1_1_core_1_1_connected_client_aa5fe16faba1ea3bb640bafcfdea1b8a6}} 
+Socket {\bfseries Tcp\+Socket}\hspace{0.3cm}{\ttfamily  \mbox{[}get\mbox{]}}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a45b8da158d0ad5b08a7162743719e310}\label{class_net_square_1_1_core_1_1_connected_client_a45b8da158d0ad5b08a7162743719e310}} 
+int {\bfseries Nb\+Messages\+To\+Send}\hspace{0.3cm}{\ttfamily  \mbox{[}get\mbox{]}}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a4c56aac24f1fab566ff61855428dd50e}\label{class_net_square_1_1_core_1_1_connected_client_a4c56aac24f1fab566ff61855428dd50e}} 
+int {\bfseries Nb\+Messages\+Sended}\hspace{0.3cm}{\ttfamily  \mbox{[}get\mbox{]}}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a8999d42e7fb4fe00ff78e35ff8bba916}\label{class_net_square_1_1_core_1_1_connected_client_a8999d42e7fb4fe00ff78e35ff8bba916}} 
+long {\bfseries Nb\+Messages\+Received}\hspace{0.3cm}{\ttfamily  \mbox{[}get, set\mbox{]}}
+\end{DoxyCompactItemize}
+\doxysubsection*{Events}
+\begin{DoxyCompactItemize}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_aaf9b3adacdbf998afa316321bc4830e8}\label{class_net_square_1_1_core_1_1_connected_client_aaf9b3adacdbf998afa316321bc4830e8}} 
+Action$<$ Network\+Message $>$ {\bfseries On\+Message\+Received}
+\end{DoxyCompactItemize}
+
+
+\doxysubsection{Member Function Documentation}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a6d705826f05090e1f5c2869f6095e37e}\label{class_net_square_1_1_core_1_1_connected_client_a6d705826f05090e1f5c2869f6095e37e}} 
+\index{NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}!AddTCPMessage@{AddTCPMessage}}
+\index{AddTCPMessage@{AddTCPMessage}!NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}}
+\doxysubsubsection{\texorpdfstring{AddTCPMessage()}{AddTCPMessage()}\hspace{0.1cm}{\footnotesize\ttfamily [1/2]}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Connected\+Client.\+Add\+TCPMessage (\begin{DoxyParamCaption}\item[{byte\mbox{[}$\,$\mbox{]}}]{msg }\end{DoxyParamCaption})}
+
+
+
+enqueue a TCP message to send 
+
+
+\begin{DoxyParams}{Parameters}
+{\em msg} & message to send\\
+\hline
+\end{DoxyParams}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a2b02e3147d8a40e7aae6ecbe9953c9a7}\label{class_net_square_1_1_core_1_1_connected_client_a2b02e3147d8a40e7aae6ecbe9953c9a7}} 
+\index{NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}!AddTCPMessage@{AddTCPMessage}}
+\index{AddTCPMessage@{AddTCPMessage}!NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}}
+\doxysubsubsection{\texorpdfstring{AddTCPMessage()}{AddTCPMessage()}\hspace{0.1cm}{\footnotesize\ttfamily [2/2]}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Connected\+Client.\+Add\+TCPMessage (\begin{DoxyParamCaption}\item[{Network\+Message}]{msg }\end{DoxyParamCaption})}
+
+
+
+enqueue a TCP message to send 
+
+
+\begin{DoxyParams}{Parameters}
+{\em msg} & message to send\\
+\hline
+\end{DoxyParams}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_aa2ce16c02821d26013c0b78b02da72a3}\label{class_net_square_1_1_core_1_1_connected_client_aa2ce16c02821d26013c0b78b02da72a3}} 
+\index{NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}!AddUDPMessage@{AddUDPMessage}}
+\index{AddUDPMessage@{AddUDPMessage}!NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}}
+\doxysubsubsection{\texorpdfstring{AddUDPMessage()}{AddUDPMessage()}\hspace{0.1cm}{\footnotesize\ttfamily [1/2]}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Connected\+Client.\+Add\+UDPMessage (\begin{DoxyParamCaption}\item[{Network\+Message}]{msg }\end{DoxyParamCaption})}
+
+
+
+enqueue an UDP message to send 
+
+
+\begin{DoxyParams}{Parameters}
+{\em msg} & message to send\\
+\hline
+\end{DoxyParams}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_abebb64debfa81486a70e6c838089f131}\label{class_net_square_1_1_core_1_1_connected_client_abebb64debfa81486a70e6c838089f131}} 
+\index{NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}!AddUDPMessage@{AddUDPMessage}}
+\index{AddUDPMessage@{AddUDPMessage}!NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}}
+\doxysubsubsection{\texorpdfstring{AddUDPMessage()}{AddUDPMessage()}\hspace{0.1cm}{\footnotesize\ttfamily [2/2]}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Connected\+Client.\+Add\+UDPMessage (\begin{DoxyParamCaption}\item[{ushort}]{head\+ID,  }\item[{byte\mbox{[}$\,$\mbox{]}}]{msg }\end{DoxyParamCaption})}
+
+
+
+enqueue an UDP message to send 
+
+
+\begin{DoxyParams}{Parameters}
+{\em head\+ID} & head\+ID of the message to send\\
+\hline
+{\em msg} & message to send\\
+\hline
+\end{DoxyParams}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_connected_client_a0a1f5d5ad81a8bee5f24820baf53f6b4}\label{class_net_square_1_1_core_1_1_connected_client_a0a1f5d5ad81a8bee5f24820baf53f6b4}} 
+\index{NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}!SetClient@{SetClient}}
+\index{SetClient@{SetClient}!NetSquare.Core.ConnectedClient@{NetSquare.Core.ConnectedClient}}
+\doxysubsubsection{\texorpdfstring{SetClient()}{SetClient()}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+Connected\+Client.\+Set\+Client (\begin{DoxyParamCaption}\item[{Socket}]{tcp\+Client,  }\item[{bool}]{is\+Client }\end{DoxyParamCaption})}
+
+
+
+set tcp client and start UDP if necessary (used by \mbox{\hyperlink{namespace_net_square}{Net\+Square}}, don\textquotesingle{}t use it yourself) 
+
+
+\begin{DoxyParams}{Parameters}
+{\em tcp\+Client} & TCP client\\
+\hline
+{\em is\+Client} & if true, invoked by netsquare\+Client, else by net\+Square setver\\
+\hline
+\end{DoxyParams}
+
+
+The documentation for this class was generated from the following file\+:\begin{DoxyCompactItemize}
+\item 
+Connected\+Client.\+cs\end{DoxyCompactItemize}

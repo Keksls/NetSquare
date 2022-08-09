@@ -8,7 +8,7 @@ namespace NetSquareServer.Worlds
     public class SynchronizedMessage
     {
         public ushort HeadID { get; set; }
-        private ConcurrentDictionary<uint, NetworkMessage> messagesList = new ConcurrentDictionary<uint, NetworkMessage>();
+        private ConcurrentDictionary<uint, NetworkMessage> messagesList = new ConcurrentDictionary<uint, NetworkMessage>(); // clientID => message
 
         public SynchronizedMessage(ushort headID)
         {
@@ -21,11 +21,11 @@ namespace NetSquareServer.Worlds
         /// <param name="message">message to synchronize</param>
         public void AddMessage(NetworkMessage message)
         {
-            if (!messagesList.ContainsKey(message.ClientID.UInt32))
-                while (!messagesList.TryAdd(message.ClientID.UInt32, message))
+            if (!messagesList.ContainsKey(message.ClientID))
+                while (!messagesList.TryAdd(message.ClientID, message))
                     continue;
             else
-                messagesList[message.ClientID.UInt32] = message;
+                messagesList[message.ClientID] = message;
         }
 
         /// <summary>
@@ -61,46 +61,28 @@ namespace NetSquareServer.Worlds
         }
 
         /// <summary>
-        /// get all spatialized packed messages
-        /// </summary>
-        /// <param name="clients">spatializd clients in this world</param>
-        /// <returns>packed messages</returns>
-        public List<NetworkMessage> GetSpatializedPackedMessages(IEnumerable<SpatialClient> clients)
-        {
-            List<NetworkMessage> messages = new List<NetworkMessage>();
-            foreach (SpatialClient client in clients)
-            {
-                NetworkMessage message = GetSpatializedPackedMessage(client);
-                if (message != null)
-                    messages.Add(message);
-            }
-            messagesList.Clear();
-            return messages;
-        }
-
-        /// <summary>
         /// get a spatialized packed message for a client
         /// </summary>
         /// <param name="client">client to get message</param>
         /// <returns>packed message</returns>
-        public NetworkMessage GetSpatializedPackedMessage(SpatialClient client)
+        public NetworkMessage GetSpatializedPackedMessage(IEnumerable<uint> visivleClientsID, uint clientID)
         {
             List<NetworkMessage> messages = new List<NetworkMessage>();
-            foreach (SpatialClient visible in client.Visibles)
+            foreach (uint visibleID in visivleClientsID)
             {
-                if (messagesList.ContainsKey(visible.Client.ID.UInt32))
-                    messages.Add(messagesList[visible.Client.ID.UInt32]);
+                if (messagesList.ContainsKey(visibleID))
+                    messages.Add(messagesList[visibleID]);
             }
             if (messages.Count == 0)
                 return null;
 
             NetworkMessage packed = new NetworkMessage(HeadID);
-            packed.Client = client.Client;
+            //packed.Client = client.Client;
             if (HeadID == (ushort)NetSquareMessageType.ClientSetPosition)
                 packed.SetType(MessageType.Default);
             else
                 packed.SetType(MessageType.SynchronizeMessageCurrentWorld);
-            packed.ClientID = client.Client.ID;
+            packed.ClientID = clientID;
             packed.Pack(messages, true);
             return packed;
         }

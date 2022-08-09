@@ -7,13 +7,15 @@ namespace NetSquareServer.Worlds
 {
     public class NetSquareWorld
     {
+        public event Action<uint, List<StaticEntity>> OnShowStaticEntities;
+        public event Action<uint, List<StaticEntity>> OnHideStaticEntities;
         public event Action<uint> OnClientJoinWorld;
         public ushort ID { get; private set; }
         public HashSet<uint> Clients { get; private set; }
         public ushort MaxClientsInWorld { get; private set; }
         public string Name { get; private set; }
         public bool UseSpatializer { get; private set; }
-        public float SpatializerMaxDistance { get; private set; }
+        public bool UseSynchronizer { get; private set; }
         public Spatializer Spatializer { get; private set; }
         public Synchronizer Synchronizer { get; private set; }
         internal NetSquare_Server server;
@@ -32,20 +34,42 @@ namespace NetSquareServer.Worlds
             MaxClientsInWorld = maxClients;
             Clients = new HashSet<uint>();
             server = _server;
+            Name = name;
         }
 
         /// <summary>
-        /// Start synchronizer
+        /// fire OnShowStaticEntities event
+        /// </summary>
+        /// <param name="clientID">ID of the client</param>
+        /// <param name="entities">entities to show</param>
+        internal void Fire_OnShowStaticEntities(uint clientID, List<StaticEntity> entities)
+        {
+            OnShowStaticEntities?.Invoke(clientID, entities);
+        }
+
+        /// <summary>
+        /// fire OnHideStaticEntities event
+        /// </summary>
+        /// <param name="clientID">ID of the client</param>
+        /// <param name="entities">entities to show</param>
+        internal void Fire_OnHideStaticEntities(uint clientID, List<StaticEntity> entities)
+        {
+            OnHideStaticEntities?.Invoke(clientID, entities);
+        }
+
+        /// <summary>
+        /// Start synchronizer, use it if you send sync messages (such as position / rotation / input / annimation / ...)
         /// </summary>
         /// <param name="frequency">frequency of the synchronization (Hz => times / s)</param>
-        public void StartUsingSynchronizer(int frequency = -1, bool synchronizeUsingUdp = false)
+        public void StartSynchronizer(int frequency = -1, bool synchronizeUsingUdp = false)
         {
             if (frequency <= 0)
                 frequency = NetSquareConfigurationManager.Configuration.SynchronizingFrequency;
-            if(frequency > 60)
+            if (frequency > 60)
                 frequency = 60;
             Synchronizer = new Synchronizer(server, this, synchronizeUsingUdp);
             Synchronizer.StartSynchronizing(frequency);
+            UseSynchronizer = true;
         }
 
         /// <summary>
@@ -54,18 +78,18 @@ namespace NetSquareServer.Worlds
         public void StopUsingSynchronizer()
         {
             Synchronizer.Stop();
+            UseSynchronizer = false;
         }
 
         /// <summary>
         /// synchronization will now use spatialization for better sync performances (use it on large worlds)
         /// </summary>
-        /// <param name="maxDistance">maximum player view distance (Join and Leave events will be sended whene player enter or leave the maxDistance area)</param>
-        public void StartUsingSpatializer(float maxDistance, int frequency)
+        /// <param name="frequency">frequency of loop processing (in Hz)</param>
+        public void StartSpatializer(Spatializer spatializer, float frequency)
         {
-            Spatializer = new Spatializer(this);
-            Spatializer.StartSpatializer(frequency, maxDistance);
+            Spatializer = spatializer;
+            Spatializer.StartSpatializer(frequency);
             UseSpatializer = true;
-            SpatializerMaxDistance = maxDistance;
         }
 
         /// <summary>
@@ -76,7 +100,6 @@ namespace NetSquareServer.Worlds
             Spatializer?.StopSpatializer();
             Spatializer = null;
             UseSpatializer = false;
-            SpatializerMaxDistance = -1f;
         }
 
         /// <summary>
@@ -112,12 +135,23 @@ namespace NetSquareServer.Worlds
         /// <returns>true if success</returns>
         public bool TryLeaveWorld(uint clientID)
         {
+            Spatializer?.RemoveClient(clientID);
             if (Clients.Remove(clientID))
             {
-                Spatializer?.RemoveClient(clientID);
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Add a spatialized static entity to the world. Only if this world use a spatializer
+        /// </summary>
+        /// <param name="type">Type of the entity</param>
+        /// <param name="id">ID of  the entity</param>
+        /// <param name="pos">Position of the entity</param>
+        public void AddStaticEntity(short type, uint id, Position pos)
+        {
+            Spatializer?.AddStaticEntity(type, id, pos);
         }
 
         #region Broadcast
@@ -125,117 +159,74 @@ namespace NetSquareServer.Worlds
         /// Send message to anyone in this world
         /// </summary>
         /// <param name="message">message to send</param>
-        public void Broadcast(NetworkMessage message)
+        /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
+        public void Broadcast(NetworkMessage message, bool useSpatialization = true)
         {
-            server.SendToClients(message, new HashSet<uint>(Clients));
+            if (UseSpatializer && useSpatialization)
+                server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
+            else
+                server.SendToClients(message, new HashSet<uint>(Clients));
         }
 
         /// <summary>
         /// Send message to anyone in this world
         /// </summary>
         /// <param name="message">message to send</param>
-        public void Broadcast(byte[] message)
+        /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
+        public void Broadcast(NetworkMessage message, uint excludedClientID, bool useSpatialization = true)
         {
-            server.SendToClients(message, new HashSet<uint>(Clients));
+            if (UseSpatializer && useSpatialization)
+                server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
+            else
+            {
+                HashSet<uint> clients = new HashSet<uint>(Clients);
+                clients.Remove(excludedClientID);
+                server.SendToClients(message, clients);
+            }
         }
 
         /// <summary>
         /// Send message to anyone in this world
         /// </summary>
         /// <param name="message">message to send</param>
-        public void BroadcastUDP(NetworkMessage message)
+        /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
+        public void Broadcast(NetworkMessage message, IEnumerable<uint> excludedClientIDs, bool useSpatialization = true)
         {
-            server.SendToClientsUDP(message, new HashSet<uint>(Clients));
+            if (UseSpatializer && useSpatialization)
+                server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
+            else
+            {
+                HashSet<uint> clients = new HashSet<uint>(Clients);
+                foreach (uint excludedClientID in excludedClientIDs)
+                    clients.Remove(excludedClientID);
+                server.SendToClients(message, clients);
+            }
         }
 
         /// <summary>
         /// Send message to anyone in this world
         /// </summary>
         /// <param name="message">message to send</param>
-        public void BroadcastUDP(ushort headID, byte[] message)
+        /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
+        public void Broadcast(byte[] message, uint clientID, bool useSpatialization = true)
         {
-            server.SendToClientsUDP(headID, message, new HashSet<uint>(Clients));
-        }
-        /// <summary>
-        /// Send message to visible clients in this world
-        /// </summary>
-        /// <param name="message">message to send</param>
-        public void BroadcastVisible(NetworkMessage message)
-        {
-            server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID.UInt32));
+            if (UseSpatializer && useSpatialization)
+                server.SendToClients(message, Spatializer.GetVisibleClients(clientID));
+            else
+                server.SendToClients(message, new HashSet<uint>(Clients));
         }
 
         /// <summary>
-        /// Send message to visible clients in this world
+        /// Send message to anyone in this world
         /// </summary>
         /// <param name="message">message to send</param>
-        /// <param name="clientID">clientID of the sender</param>
-        public void BroadcastVisible(byte[] message, uint clientID)
+        /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
+        public void BroadcastUDP(NetworkMessage message, bool useSpatialization = true)
         {
-            server.SendToClients(message, Spatializer.GetVisibleClients(clientID));
-        }
-
-        /// <summary>
-        /// Send message to visible clients in this world
-        /// </summary>
-        /// <param name="message">message to send</param>
-        public void BroadcastUDPVisible(NetworkMessage message)
-        {
-            server.SendToClientsUDP(message, Spatializer.GetVisibleClients(message.ClientID.UInt32));
-        }
-
-        /// <summary>
-        /// Send message to visible clients in this world
-        /// </summary>
-        /// <param name="headID">head ID of the message</param>
-        /// <param name="message">message to send</param>
-        /// <param name="clientID">clientID of the sender</param>
-        public void BroadcastUDPVisible(ushort headID, byte[] message, uint clientID)
-        {
-            server.SendToClientsUDP(headID, message, Spatializer.GetVisibleClients(clientID));
-        }
-        #endregion
-
-        #region Send
-        /// <summary>
-        /// Send a message to specific client according to clientID
-        /// </summary>
-        /// <param name="clientID">ID of the client to send message</param>
-        /// <param name="message">message to send</param>
-        public void SendToClient(uint clientID, NetworkMessage message)
-        {
-            server.SendToClient(message, clientID);
-        }
-
-        /// <summary>
-        /// Send a message to specific client according to clientID
-        /// </summary>
-        /// <param name="clientID">ID of the client to send message</param>
-        /// <param name="message">message to send</param>
-        public void SendToClient(uint clientID, byte[] message)
-        {
-            server.SendToClient(message, clientID);
-        }
-
-        /// <summary>
-        /// Send a message to specific client according to clientID
-        /// </summary>
-        /// <param name="clientID">ID of the client to send message</param>
-        /// <param name="message">message to send</param>
-        public void SendToClientUDP(uint clientID, NetworkMessage message)
-        {
-            server.SendToClientUDP(message, clientID);
-        }
-
-        /// <summary>
-        /// Send a message to specific client according to clientID
-        /// </summary>
-        /// <param name="clientID">ID of the client to send message</param>
-        /// <param name="headID">headID of the message</param>
-        /// <param name="message">message to send</param>
-        public void SendToClientUDP(uint clientID, ushort headID, byte[] message)
-        {
-            server.SendToClientUDP(headID, message, clientID);
+            if (UseSpatializer && useSpatialization)
+                server.SendToClientsUDP(message, Spatializer.GetVisibleClients(message.ClientID));
+            else
+                server.SendToClientsUDP(message, new HashSet<uint>(Clients));
         }
         #endregion
     }

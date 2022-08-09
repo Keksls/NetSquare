@@ -2,12 +2,12 @@
 <package >
   <metadata>
     <id>NetSquare.Server</id>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <title>NetSquare.Server</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <license type="expression">MIT</license>
-    <iconUrl>file:///C:/Users/Keks/NetSquare/NetSquareServer/NetSquareIcon.png</iconUrl>
+    <icon>images\NetSquareIcon.png</icon>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
     <description>NetSquare as a verry fast and easy to use .NET Tcp/Udp solution for Server/client developpment. Unity compatible</description>
     <releaseNotes>incrase synchronization and spatialization performances.</releaseNotes>
@@ -24,6 +24,7 @@
       <reference file="System.Buffers.dll" />
       <reference file="Newtonsoft.Json.dll" />
       <reference file="NetSquareCore.dll" />
+      <reference file="NetSquare_Server.dll" />
       <reference file="K4os.Compression.LZ4.dll" />
     </references>
   </metadata>
@@ -35,6 +36,9 @@
       <file src="bin\Debug\System.Buffers.dll" target="lib\net461"/>
       <file src="bin\Debug\Newtonsoft.Json.dll" target="lib\net461"/>
       <file src="bin\Debug\NetSquareCore.dll" target="lib\net461"/>
+      <file src="bin\Debug\NetSquare_Server.dll" target="lib\net461"/>
       <file src="bin\Debug\K4os.Compression.LZ4.dll" target="lib\net461"/>
+      <file src="NetSquareIcon.png" target="images\" />
+
     </files>
 </package>

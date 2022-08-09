@@ -1,0 +1,72 @@
+\hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection}{}\doxysection{Net\+Square.\+Core.\+UDPConnection Class Reference}
+\label{class_net_square_1_1_core_1_1_u_d_p_connection}\index{NetSquare.Core.UDPConnection@{NetSquare.Core.UDPConnection}}
+\doxysubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_u_d_p_connection_aea409f7fdb16775a81f3404756ac3e63}{Create\+Client\+Connection}} (\mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client}{Connected\+Client}} \+\_\+related\+Client, Socket related\+Tcp\+Client)
+\begin{DoxyCompactList}\small\item\em Create new Client Side UDP Connection \end{DoxyCompactList}\item 
+void \mbox{\hyperlink{class_net_square_1_1_core_1_1_u_d_p_connection_a2552f861c480b35e90e2a3b40f049392}{Create\+Server\+Connection}} (\mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client}{Connected\+Client}} \+\_\+related\+Client, Socket related\+Tcp\+Client)
+\begin{DoxyCompactList}\small\item\em Create new Server Side UDP Connection \end{DoxyCompactList}\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_aecdfe7e80296c488b42cbfee25b134e3}\label{class_net_square_1_1_core_1_1_u_d_p_connection_aecdfe7e80296c488b42cbfee25b134e3}} 
+void {\bfseries Send\+Message} (Network\+Message msg)
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_a8adac2c1b22c6db94d6b57cf601f2ff9}\label{class_net_square_1_1_core_1_1_u_d_p_connection_a8adac2c1b22c6db94d6b57cf601f2ff9}} 
+void {\bfseries Send\+Message} (ushort head\+ID, byte\mbox{[}$\,$\mbox{]} msg)
+\end{DoxyCompactItemize}
+\doxysubsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_aedeada7ead8024aa28f82dd9ee294690}\label{class_net_square_1_1_core_1_1_u_d_p_connection_aedeada7ead8024aa28f82dd9ee294690}} 
+Udp\+Client {\bfseries connection}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_a9fb35635917f7e4fc29789cbae415121}\label{class_net_square_1_1_core_1_1_u_d_p_connection_a9fb35635917f7e4fc29789cbae415121}} 
+IPEnd\+Point {\bfseries Remote\+End\+Point}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_abd310abd0cf8cd8628bb40882ea9d038}\label{class_net_square_1_1_core_1_1_u_d_p_connection_abd310abd0cf8cd8628bb40882ea9d038}} 
+int {\bfseries Nb\+Sending\+Messages}
+\item 
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_a270c7844d34d14f632d61800884fdefd}\label{class_net_square_1_1_core_1_1_u_d_p_connection_a270c7844d34d14f632d61800884fdefd}} 
+int {\bfseries Nb\+Messages\+Sended}
+\end{DoxyCompactItemize}
+
+
+\doxysubsection{Member Function Documentation}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_aea409f7fdb16775a81f3404756ac3e63}\label{class_net_square_1_1_core_1_1_u_d_p_connection_aea409f7fdb16775a81f3404756ac3e63}} 
+\index{NetSquare.Core.UDPConnection@{NetSquare.Core.UDPConnection}!CreateClientConnection@{CreateClientConnection}}
+\index{CreateClientConnection@{CreateClientConnection}!NetSquare.Core.UDPConnection@{NetSquare.Core.UDPConnection}}
+\doxysubsubsection{\texorpdfstring{CreateClientConnection()}{CreateClientConnection()}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+UDPConnection.\+Create\+Client\+Connection (\begin{DoxyParamCaption}\item[{\mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client}{Connected\+Client}}}]{\+\_\+related\+Client,  }\item[{Socket}]{related\+Tcp\+Client }\end{DoxyParamCaption})}
+
+
+
+Create new Client Side UDP Connection 
+
+
+\begin{DoxyParams}{Parameters}
+{\em \+\_\+related\+Client} & \mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client}{Connected\+Client}} owner\\
+\hline
+{\em related\+Tcp\+Client} & TCP socket equivalent\\
+\hline
+\end{DoxyParams}
+\mbox{\Hypertarget{class_net_square_1_1_core_1_1_u_d_p_connection_a2552f861c480b35e90e2a3b40f049392}\label{class_net_square_1_1_core_1_1_u_d_p_connection_a2552f861c480b35e90e2a3b40f049392}} 
+\index{NetSquare.Core.UDPConnection@{NetSquare.Core.UDPConnection}!CreateServerConnection@{CreateServerConnection}}
+\index{CreateServerConnection@{CreateServerConnection}!NetSquare.Core.UDPConnection@{NetSquare.Core.UDPConnection}}
+\doxysubsubsection{\texorpdfstring{CreateServerConnection()}{CreateServerConnection()}}
+{\footnotesize\ttfamily void Net\+Square.\+Core.\+UDPConnection.\+Create\+Server\+Connection (\begin{DoxyParamCaption}\item[{\mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client}{Connected\+Client}}}]{\+\_\+related\+Client,  }\item[{Socket}]{related\+Tcp\+Client }\end{DoxyParamCaption})}
+
+
+
+Create new Server Side UDP Connection 
+
+
+\begin{DoxyParams}{Parameters}
+{\em \+\_\+related\+Client} & \mbox{\hyperlink{class_net_square_1_1_core_1_1_connected_client}{Connected\+Client}} owner\\
+\hline
+{\em related\+Tcp\+Client} & TCP socket equivalent\\
+\hline
+\end{DoxyParams}
+
+
+The documentation for this class was generated from the following file\+:\begin{DoxyCompactItemize}
+\item 
+UDPClient.\+cs\end{DoxyCompactItemize}

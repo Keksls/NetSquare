@@ -1,0 +1,7 @@
+var searchData=
+[
+  ['addheadaction_0',['AddHeadAction',['../class_net_square_1_1_core_1_1_net_square_dispatcher.html#a59efddf50d46a92029e3a6f4c0f19d18',1,'NetSquare.Core.NetSquareDispatcher.AddHeadAction(ushort HeadID, string HeadName, NetSquareAction HeadAction)'],['../class_net_square_1_1_core_1_1_net_square_dispatcher.html#a094e01612a52eb3fc997a87cea030841',1,'NetSquare.Core.NetSquareDispatcher.AddHeadAction(Enum HeadType, string HeadName, NetSquareAction HeadAction)']]],
+  ['addtcpmessage_1',['AddTCPMessage',['../class_net_square_1_1_core_1_1_connected_client.html#a2b02e3147d8a40e7aae6ecbe9953c9a7',1,'NetSquare.Core.ConnectedClient.AddTCPMessage(NetworkMessage msg)'],['../class_net_square_1_1_core_1_1_connected_client.html#a6d705826f05090e1f5c2869f6095e37e',1,'NetSquare.Core.ConnectedClient.AddTCPMessage(byte[] msg)']]],
+  ['addudpmessage_2',['AddUDPMessage',['../class_net_square_1_1_core_1_1_connected_client.html#aa2ce16c02821d26013c0b78b02da72a3',1,'NetSquare.Core.ConnectedClient.AddUDPMessage(NetworkMessage msg)'],['../class_net_square_1_1_core_1_1_connected_client.html#abebb64debfa81486a70e6c838089f131',1,'NetSquare.Core.ConnectedClient.AddUDPMessage(ushort headID, byte[] msg)']]],
+  ['autobindheadactionsfromattributes_3',['AutoBindHeadActionsFromAttributes',['../class_net_square_1_1_core_1_1_net_square_dispatcher.html#abceca19aa8e9cd58a7cbf7aaeb5205a0',1,'NetSquare::Core::NetSquareDispatcher']]]
+];

@@ -11,23 +11,21 @@ namespace NetSquareClient
         public bool IsInWorld { get; private set; }
         public ushort CurrentWorldID { get; private set; }
         public event Action<NetworkMessage> OnClientJoinWorld;
-        public event Action<UInt24> OnClientLeaveWorld;
-        public event Action<UInt24, float, float, float> OnClientMove;
+        public event Action<uint> OnClientLeaveWorld;
+        public event Action<uint, float, float, float> OnClientMove;
         public event Action<NetworkMessage> OnSynchronize;
-        public HashSet<UInt24> ClientsInWorld { get; private set; }
         public bool SynchronizeUsingUDP { get; set; }
         private NetSquare_Client client;
 
         public WorldsManager(NetSquare_Client _client, bool synchronizeUsingUDP)
         {
             SynchronizeUsingUDP = synchronizeUsingUDP;
-            ClientsInWorld = new HashSet<UInt24>();
             client = _client;
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientSetPosition, "ClientSetPosition", ClientSetPosition);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsLeaveWorld, "ClientsLeaveCurrentWorld", ClientsLeaveCurrentWorld);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsJoinWorld, "ClientJoinCurrentWorld", ClientsJoinCurrentWorld);
+            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsJoinWorld, "ClientsJoinCurrentWorld", ClientsJoinCurrentWorld);
         }
 
         #region Public Network Methods
@@ -36,8 +34,9 @@ namespace NetSquareClient
         /// if success, OnJoinWorld will be invoked, else OnFailJoinWorld will be invoked
         /// </summary>
         /// <param name="worldID">ID of the world to join</param>
+        /// <param name="position">position of the client in the world to join</param>
         /// <param name="Callback">Callback raised after server try added. if true, join success</param>
-        public void TryJoinWorld(ushort worldID, Position position, Action<bool> Callback)
+        public void TryJoinWorld(ushort worldID, Position? position, Action<bool> Callback)
         {
             if (IsInWorld)
             {
@@ -51,7 +50,11 @@ namespace NetSquareClient
                 {
                     IsInWorld = true;
                     CurrentWorldID = worldID;
-                    SetPosition(position);
+                    if (position.HasValue)
+                        SetPosition(position.Value);
+                    List<NetworkMessage> messages = response.Unpack();
+                    foreach (NetworkMessage message in messages)
+                        OnClientJoinWorld?.Invoke(message);
                     Callback?.Invoke(true);
                 }
                 else
@@ -60,8 +63,18 @@ namespace NetSquareClient
         }
 
         /// <summary>
-        /// Try to leave the current world. Can fail if not in world.
+        /// Try to Join a world. Can fail if worldID don't exists or client already in world.
         /// if success, OnJoinWorld will be invoked, else OnFailJoinWorld will be invoked
+        /// </summary>
+        /// <param name="worldID">ID of the world to join</param>
+        /// <param name="Callback">Callback raised after server try added. if true, join success</param>
+        public void TryJoinWorld(ushort worldID, Action<bool> Callback)
+        {
+            TryJoinWorld(worldID, null, Callback);
+        }
+
+        /// <summary>
+        /// Try to leave the current world. Can fail if not in world.
         /// </summary>
         /// <param name="Callback">Callback raised after server try leave. if true, leave success. can be null</param>
         public void TryleaveWorld(Action<bool> Callback)
@@ -141,7 +154,6 @@ namespace NetSquareClient
                 return;
             NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetPosition, client.ClientID)
                 .Set(x).Set(y).Set(z);
-            message.SetType(MessageType.SynchronizeMessageCurrentWorld);
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
             else
@@ -157,44 +169,44 @@ namespace NetSquareClient
 
         private void ClientJoinCurrentWorld(NetworkMessage message)
         {
-            ClientsInWorld.Add(message.ClientID);
             OnClientJoinWorld?.Invoke(message);
         }
 
         private void ClientLeaveCurrentWorld(NetworkMessage message)
         {
-            UInt24 clientID = message.GetUInt24();
-            ClientsInWorld.Remove(clientID);
-            OnClientLeaveWorld?.Invoke(clientID);
+            OnClientLeaveWorld?.Invoke(message.GetUInt24().UInt32);
         }
 
         private void ClientsLeaveCurrentWorld(NetworkMessage message)
         {
+            if (OnClientLeaveWorld == null)
+                return;
+
             while (message.CanGetUInt24())
-            {
-                UInt24 clientID = message.GetUInt24();
-                ClientsInWorld.Remove(clientID);
-                OnClientLeaveWorld?.Invoke(clientID);
-            }
+                OnClientLeaveWorld(message.GetUInt24().UInt32);
         }
 
         private void ClientsJoinCurrentWorld(NetworkMessage packedMessage)
         {
-            List<NetworkMessage> messages = packedMessage.Unpack();
+            if (OnClientJoinWorld == null)
+                return;
+
+            List<NetworkMessage> messages = packedMessage.UnpackWithoutHead();
             foreach (var message in messages)
-            {
-                if (ClientsInWorld.Add(message.ClientID))
-                    OnClientJoinWorld?.Invoke(message);
-            }
+                OnClientJoinWorld(message);
         }
 
         private void ClientSetPosition(NetworkMessage message)
         {
             if (OnClientMove == null)
                 return;
-            List<NetworkMessage> unpacked = message.Unpack();
-            foreach(var block in unpacked)
-                OnClientMove(block.ClientID, block.GetFloat(), block.GetFloat(), block.GetFloat());
+            if (message.IsBlockMessage())
+                while (message.NextBlock())
+                {
+                    OnClientMove(message.GetUInt24().UInt32, message.GetFloat(), message.GetFloat(), message.GetFloat());
+                }
+            else
+                OnClientMove(message.ClientID, message.GetFloat(), message.GetFloat(), message.GetFloat());
         }
         #endregion
     }

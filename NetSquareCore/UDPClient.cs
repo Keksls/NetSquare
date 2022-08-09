@@ -12,6 +12,8 @@ namespace NetSquare.Core
         public IPEndPoint RemoteEndPoint;
         public int NbSendingMessages;
         public int NbMessagesSended;
+        internal long sendedBytes = 0;
+        internal long receivedBytes = 0;
         private ConcurrentDictionary<ushort, byte[]> UDPSendingQueue;
         private ConnectedClient relatedClient;
         private bool isSendingUDPMessage = false;
@@ -95,6 +97,7 @@ namespace NetSquare.Core
             try
             {
                 byte[] datagram = connection.EndReceive(res, ref RemoteEndPoint);
+                receivedBytes += datagram.Length;
                 // convert datagram into networkMessage, if success, send it to server for processing
                 NetworkMessage message = new NetworkMessage();
                 if (message.SafeSetDatagram(datagram))
@@ -113,6 +116,7 @@ namespace NetSquare.Core
         private void BeginSendMessage(byte[] message)
         {
             isSendingUDPMessage = true;
+            sendedBytes += message.Length;
             if (isServer)
                 connection.BeginSend(message, message.Length, RemoteEndPoint, MessageSended, null);
             else

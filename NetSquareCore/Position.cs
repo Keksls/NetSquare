@@ -15,6 +15,13 @@ namespace NetSquareCore
             z = _z;
         }
 
+        public Position(Position pos)
+        {
+            x = pos.x;
+            y = pos.y;
+            z = pos.z;
+        }
+
         public void Set(float _x, float _y, float _z)
         {
             x = _x;
@@ -27,6 +34,11 @@ namespace NetSquareCore
             x = pos.x;
             y = pos.y;
             z = pos.z;
+        }
+
+        public bool Equals(Position pos)
+        {
+            return x == pos.x && y == pos.y && z == pos.z;
         }
 
         public static Position zero { get { return new Position(); } }

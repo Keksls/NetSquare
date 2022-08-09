@@ -12,13 +12,21 @@ namespace NetSquareServer.Worlds
     {
         public Dictionary<ushort, NetSquareWorld> Worlds = new Dictionary<ushort, NetSquareWorld>(); // worldID => World object
         /// <summary>
-        /// WorldID, ClientID, Message to broadcast
+        /// WorldID, ClientID, Message to broadcast. Send new client data to already conneced clients
         /// </summary>
         public event Action<ushort, uint, NetworkMessage> OnClientJoinWorld;
         /// <summary>
-        /// WorldID, ClientID, Message to broadcast
+        /// WorldID, ClientID, Message to broadcast. Send connected clients to new client
         /// </summary>
         public event Action<ushort, uint, NetworkMessage> OnSendWorldClients;
+        /// <summary>
+        /// WorldID, ClientID, new client Position
+        /// </summary>
+        public event Action<ushort, uint, Position> OnPlayerSetPosition;
+        /// <summary>
+        /// WorldID, ClientID, client Position
+        /// </summary>
+        public event Action<ushort, uint, Position> OnSpatializePlayer;
         private Dictionary<uint, ushort> ClientsWorlds = new Dictionary<uint, ushort>(); // clientID => worldID
         private NetSquare_Server server;
 
@@ -35,6 +43,11 @@ namespace NetSquareServer.Worlds
             OnClientJoinWorld?.Invoke(worldID, clientID, message);
         }
 
+        internal void Fire_OnSpatializePlayer(ushort worldID, uint clientID, Position position)
+        {
+            OnSpatializePlayer?.Invoke(worldID, clientID, position);
+        }
+
         /// <summary>
         /// Add a world
         /// </summary>
@@ -45,6 +58,17 @@ namespace NetSquareServer.Worlds
         {
             ushort id = (Worlds.Count == 0) ? (ushort)0 : Worlds.Keys.Max<ushort>();
             id++;
+            return AddWorld(id, name, nbMaxClients);
+        }
+
+        /// <summary>
+        /// Add a world
+        /// </summary>
+        /// <param name="name">Name of the world to add</param>
+        /// <param name="nbMaxClients">Maximum clients that can join this world</param>
+        /// <returns>ID of the world</returns>
+        public NetSquareWorld AddWorld(ushort id, string name = "", ushort nbMaxClients = 128)
+        {
             NetSquareWorld world = new NetSquareWorld(server, id, name, nbMaxClients);
             Worlds.Add(id, world);
             Writer.Write("World " + id + " added", ConsoleColor.Green);
@@ -67,17 +91,16 @@ namespace NetSquareServer.Worlds
         /// A client just deconnected from server
         /// </summary>
         /// <param name="clientID">ID of disconnected client</param>
-        public void ClientDisconnected(UInt24 clientID)
+        public void ClientDisconnected(uint clientID)
         {
-            if (IsClientInWorld(clientID.UInt32))
+            if (IsInWorld(clientID))
             {
-                NetSquareWorld world = GetWorld(GetClientWorld(clientID.UInt32));
-                world.Synchronizer.RemoveMessagesFromClient(clientID);
-                world.Spatializer.RemoveClient(clientID.UInt32);
-                bool leave = world.TryLeaveWorld(clientID.UInt32);
-                ClientsWorlds.Remove(clientID.UInt32);
+                NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
                 // tell anyone in this world that a client just leave the world
-                world.Broadcast(new NetworkMessage(NetSquareMessageType.ClientLeaveWorld).Set(clientID));
+                world.Broadcast(new NetworkMessage(NetSquareMessageType.ClientLeaveWorld, clientID).Set(clientID));
+                world.Synchronizer?.RemoveMessagesFromClient(clientID);
+                world.TryLeaveWorld(clientID);
+                ClientsWorlds.Remove(clientID);
             }
         }
 
@@ -86,9 +109,19 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">Id of the client to check</param>
         /// <returns>true if in some world</returns>
-        public bool IsClientInWorld(uint clientID)
+        public bool IsInWorld(uint clientID)
         {
             return ClientsWorlds.ContainsKey(clientID);
+        }
+
+        /// <summary>
+        /// Is the client in some world
+        /// </summary>
+        /// <param name="clientID">Id of the client to check</param>
+        /// <returns>true if in some world</returns>
+        public bool IsInWorld(UInt24 clientID)
+        {
+            return IsInWorld(clientID.UInt32);
         }
 
         /// <summary>
@@ -96,9 +129,9 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">ID of the client</param>
         /// <returns>ID of th world, or 0 if none. Check before with 'IsClientinWorld()'</returns>
-        public ushort GetClientWorld(uint clientID)
+        public ushort GetClientWorldID(uint clientID)
         {
-            if (IsClientInWorld(clientID))
+            if (IsInWorld(clientID))
                 return ClientsWorlds[clientID];
             return 0;
         }
@@ -110,8 +143,8 @@ namespace NetSquareServer.Worlds
         /// <param name="message">message received from client</param>
         public void ReceiveSyncronizationMessage(NetworkMessage message)
         {
-            if (ClientsWorlds.ContainsKey(message.ClientID.UInt32))
-                Worlds[ClientsWorlds[message.ClientID.UInt32]].Synchronizer.AddMessage(message);
+            if (ClientsWorlds.ContainsKey(message.ClientID))
+                Worlds[ClientsWorlds[message.ClientID]].Synchronizer?.AddMessage(message);
         }
 
         /// <summary>
@@ -130,33 +163,43 @@ namespace NetSquareServer.Worlds
                 if (world == null)
                     throw new Exception("World " + worldID + " don't exists");
                 // world exit so let's try add client into it
-                bool added = world.TryJoinWorld(message.ClientID.UInt32);
+                bool added = world.TryJoinWorld(message.ClientID);
                 // reply to client the added state
-                server.Reply(message, new NetworkMessage().Set(added));
+                NetworkMessage reply = new NetworkMessage().Set(added);
+                server.PrepareReply(message, reply);
+
                 // add clientID / worldID mapping
                 if (added)
                 {
-                    ClientsWorlds.Remove(message.ClientID.UInt32);
-                    ClientsWorlds.Add(message.ClientID.UInt32, worldID);
+                    ClientsWorlds.Remove(message.ClientID);
+                    ClientsWorlds.Add(message.ClientID, worldID);
                     Writer.Write("Client " + message.ClientID + " join world " + worldID, ConsoleColor.Gray);
 
                     // send already connected clients to new client
                     if (!world.UseSpatializer) // if spatializer is used, it will handle this event, so let's do nothing here
                     {
+                        // send new client to connected clients but the new
                         NetworkMessage joinMessage = new NetworkMessage(NetSquareMessageType.ClientJoinWorld, message.ClientID);
-                        OnClientJoinWorld?.Invoke(worldID, message.ClientID.UInt32, joinMessage);
-                        world.Broadcast(joinMessage);
+                        OnClientJoinWorld?.Invoke(worldID, message.ClientID, joinMessage);
+                        world.Broadcast(joinMessage, message.ClientID, true);
+
+                        // send connected clients to new client but him
                         HashSet<uint> clients = new HashSet<uint>(world.Clients);
+                        List<NetworkMessage> messages = new List<NetworkMessage>();
                         foreach (var clientID in clients)
                         {
-                            if (clientID == message.ClientID.UInt32)
+                            if (clientID == message.ClientID)
                                 continue;
+
                             NetworkMessage connectedClientMessage = new NetworkMessage(NetSquareMessageType.ClientJoinWorld, clientID);
                             OnSendWorldClients?.Invoke(worldID, clientID, connectedClientMessage);
-                            message.Client.AddTCPMessage(connectedClientMessage);
+                            messages.Add(connectedClientMessage);
                         }
+                        reply.Pack(messages);
                     }
                 }
+
+                server.Reply(message, reply);
             }
             catch (Exception ex)
             {
@@ -170,13 +213,29 @@ namespace NetSquareServer.Worlds
         /// broadcast message from client to any client in the same world
         /// </summary>
         /// <param name="message">message we want to broadcast</param>
-        public void BroadcastToWorld(NetworkMessage message)
+        /// <param name="useSpatialization">if this client's world use spatialization, broadcast to anyone visible only</param>
+        public void BroadcastToWorld(NetworkMessage message, bool useSpatialization = true)
         {
-            if (IsClientInWorld(message.ClientID.UInt32))
+            if (IsInWorld(message.ClientID))
             {
-                NetSquareWorld world = GetWorld(GetClientWorld(message.ClientID.UInt32));
+                NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
                 if (world != null)
-                    world.Broadcast(message);
+                    world.Broadcast(message, useSpatialization);
+            }
+        }
+
+        /// <summary>
+        /// broadcast message from client to any client in the same world
+        /// </summary>
+        /// <param name="message">message we want to broadcast</param>
+        /// <param name="useSpatialization">if this client's world use spatialization, broadcast to anyone visible only</param>
+        public void BroadcastToWorld(byte[] message, uint clientID, bool useSpatialization = true)
+        {
+            if (IsInWorld(clientID))
+            {
+                NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
+                if (world != null)
+                    world.Broadcast(message, clientID, useSpatialization);
             }
         }
 
@@ -189,15 +248,15 @@ namespace NetSquareServer.Worlds
             try
             {
                 bool leave = false;
-                if (IsClientInWorld(message.ClientID.UInt32))
+                if (IsInWorld(message.ClientID))
                 {
-                    ushort worldID = GetClientWorld(message.ClientID.UInt32);
+                    ushort worldID = GetClientWorldID(message.ClientID);
                     NetSquareWorld world = GetWorld(worldID);
                     if (world != null)
                     {
                         // world exit so let's try add client into it
-                        leave = world.TryLeaveWorld(message.ClientID.UInt32);
-                        ClientsWorlds.Remove(message.ClientID.UInt32);
+                        leave = world.TryLeaveWorld(message.ClientID);
+                        ClientsWorlds.Remove(message.ClientID);
                         // remove clientID / worldID apping
                         if (leave)
                         {
@@ -226,18 +285,57 @@ namespace NetSquareServer.Worlds
         /// A client just set his possition to the server
         /// </summary>
         /// <param name="message">message that contains 3 floats : x, y and z that represent his 3d position in the current World</param>
-        public void ClientSetPosition(NetworkMessage message)
+        private void ClientSetPosition(NetworkMessage message)
         {
             try
             {
-                if (IsClientInWorld(message.ClientID.UInt32))
+                if (IsInWorld(message.ClientID))
                 {
-                    NetSquareWorld world = GetWorld(GetClientWorld(message.ClientID.UInt32));
+                    NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
                     if (world != null)
                     {
-                        world.SetClientPosition(message.ClientID.UInt32, new Position(message.GetFloat(), message.GetFloat(), message.GetFloat()));
+                        Position pos = new Position(message.GetFloat(), message.GetFloat(), message.GetFloat());
+                        world.SetClientPosition(message.ClientID, pos);
                         message.RestartRead();
-                        ReceiveSyncronizationMessage(message);
+                        if (world.Synchronizer != null)
+                            world.Synchronizer.AddMessage(message);
+                        else
+                            world.Broadcast(message.Data, message.ClientID, true);
+                        OnPlayerSetPosition?.Invoke(ClientsWorlds[message.ClientID], message.ClientID, pos);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Writer.Write("Fail to set client position : \n\r" + ex.Message, ConsoleColor.Red);
+            }
+        }
+
+        /// <summary>
+        /// A client just set his possition to the server. If this world use a synchronizer, the message will be sended throw sync loop, else it will be sended imediatly
+        /// </summary>
+        /// <param name="clientID">id of the client that just move</param>
+        /// <param name="x">x position</param>
+        /// <param name="y">y position</param>
+        /// <param name="z">z position</param>
+        public void ClientSetPosition(uint clientID, float x, float y, float z)
+        {
+            try
+            {
+                if (IsInWorld(clientID))
+                {
+                    NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
+                    if (world != null)
+                    {
+                        Position pos = new Position(x, y, z);
+                        world.SetClientPosition(clientID, pos);
+                        NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetPosition, clientID).Set(x).Set(y).Set(z);
+                        message.Serialize();
+                        if (world.Synchronizer != null)
+                            world.Synchronizer.AddMessage(message);
+                        else
+                            world.Broadcast(message);
+                        OnPlayerSetPosition?.Invoke(ClientsWorlds[clientID], clientID, pos);
                     }
                 }
             }

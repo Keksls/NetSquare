@@ -11,6 +11,13 @@ namespace NetSquare.Core
         public byte b2 { get; internal set; }
         public uint UInt32 { get; private set; }
 
+        public static readonly UInt24 zero = new UInt24(0);
+
+        public static uint GetUInt(byte[] bytes, int offset = 0)
+        {
+            return (uint)(bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16));
+        }
+
         public UInt24(UInt32 value)
         {
             b0 = (byte)((value) & 0xFF);

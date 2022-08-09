@@ -6,24 +6,41 @@ namespace NetSquare.Core
 {
     public class ConnectedClient
     {
-        public UInt24 ID { get; set; }
-        public Socket TcpSocket { get; private set; }
+        // events
+        public event Action<uint> OnDisconected;
+        // statistics
         public int NbMessagesToSend { get { return SendingQueue.Count + UDP.NbSendingMessages; } }
         private int nbMessagesSended;
         public int NbMessagesSended { get { return nbMessagesSended + UDP.NbMessagesSended; } }
+        internal long sendedBytes = 0;
+        internal long receivedBytes = 0;
+        public long SendedBytes { get { return sendedBytes + UDP.sendedBytes; } set { sendedBytes = value; UDP.sendedBytes = value; } }
+        public long ReceivedBytes { get { return receivedBytes + UDP.receivedBytes; } set { receivedBytes = value; UDP.receivedBytes = value; } }
         public long NbMessagesReceived { get; internal set; }
+        // properties
+        public uint ID { get; set; }
+        public Socket TcpSocket { get; private set; }
         public event Action<NetworkMessage> OnMessageReceived;
         private ConcurrentQueue<byte[]> SendingQueue;
-        private byte[] receivingTCPMessageBuffer;
+        private byte[] receivingMessageBuffer;
+        private byte[] receivingLenghtMessageBuffer;
         private byte[] currentSendingTCPMessage;
         private NetworkMessage receivingTCPMessage;
         private bool isSendingTCPMessage = false;
         public UDPConnection UDP;
+        private SocketAsyncEventArgs receivingArgs;
+        private SocketAsyncEventArgs receivingLenghtArgs;
 
         public ConnectedClient()
         {
             SendingQueue = new ConcurrentQueue<byte[]>();
-            receivingTCPMessageBuffer = new byte[11];
+            receivingMessageBuffer = new byte[11];
+            receivingLenghtMessageBuffer = new byte[2];
+        }
+
+        public bool IsConnected()
+        {
+            return !((TcpSocket.Poll(1000, SelectMode.SelectRead) && TcpSocket.Available == 0) || !TcpSocket.Connected);
         }
 
         /// <summary>
@@ -44,7 +61,7 @@ namespace NetSquare.Core
             if (isSendingTCPMessage)
                 SendingQueue.Enqueue(msg);
             else
-                sendMessage(msg);
+                SendMessage(msg);
         }
 
         /// <summary>
@@ -89,92 +106,120 @@ namespace NetSquare.Core
             else
                 UDP.CreateServerConnection(this, tcpClient);
             nbMessagesSended = 0;
-            StartReceivingMessages();
+
+            receivingArgs = new SocketAsyncEventArgs();
+            receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
+            receivingArgs.UserToken = TcpSocket;
+            receivingArgs.Completed += MessageDataReceived;
+
+            receivingLenghtArgs = new SocketAsyncEventArgs();
+            receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
+            receivingArgs.UserToken = TcpSocket;
+            receivingLenghtArgs.Completed += MessageLenghtReceived;
+            receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, 0, 2);
+
+            StartReceivingMessageLenght();
+        }
+
+        private void MessageLenghtReceived(object sender, SocketAsyncEventArgs e)
+        {
+            try
+            {
+                ushort msgLenght = BitConverter.ToUInt16(receivingLenghtMessageBuffer, 0);
+                if (msgLenght < 10)
+                {
+                    // if sync, check if don't receive anything and is socket is disconnected => check if 0 is because if not, don't need to check connection, and check connection is slow
+                    if (receivingLenghtMessageBuffer[0] == 0 && receivingLenghtMessageBuffer[1] == 0 && !IsConnected())
+                        OnDisconected?.Invoke(ID);
+                    else
+                        StartReceivingMessageLenght();
+                    return;
+                }
+
+                // no encryption, keep lenght into message | EDIT : ???
+                receivingMessageBuffer = new byte[msgLenght];
+                receivingMessageBuffer[0] = (byte)msgLenght;
+                receivingMessageBuffer[1] = (byte)(msgLenght >> 8);
+                receivingArgs.SetBuffer(receivingMessageBuffer, 2, msgLenght - 2);
+                TcpSocket.ReceiveAsync(receivingArgs);
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is SocketException))
+                    Console.WriteLine(ex.ToString());
+                // client disconnected
+                OnDisconected?.Invoke(ID);
+            }
+        }
+
+        private void MessageDataReceived(object sender, SocketAsyncEventArgs e)
+        {
+            try
+            {
+                NbMessagesReceived++;
+                receivedBytes += receivingMessageBuffer.Length;
+                receivingTCPMessage = new NetworkMessage();
+                receivingTCPMessage.Client = this;
+                receivingTCPMessage.SetData(receivingMessageBuffer);
+                OnMessageReceived?.Invoke(receivingTCPMessage);
+                receivingTCPMessage = null;
+                StartReceivingMessageLenght();
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is SocketException))
+                    Console.WriteLine(ex.ToString());
+                // client disconnected
+                OnDisconected?.Invoke(ID);
+            }
         }
 
         #region TCP
         // ==================================== Send
-        private void sendMessage(byte[] message)
+        private void SendMessage(byte[] message)
         {
             isSendingTCPMessage = true;
             try
             {
-                TcpSocket.BeginSend(message, 0, message.Length, SocketFlags.None, MessageSended, TcpSocket);
+                sendedBytes += message.Length;
+                TcpSocket.BeginSend(message, 0, message.Length, SocketFlags.None, OnMessageSended, null);
             }
-            // client disconnected
-            catch (Exception) { }
+            catch (Exception ex)
+            {
+                if (!(ex is SocketException))
+                    Console.WriteLine(ex.ToString());
+                // client disconnected
+                OnDisconected?.Invoke(ID);
+            }
         }
 
-        private void MessageSended(IAsyncResult res)
+        private void OnMessageSended(IAsyncResult res)
         {
-            TcpSocket.EndSend(res);
             nbMessagesSended++;
             if (SendingQueue.Count > 0)
             {
                 while (!SendingQueue.TryDequeue(out currentSendingTCPMessage))
                     continue;
-                sendMessage(currentSendingTCPMessage);
+                SendMessage(currentSendingTCPMessage);
             }
             else
                 isSendingTCPMessage = false;
         }
 
         // ====================================== Receive
-        private void StartReceivingMessages()
+        private void StartReceivingMessageLenght()
         {
-            lock (receivingTCPMessageBuffer)
+            try
             {
-                receivingTCPMessageBuffer = new byte[2];
-                TcpSocket.BeginReceive(receivingTCPMessageBuffer, 0, 2, SocketFlags.None, MessageSizeReceived, TcpSocket);
+                receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, 0, 2);
+                if (!TcpSocket.ReceiveAsync(receivingLenghtArgs)) // start receiving message into buffer, check if sync or async
+                    MessageLenghtReceived(this, receivingArgs);
             }
-        }
-
-        private void MessageSizeReceived(IAsyncResult res)
-        {
-            lock (receivingTCPMessageBuffer)
+            catch (Exception ex)
             {
-                try
-                {
-                    TcpSocket.EndReceive(res);
-                    int nsgSize = BitConverter.ToUInt16(receivingTCPMessageBuffer, 0);
-                    if (nsgSize <= 10 && TcpSocket.Connected)
-                    {
-                        StartReceivingMessages();
-                        return;
-                    }
-
-                    // no encryption, keep lenght into message
-                    receivingTCPMessageBuffer = new byte[nsgSize];
-                    receivingTCPMessageBuffer[0] = (byte)((ushort)nsgSize >> 8);
-                    receivingTCPMessageBuffer[1] = (byte)(ushort)nsgSize;
-                    TcpSocket.BeginReceive(receivingTCPMessageBuffer, 2, receivingTCPMessageBuffer.Length - 2, SocketFlags.None, MessageDataReceived, TcpSocket);
-                }
-                catch (Exception)
-                {
-                    // client disconnected
-                }
-            }
-        }
-
-        private void MessageDataReceived(IAsyncResult res)
-        {
-            lock (receivingTCPMessageBuffer)
-            {
-                try
-                {
-                    TcpSocket.EndReceive(res);
-                    NbMessagesReceived++;
-                    receivingTCPMessage = new NetworkMessage();
-                    receivingTCPMessage.Client = this;
-                    receivingTCPMessage.SetData(receivingTCPMessageBuffer);
-                    OnMessageReceived?.Invoke(receivingTCPMessage);
-                    receivingTCPMessage = null;
-                    StartReceivingMessages();
-                }
-                catch (SocketException)
-                {
-                    // client disconnected
-                }
+                if (!(ex is SocketException))
+                    Console.WriteLine(ex.ToString());
+                OnDisconected?.Invoke(ID);
             }
         }
         #endregion

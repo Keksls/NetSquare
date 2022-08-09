@@ -13,8 +13,8 @@ namespace Server_Test
         static void Main(string[] args)
         {
             //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.LZ4Compression);
-            //SerializationPerformances sp = new SerializationPerformances();
-            //sp.TestPerformances(10000);
+            SerializationPerformances sp = new SerializationPerformances();
+            sp.TestCustomObjectSerialization();
             //sp.TestArrayPerfo(1000000);
             //Console.ReadKey();
             //sp.TestContainPerfo();
@@ -34,17 +34,18 @@ namespace Server_Test
             // Instantiate NetSquare Server
             server = new NetSquare_Server();
             server.OnClientConnected += Server_OnClientConnected;
+            server.Statistics.IntervalMs = 500;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;
 
-            NetSquareWorld world = server.Worlds.AddWorld("Default World", 1024);
-            world.StartUsingSynchronizer(10, false);
-            world.StartUsingSpatializer(20f, 1);
+            NetSquareWorld world = server.Worlds.AddWorld("Default World", ushort.MaxValue);
+            //world.StartSynchronizer(10, false);
+            world.StartSpatializer(Spatializer.GetChunkedSpatializer(world, 10f, -100f, -100f, 100f, 100f), 1f);
             server.Worlds.OnClientJoinWorld += OnClientJoinWorld;
             server.Worlds.OnSendWorldClients += OnClientJoinWorld;
 
             // Optionnal, set encryption and compression protocole
-             ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-             ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
+            //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
 
             // Start Server
             //Writer.StartRecordingLog();
@@ -61,7 +62,7 @@ namespace Server_Test
                 // add random color to network message that will be sended on client join lobby
                 message.Set(GetRandomColorArray());
                 // set position
-                var pos = server.Worlds.GetWorld(1).Spatializer.Clients[clientID].Position;
+                var pos = server.Worlds.GetWorld(1).Spatializer.GetClientPosition(clientID);
                 message.Set(pos.x).Set(pos.y).Set(pos.z);
             }
             catch { }

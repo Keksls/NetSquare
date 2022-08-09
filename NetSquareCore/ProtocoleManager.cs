@@ -174,9 +174,6 @@ namespace NetSquare.Core
                 case eCompression.DeflateCompression:
                     compressor = new DeflateCompressor();
                     break;
-                case eCompression.LZ4Compression:
-                    compressor = new LZ4Compressor();
-                    break;
             }
         }
 
