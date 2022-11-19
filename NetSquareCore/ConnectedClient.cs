@@ -40,7 +40,14 @@ namespace NetSquare.Core
 
         public bool IsConnected()
         {
-            return !((TcpSocket.Poll(1000, SelectMode.SelectRead) && TcpSocket.Available == 0) || !TcpSocket.Connected);
+            if (TcpSocket.Poll(0, SelectMode.SelectRead))
+            {
+                byte[] buff = new byte[1];
+                if (TcpSocket.Receive(buff, SocketFlags.Peek) == 0)
+                    return false;
+            }
+            return true;
+            //return !((TcpSocket.Poll(1000, SelectMode.SelectRead) && TcpSocket.Available == 0)/* || !TcpSocket.Connected*/);
         }
 
         /// <summary>

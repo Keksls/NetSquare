@@ -334,7 +334,7 @@ namespace NetSquareServer
             try { client.TcpSocket.Disconnect(false); } catch { }
             OnClientDisconnected?.Invoke(client.ID);
             Writer.Write("Client " + client.ID + " disconnected", ConsoleColor.Green);
-            Writer.Write(Environment.StackTrace, ConsoleColor.Gray);
+            //Writer.Write(Environment.StackTrace, ConsoleColor.Gray);
         }
 
         public void Server_ClientConnected(ConnectedClient client, uint id)

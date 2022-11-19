@@ -663,8 +663,9 @@ namespace NetSquare.Core
 
         public NetworkMessage Set(byte[] val)
         {
+            blocks.Add(BitConverter.GetBytes((ushort)val.Length));
             blocks.Add(val);
-            blocksSize += val.Length;
+            blocksSize += val.Length + 2;
             return this;
         }
 

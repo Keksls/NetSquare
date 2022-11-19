@@ -26,6 +26,14 @@ namespace NetSquare.Core
             UInt32 = (uint)(b0 | (b1 << 8) | (b2 << 16));
         }
 
+        public UInt24(byte _b0, byte _b1, byte _b2)
+        {
+            b0 = _b0;
+            b1 = _b1;
+            b2 = _b2;
+            UInt32 = (uint)(b0 | (b1 << 8) | (b2 << 16));
+        }
+
         public UInt24(byte[] bytes, int offset)
         {
             b0 = bytes[offset];
