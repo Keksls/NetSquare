@@ -52,10 +52,10 @@ namespace NetSquareClient
                     CurrentWorldID = worldID;
                     if (position.HasValue)
                         SetPosition(position.Value);
+                    Callback?.Invoke(true);
                     List<NetworkMessage> messages = response.Unpack();
                     foreach (NetworkMessage message in messages)
                         OnClientJoinWorld?.Invoke(message);
-                    Callback?.Invoke(true);
                 }
                 else
                     Callback?.Invoke(false);

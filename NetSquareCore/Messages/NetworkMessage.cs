@@ -950,6 +950,8 @@ namespace NetSquare.Core
             {
                 // get block size
                 int size = (int)GetUInt24().UInt32;
+                if (size == 0)
+                    break;
                 // create message
                 NetworkMessage message = new NetworkMessage(HeadID, GetUInt24().UInt32);
                 size -= 3;

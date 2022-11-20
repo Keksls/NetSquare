@@ -40,7 +40,7 @@ namespace NetSquareServer.Worlds
 
         internal void Fire_OnSendWorldClients(ushort worldID, uint clientID, NetworkMessage message)
         {
-            OnClientJoinWorld?.Invoke(worldID, clientID, message);
+            OnSendWorldClients?.Invoke(worldID, clientID, message);
         }
 
         internal void Fire_OnSpatializePlayer(ushort worldID, uint clientID, Position position)

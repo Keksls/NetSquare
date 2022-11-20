@@ -8,6 +8,11 @@ namespace Client_Test
     {
         static void Main(string[] args)
         {
+            SlyvekClientRoutine scr = new SlyvekClientRoutine();
+            scr.Start();
+            Console.ReadKey();
+            return;
+
             Console.WriteLine("How many clients : ");
             string nbClients = Console.ReadLine();
             int nbCLients = 10;

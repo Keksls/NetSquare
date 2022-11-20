@@ -9,17 +9,18 @@ namespace NetSquare.Core
         // events
         public event Action<uint> OnDisconected;
         // statistics
-        public int NbMessagesToSend { get { return SendingQueue.Count + UDP.NbSendingMessages; } }
+        public int NbMessagesToSend { get { return SendingQueue.Count + UDP?.NbSendingMessages ?? 0; } }
         private int nbMessagesSended;
-        public int NbMessagesSended { get { return nbMessagesSended + UDP.NbMessagesSended; } }
+        public int NbMessagesSended { get { return nbMessagesSended + UDP?.NbMessagesSended ?? 0; } }
         internal long sendedBytes = 0;
         internal long receivedBytes = 0;
-        public long SendedBytes { get { return sendedBytes + UDP.sendedBytes; } set { sendedBytes = value; UDP.sendedBytes = value; } }
-        public long ReceivedBytes { get { return receivedBytes + UDP.receivedBytes; } set { receivedBytes = value; UDP.receivedBytes = value; } }
+        public long SendedBytes { get { return sendedBytes + UDP?.sendedBytes ?? 0; } set { sendedBytes = value; if (UDP != null) UDP.sendedBytes = value; } }
+        public long ReceivedBytes { get { return receivedBytes + UDP?.receivedBytes ?? 0; } set { receivedBytes = value; if (UDP != null) UDP.receivedBytes = value; } }
         public long NbMessagesReceived { get; internal set; }
         // properties
         public uint ID { get; set; }
         public Socket TcpSocket { get; private set; }
+        public bool UDPEnabled { get; set; }
         public event Action<NetworkMessage> OnMessageReceived;
         private ConcurrentQueue<byte[]> SendingQueue;
         private byte[] receivingMessageBuffer;
@@ -77,7 +78,7 @@ namespace NetSquare.Core
         /// <param name="msg">message to send</param>
         public void AddUDPMessage(NetworkMessage msg)
         {
-            UDP.SendMessage(msg);
+            UDP?.SendMessage(msg);
         }
 
         /// <summary>
@@ -87,7 +88,7 @@ namespace NetSquare.Core
         /// <param name="msg">message to send</param>
         public void AddUDPMessage(ushort headID, byte[] msg)
         {
-            UDP.SendMessage(headID, msg);
+            UDP?.SendMessage(headID, msg);
         }
 
         /// <summary>
@@ -104,14 +105,19 @@ namespace NetSquare.Core
         /// </summary>
         /// <param name="tcpClient">TCP client</param>
         /// <param name="isClient">if true, invoked by netsquareClient, else by netSquare setver</param>
-        public void SetClient(Socket tcpClient, bool isClient)
+        /// <param name="enableUDP">if true, netsquare will enable UDP for this connection</param>
+        public void SetClient(Socket tcpClient, bool isClient, bool enableUDP)
         {
             TcpSocket = tcpClient;
-            UDP = new UDPConnection();
-            if (isClient)
-                UDP.CreateClientConnection(this, tcpClient);
-            else
-                UDP.CreateServerConnection(this, tcpClient);
+            if (enableUDP)
+            {
+                UDP = new UDPConnection();
+                if (isClient)
+                    UDP.CreateClientConnection(this, tcpClient);
+                else
+                    UDP.CreateServerConnection(this, tcpClient);
+                UDPEnabled = true;
+            }
             nbMessagesSended = 0;
 
             receivingArgs = new SocketAsyncEventArgs();

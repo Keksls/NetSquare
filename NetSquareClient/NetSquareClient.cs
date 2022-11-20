@@ -133,7 +133,7 @@ namespace NetSquareClient
                     {
                         ID = UInt24.GetUInt(array)
                     };
-                    Client.SetClient(tcpClient.Client, true);
+                    Client.SetClient(tcpClient.Client, true, ProtocoleType == eProtocoleType.TCP_AND_UDP);
                     Client.OnMessageReceived += Client_OnMessageReceived;
                     // start processing message loop
                     Thread processingThread = new Thread(ProcessMessagesLoop);

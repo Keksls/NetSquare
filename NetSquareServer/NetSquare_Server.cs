@@ -45,9 +45,8 @@ namespace NetSquareServer
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
         #endregion
 
-        public NetSquare_Server(bool CheckBlackList = true, eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP)
+        public NetSquare_Server(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP)
         {
-            protocoleType = eProtocoleType.TCP_AND_UDP;
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
             Worlds = new WorldsManager(this);
