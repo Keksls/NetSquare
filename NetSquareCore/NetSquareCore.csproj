@@ -59,7 +59,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Compression\DeflateCompressor.cs" />
-    <Compile Include="ConnectedClient.cs" />
+    <Compile Include="Client\ConnectedClient.cs" />
     <Compile Include="Encryption\AES_Encryptor.cs" />
     <Compile Include="Encryption\CaesarChipher_Encryptor.cs" />
     <Compile Include="Encryption\CustomSBC_Encryptor.cs" />
@@ -89,7 +89,7 @@
     <Compile Include="NetSquareScheduler.cs" />
     <Compile Include="Position.cs" />
     <Compile Include="ProtocoleManager.cs" />
-    <Compile Include="UDPClient.cs" />
+    <Compile Include="Client\UDPClient.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />

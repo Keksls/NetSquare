@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using NetSquare.Core.Messages;
+using System.Windows.Forms;
 
 namespace NetSquareServer.Server
 {
@@ -58,8 +59,11 @@ namespace NetSquareServer.Server
                             }
 
                             if (currentMessage.Client == null || !currentMessage.Client.TcpSocket.Connected)
+                            {
+                                Writer.Write("NullOrDisconectedClientQueuedMessageException on queue" + QueueID, ConsoleColor.Red);
                                 continue;
-                            
+                            }
+
                             // BroadcastMessage
                             if (currentMessage.TypeID == 1)
                                 server.Worlds.BroadcastToWorld(currentMessage);

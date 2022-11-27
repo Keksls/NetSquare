@@ -14,7 +14,7 @@ namespace NetSquare.Core
         private int blocksSize = 0;
         public ConnectedClient Client { get; set; }
         public byte[] Data { get; private set; }
-        public ushort Length { get; set; }
+        public int Length { get; set; }
         public bool Packed { get; private set; }
         public int currentReadingIndex { get; set; } = 10;
 
@@ -169,8 +169,8 @@ namespace NetSquare.Core
         /// <returns></returns>
         public byte[] GetBody()
         {
-            byte[] body = new byte[Data.Length - 10];
-            Buffer.BlockCopy(Data, 10, body, 0, body.Length);
+            byte[] body = new byte[Data.Length - 12];
+            Buffer.BlockCopy(Data, 12, body, 0, body.Length);
             return body;
         }
 
@@ -180,52 +180,59 @@ namespace NetSquare.Core
                 return;
             byte[] encrypted = ProtocoleManager.Encrypt(Data);
             encrypted = ProtocoleManager.Compress(encrypted);
-            Data = new byte[encrypted.Length + 2];
-            Buffer.BlockCopy(BitConverter.GetBytes((ushort)Data.Length), 0, Data, 0, 2);
-            Buffer.BlockCopy(encrypted, 0, Data, 2, encrypted.Length);
+            Data = new byte[encrypted.Length + 4];
+            // write lenght
+            Length = Data.Length;
+            Data[0] = (byte)((Length) & 0xFF);
+            Data[1] = (byte)((Length >> 8) & 0xFF);
+            Data[2] = (byte)((Length >> 16) & 0xFF);
+            Data[3] = (byte)((Length >> 24) & 0xFF);
+            Buffer.BlockCopy(encrypted, 0, Data, 4, encrypted.Length);
         }
 
         internal void DecryptDecompressData()
         {
             if (ProtocoleManager.NoCompressorOrEncryptor)
                 return;
-            byte[] encrypted = new byte[Data.Length - 2];
-            Buffer.BlockCopy(Data, 2, encrypted, 0, encrypted.Length);
+            byte[] encrypted = new byte[Data.Length - 4];
+            Buffer.BlockCopy(Data, 4, encrypted, 0, encrypted.Length);
             encrypted = ProtocoleManager.Decompress(encrypted);
             Data = ProtocoleManager.Decrypt(encrypted);
         }
 
         internal void ReadHead()
         {
-            Length = BitConverter.ToUInt16(Data, 0);
-            ClientID = UInt24.GetUInt(Data, 2);
-            HeadID = BitConverter.ToUInt16(Data, 5);
-            TypeID = UInt24.GetUInt(Data, 7);
+            Length = BitConverter.ToInt32(Data, 0);
+            ClientID = UInt24.GetUInt(Data, 4);
+            HeadID = BitConverter.ToUInt16(Data, 7);
+            TypeID = UInt24.GetUInt(Data, 9);
         }
 
         internal void WriteHead()
         {
             // write message Size
-            Data[0] = (byte)(ushort)Data.Length;
-            Data[1] = (byte)((ushort)Data.Length >> 8);
+            Data[0] = (byte)((Data.Length) & 0xFF);
+            Data[1] = (byte)((Data.Length >> 8) & 0xFF);
+            Data[2] = (byte)((Data.Length >> 16) & 0xFF);
+            Data[3] = (byte)((Data.Length >> 24) & 0xFF);
             // write Client ID
-            Data[2] = (byte)((ClientID) & 0xFF);
-            Data[3] = (byte)((ClientID >> 8) & 0xFF);
-            Data[4] = (byte)((ClientID >> 16) & 0xFF);
+            Data[4] = (byte)((ClientID) & 0xFF);
+            Data[5] = (byte)((ClientID >> 8) & 0xFF);
+            Data[6] = (byte)((ClientID >> 16) & 0xFF);
             // write Head Action
-            Data[5] = (byte)HeadID;
-            Data[6] = (byte)(HeadID >> 8);
+            Data[7] = (byte)HeadID;
+            Data[8] = (byte)(HeadID >> 8);
             // write Type ID
-            Data[7] = (byte)((TypeID) & 0xFF);
-            Data[8] = (byte)((TypeID >> 8) & 0xFF);
-            Data[9] = (byte)((TypeID >> 16) & 0xFF);
+            Data[9] = (byte)((TypeID) & 0xFF);
+            Data[10] = (byte)((TypeID >> 8) & 0xFF);
+            Data[11] = (byte)((TypeID >> 16) & 0xFF);
         }
 
         public void SetHeadIDIntoData(ushort headID)
         {
             // write Head Action
-            Data[5] = (byte)headID;
-            Data[6] = (byte)(headID >> 8);
+            Data[7] = (byte)headID;
+            Data[8] = (byte)(headID >> 8);
         }
         #endregion
 
@@ -235,7 +242,7 @@ namespace NetSquare.Core
             try
             {
                 // check if at least we got full head
-                if (data.Length < 10)
+                if (data.Length < 12)
                     return false;
                 SetDataUnsafe(data);
                 DecryptDecompressData();
@@ -243,7 +250,7 @@ namespace NetSquare.Core
                 ReadHead();
                 RestartRead();
                 // check if lenght == to datagram lenght
-                if (Length != Data.Length)
+                if ((int)Length != Data.Length)
                     return false;
                 // set data from datagram
                 //SetData(data);
@@ -259,7 +266,7 @@ namespace NetSquare.Core
         /// </summary>
         public void RestartRead()
         {
-            currentReadingIndex = 10;
+            currentReadingIndex = 12;
         }
 
         /// <summary>
@@ -650,7 +657,7 @@ namespace NetSquare.Core
             int lenght = (int)GetUShort();
             bool[] data = new bool[lenght];
             for (int i = 0; i < data.Length; i++, currentReadingIndex++)
-                data[i] = Data[currentReadingIndex] == (byte)1 ? true : false;
+                data[i] = Data[currentReadingIndex] == 1;
             return data;
         }
         #endregion
@@ -877,14 +884,15 @@ namespace NetSquare.Core
                 return Data;
 
             // create full empty array
-            Data = new byte[blocksSize + 10];
+            Data = new byte[blocksSize + 12];
             // Write Blocks
-            int currentIndex = 10;
+            int currentIndex = 12;
             for (int i = 0; i < blocks.Count; i++)
             {
                 Buffer.BlockCopy(blocks[i], 0, Data, currentIndex, blocks[i].Length);
                 currentIndex += blocks[i].Length;
             }
+            Length = Data.Length;
             WriteHead();
             if (!ProtocoleManager.NoCompressorOrEncryptor && !ignoreCompression)
                 EncryptCompressData();
@@ -893,13 +901,13 @@ namespace NetSquare.Core
 
         public NetworkMessage Pack(IEnumerable<NetworkMessage> messages, bool alreadySerialized = false)
         {
-            int lenght = 10;
+            int lenght = 12;
             int nb = 0;
             foreach (NetworkMessage message in messages)
             {
                 if (!alreadySerialized)
                     message.Serialize(true);
-                lenght += message.Data.Length - 4; // blockSize (3 bits) + clientID (3 bits)  - headSize (10 bits)
+                lenght += message.Data.Length - 6; // blockSize (3 bits) + clientID (3 bits)  - headSize (12 bits)
                 nb++;
             }
 
@@ -907,9 +915,9 @@ namespace NetSquare.Core
                 return this;
 
             // create full empty array
-            Data = new byte[blocksSize + 10 + lenght];
+            Data = new byte[blocksSize + 12 + lenght];
             // Write Blocks
-            int index = 10;
+            int index = 12;
             for (int i = 0; i < blocks.Count; i++)
             {
                 Buffer.BlockCopy(blocks[i], 0, Data, index, blocks[i].Length);
@@ -929,8 +937,8 @@ namespace NetSquare.Core
                 Data[index++] = (byte)((message.ClientID >> 8) & 0xFF);
                 Data[index++] = (byte)((message.ClientID >> 16) & 0xFF);
 
-                Buffer.BlockCopy(message.Data, 10, Data, index, message.Data.Length - 10);
-                index += message.Data.Length - 10;
+                Buffer.BlockCopy(message.Data, 12, Data, index, message.Data.Length - 12);
+                index += message.Data.Length - 12;
             }
 
             WriteHead();
@@ -957,8 +965,8 @@ namespace NetSquare.Core
                 size -= 3;
                 message.SetType(TypeID);
                 // copy block data into message
-                message.Data = new byte[size + 10];
-                Buffer.BlockCopy(Data, currentReadingIndex, message.Data, 10, size);
+                message.Data = new byte[size + 12];
+                Buffer.BlockCopy(Data, currentReadingIndex, message.Data, 12, size);
                 currentReadingIndex += size;
                 // add message to list
                 message.RestartRead();

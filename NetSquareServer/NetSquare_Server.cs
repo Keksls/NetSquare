@@ -32,6 +32,8 @@ namespace NetSquareServer
         public event Action AfterLoadConfiguration_StepTwo;
         public event Action<uint> OnClientConnected;
         public event Action<uint> OnClientDisconnected;
+        public event Action<NetworkMessage> OnMessageReceived;
+        public event Action<byte[]> OnMessageSend;
         public Action<string> DrawHeaderOverrideCallback = null;
         #region Variables
         public bool IsStarted { get { return Listeners.Any(l => l.Listener.Active); } }
@@ -72,7 +74,7 @@ namespace NetSquareServer
                     {
                         const uint ENABLE_QUICK_EDIT = 0x0040;
                         IntPtr consoleHandle = GetStdHandle(-10);
-                        UInt32 consoleMode;
+                        uint consoleMode;
                         GetConsoleMode(consoleHandle, out consoleMode);
                         consoleMode &= ~ENABLE_QUICK_EDIT;
                         SetConsoleMode(consoleHandle, consoleMode);
@@ -328,7 +330,8 @@ namespace NetSquareServer
                     continue;
             }
             // unregister client event
-            client.OnMessageReceived -= MessageReceive;
+            client.OnMessageReceived -= MessageReceived;
+            client.OnMessageSend -= MessageSended;
             // try clean disconnect if not already
             try { client.TcpSocket.Disconnect(false); } catch { }
             OnClientDisconnected?.Invoke(client.ID);
@@ -349,9 +352,15 @@ namespace NetSquareServer
                 Server_ClientDisconnected(client);
         }
 
-        public void MessageReceive(NetworkMessage message)
+        public void MessageReceived(NetworkMessage message)
         {
             MessageQueueManager.MessageReceived(message);
+            OnMessageReceived?.Invoke(message);
+        }
+
+        private void MessageSended(byte[] data)
+        {
+            OnMessageSend?.Invoke(data);
         }
         #endregion
 
@@ -379,7 +388,8 @@ namespace NetSquareServer
             client.ID = ClientIDCounter;
             while (!Clients.TryAdd(client.ID, client))
                 Thread.Sleep(1);
-            client.OnMessageReceived += MessageReceive;
+            client.OnMessageReceived += MessageReceived;
+            client.OnMessageSend += MessageSended;
             client.OnDisconected += Client_OnDisconected;
             return ClientIDCounter;
         }

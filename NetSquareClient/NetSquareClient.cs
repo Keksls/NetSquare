@@ -14,6 +14,7 @@ namespace NetSquareClient
         public event Action<uint> OnConnected;
         public event Action OnConnectionFail;
         public event Action<NetworkMessage> OnUnregisteredMessageReceived;
+        public event Action<Exception> OnException;
         #endregion
 
         #region Variables
@@ -28,7 +29,7 @@ namespace NetSquareClient
         public int NbProcessingMessages { get { return messagesQueue.Count; } }
         public eProtocoleType ProtocoleType;
         private uint nbReplyAsked = 1;
-        private bool isStarted { get; set; }
+        private bool isStarted;
         private ConcurrentQueue<NetworkMessage> messagesQueue = new ConcurrentQueue<NetworkMessage>();
         private Dictionary<uint, NetSquareAction> replyCallBack = new Dictionary<uint, NetSquareAction>();
         private static Dictionary<Type, Action<NetworkMessage, object>> typesDic;
@@ -194,12 +195,7 @@ namespace NetSquareClient
                 }
                 catch (Exception ex)
                 {
-                    try
-                    {
-                        // catch error if client not started in console env
-                        Console.WriteLine(ex.ToString());
-                    }
-                    catch { throw ex; }
+                    OnException?.Invoke(ex);
                 }
                 Thread.Sleep(1);
             }
