@@ -56,11 +56,11 @@ namespace Server_Test
         }
 
         private static ServerStatistics currentStatistics;
-        private static void Server_OnTimeLoop(long obj)
+        private static void Server_OnTimeLoop(float obj)
         {
             if (!Writer.DisplayTitle)
                 return;
-            string humanReadableTime = TimeSpan.FromMilliseconds(server.Time).ToString(@"hh\:mm\:ss");
+            string humanReadableTime = TimeSpan.FromMilliseconds(server.Time * 1000f).ToString(@"hh\:mm\:ss");
             Writer.Title("T:" + server.Time + " " + humanReadableTime + " " + currentStatistics.ToString());
         }
 
@@ -83,7 +83,7 @@ namespace Server_Test
             if (!Writer.DisplayTitle)
                 return;
             currentStatistics = statistics;
-            string humanReadableTime = TimeSpan.FromMilliseconds(server.Time).ToString(@"hh\:mm\:ss");
+            string humanReadableTime = TimeSpan.FromMilliseconds(server.Time * 1000f).ToString(@"hh\:mm\:ss");
             Writer.Title("T:" + server.Time + " " + humanReadableTime + " " + statistics.ToString());
         }
 

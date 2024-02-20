@@ -35,13 +35,12 @@ namespace NetSquareServer
         public event Action<uint> OnClientDisconnected;
         public event Action<NetworkMessage> OnMessageReceived;
         public event Action<byte[]> OnMessageSend;
-        public event Action<long> OnTimeLoop;
+        public event Action<float> OnTimeLoop;
         public Action<string> DrawHeaderOverrideCallback = null;
 
         #region Variables
-        public long Time { get; private set; }
-        public long StartTimeTicks { get; private set; }
-        private int serverTickRate = 1000 / 60;
+        public float Time { get; private set; }
+        private float serverTickRate = 1f / 60f;
         public bool IsStarted { get { return Listeners.Any(l => l.Listener.Active); } }
         public HashSet<string> ServerIPs { get; private set; }
         public List<TcpListener> Listeners = new List<TcpListener>();
@@ -120,7 +119,7 @@ namespace NetSquareServer
 
                 // start update loop
                 Writer.Write_Server("Starting Update Loop...", ConsoleColor.DarkYellow, false);
-                serverTickRate = 1000 / NetSquareConfigurationManager.Configuration.UpdateFrequencyHz;
+                serverTickRate = 1f / NetSquareConfigurationManager.Configuration.UpdateFrequencyHz;
                 Thread updateThread = new Thread(UpdateLoop);
                 updateThread.Start();
                 Writer.Write("Started", ConsoleColor.Green);
@@ -146,13 +145,12 @@ namespace NetSquareServer
         /// </summary>
         private void UpdateLoop()
         {
-            StartTimeTicks = DateTime.Now.Ticks;
             Stopwatch sw = new Stopwatch();
             sw.Start();
-            long lastTime = Time;
+            float lastTime = Time;
             while (IsStarted)
             {
-                Time = sw.ElapsedMilliseconds;
+                Time = sw.ElapsedMilliseconds / 1000f;
                 if (Time - lastTime >= serverTickRate)
                 {
                     lastTime = Time;

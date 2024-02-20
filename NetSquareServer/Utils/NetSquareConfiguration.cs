@@ -39,7 +39,7 @@ namespace NetSquareServer
         /// <summary>
         /// Frequency of loop time in Hz
         /// </summary>
-        public int UpdateFrequencyHz { get; set; }
+        public float UpdateFrequencyHz { get; set; }
 
         public NetSquareConfiguration()
         {

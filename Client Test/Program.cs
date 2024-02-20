@@ -40,7 +40,7 @@ namespace Client_Test
                         clients[i].TestSync();
                         if (i == 0)
                         {
-                            string humanReadableTime = TimeSpan.FromMilliseconds(clients[i].client.Time).ToString(@"hh\:mm\:ss");
+                            string humanReadableTime = TimeSpan.FromMilliseconds(clients[i].client.Time * 1000f).ToString(@"hh\:mm\:ss");
                             Console.Title = "T:" + clients[i].client.Time + " - T:" + humanReadableTime;
                         }
                     }
