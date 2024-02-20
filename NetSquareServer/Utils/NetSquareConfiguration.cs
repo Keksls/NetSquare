@@ -36,6 +36,10 @@ namespace NetSquareServer
         /// Frequency of var synchronization
         /// </summary>
         public int SynchronizingFrequency { get; set; }
+        /// <summary>
+        /// Frequency of loop time in Hz
+        /// </summary>
+        public int UpdateFrequencyHz { get; set; }
 
         public NetSquareConfiguration()
         {
@@ -45,6 +49,7 @@ namespace NetSquareServer
             ReceivingBufferSize = 1024;
             LockConsole = false;
             BlackListFilePath = Environment.CurrentDirectory + @"\BlackListedIP.json";
+            UpdateFrequencyHz = 10;
         }
 
         public override string ToString()
@@ -78,6 +83,16 @@ namespace NetSquareServer
             {
                 Configuration = new NetSquareConfiguration();
             }
+        }
+
+        /// <summary>
+        /// Frequency of loop time in Hz
+        /// </summary>
+        /// <param name="UpdateFrequencyHz">frequency in Hz</param>
+        public static void SetUpdateFrequencyHz(int UpdateFrequencyHz)
+        {
+            Configuration.UpdateFrequencyHz = UpdateFrequencyHz;
+            SaveConfiguration(Configuration);
         }
 
         /// <summary>

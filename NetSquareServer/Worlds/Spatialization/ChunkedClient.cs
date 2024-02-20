@@ -8,21 +8,21 @@ namespace NetSquareServer.Worlds
         public uint ClientID { get; private set; }
         public short ChunkX { get; private set; }
         public short ChunkY { get; private set; }
-        public Position Position { get; private set; }
-        public Position LastPosition { get; set; }
+        public Transform Position { get; private set; }
+        public Transform LastPosition { get; set; }
         public HashSet<uint> VisibleIDs;
 
-        public ChunkedClient(uint clientID, short chunkX, short chunkY, Position pos)
+        public ChunkedClient(uint clientID, short chunkX, short chunkY, Transform pos)
         {
             ClientID = clientID;
             ChunkX = chunkX;
             ChunkY = chunkY;
             Position = pos;
-            LastPosition = new Position(pos);
+            LastPosition = new Transform(pos);
             VisibleIDs = new HashSet<uint>();
         }
 
-        public void SetPostition(Position position)
+        public void SetPostition(Transform position)
         {
             Position = position;
         }

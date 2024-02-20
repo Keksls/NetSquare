@@ -51,7 +51,7 @@ namespace NetSquareServer.Worlds
         public NetworkMessage GetPackedMessage()
         {
             NetworkMessage packed = new NetworkMessage(HeadID);
-            if (HeadID == (ushort)NetSquareMessageType.ClientSetPosition)
+            if (HeadID == (ushort)NetSquareMessageType.ClientSetTransform)
                 packed.SetType(MessageType.Default);
             else
                 packed.SetType(MessageType.SynchronizeMessageCurrentWorld);
@@ -78,7 +78,7 @@ namespace NetSquareServer.Worlds
 
             NetworkMessage packed = new NetworkMessage(HeadID);
             //packed.Client = client.Client;
-            if (HeadID == (ushort)NetSquareMessageType.ClientSetPosition)
+            if (HeadID == (ushort)NetSquareMessageType.ClientSetTransform)
                 packed.SetType(MessageType.Default);
             else
                 packed.SetType(MessageType.SynchronizeMessageCurrentWorld);

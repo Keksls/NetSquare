@@ -1,7 +1,9 @@
 ﻿using NetSquare.Core;
+using NetSquare.Core.Messages;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -28,6 +30,9 @@ namespace NetSquareClient
         public int NbSendingMessages { get { return Client != null ? Client.NbMessagesToSend : 0; } }
         public int NbProcessingMessages { get { return messagesQueue.Count; } }
         public eProtocoleType ProtocoleType;
+        public long Time { get { return serverTimeOffset + stopwatch.ElapsedMilliseconds; } }
+        private long serverTimeOffset;
+        private Stopwatch stopwatch = new Stopwatch();
         private uint nbReplyAsked = 1;
         private bool isStarted;
         private ConcurrentQueue<NetworkMessage> messagesQueue = new ConcurrentQueue<NetworkMessage>();
@@ -48,19 +53,21 @@ namespace NetSquareClient
             WorldsManager = new WorldsManager(this, synchronizeUsingUDP);
 
             // initiate Type Dictionnary
-            typesDic = new Dictionary<Type, Action<NetworkMessage, object>>();
-            typesDic.Add(typeof(short), (message, item) => { message.Set((short)Convert.ChangeType(item, typeof(short))); });
-            typesDic.Add(typeof(int), (message, item) => { message.Set((int)Convert.ChangeType(item, typeof(int))); });
-            typesDic.Add(typeof(long), (message, item) => { message.Set((long)Convert.ChangeType(item, typeof(long))); });
-            typesDic.Add(typeof(float), (message, item) => { message.Set((float)Convert.ChangeType(item, typeof(float))); });
-            typesDic.Add(typeof(ushort), (message, item) => { message.Set((ushort)Convert.ChangeType(item, typeof(ushort))); });
-            typesDic.Add(typeof(uint), (message, item) => { message.Set((uint)Convert.ChangeType(item, typeof(uint))); });
-            typesDic.Add(typeof(ulong), (message, item) => { message.Set((ulong)Convert.ChangeType(item, typeof(ulong))); });
-            typesDic.Add(typeof(UInt24), (message, item) => { message.Set((UInt24)Convert.ChangeType(item, typeof(UInt24))); });
-            typesDic.Add(typeof(bool), (message, item) => { message.Set((bool)Convert.ChangeType(item, typeof(bool))); });
-            typesDic.Add(typeof(string), (message, item) => { message.Set((string)Convert.ChangeType(item, typeof(string))); });
-            typesDic.Add(typeof(char), (message, item) => { message.Set((char)Convert.ChangeType(item, typeof(char))); });
-            typesDic.Add(typeof(byte[]), (message, item) => { message.Set((byte[])Convert.ChangeType(item, typeof(byte[]))); });
+            typesDic = new Dictionary<Type, Action<NetworkMessage, object>>
+            {
+                { typeof(short), (message, item) => { message.Set((short)Convert.ChangeType(item, typeof(short))); } },
+                { typeof(int), (message, item) => { message.Set((int)Convert.ChangeType(item, typeof(int))); } },
+                { typeof(long), (message, item) => { message.Set((long)Convert.ChangeType(item, typeof(long))); } },
+                { typeof(float), (message, item) => { message.Set((float)Convert.ChangeType(item, typeof(float))); } },
+                { typeof(ushort), (message, item) => { message.Set((ushort)Convert.ChangeType(item, typeof(ushort))); } },
+                { typeof(uint), (message, item) => { message.Set((uint)Convert.ChangeType(item, typeof(uint))); } },
+                { typeof(ulong), (message, item) => { message.Set((ulong)Convert.ChangeType(item, typeof(ulong))); } },
+                { typeof(UInt24), (message, item) => { message.Set((UInt24)Convert.ChangeType(item, typeof(UInt24))); } },
+                { typeof(bool), (message, item) => { message.Set((bool)Convert.ChangeType(item, typeof(bool))); } },
+                { typeof(string), (message, item) => { message.Set((string)Convert.ChangeType(item, typeof(string))); } },
+                { typeof(char), (message, item) => { message.Set((char)Convert.ChangeType(item, typeof(char))); } },
+                { typeof(byte[]), (message, item) => { message.Set((byte[])Convert.ChangeType(item, typeof(byte[]))); } }
+            };
         }
 
         #region Connection / Disconnection
@@ -346,6 +353,87 @@ namespace NetSquareClient
                     message.SetObject(item);
             }
             SendMessageUDP(message);
+        }
+        #endregion
+
+        #region Time Synchronization
+        private bool isSynchronizingTime = false;
+        /// <summary>
+        /// Synchronize time with server. The more precision, the more time it will take to synchronize
+        /// </summary>
+        /// <param name="precision">1 to 10, 1 is the less precise, 10 is the most precise</param>
+        /// <param name="timeBetweenSyncs">Time between each sync in milliseconds</param>
+        public void SyncTime(int precision, int timeBetweenSyncs = 1000)
+        {
+            // clamp precision between 1 and 10
+            precision = Math.Max(1, Math.Min(10, precision));
+
+            // if already synchronizing, stop it
+            if (isSynchronizingTime)
+            {
+                isSynchronizingTime = false;
+                return;
+            }
+            isSynchronizingTime = true;
+
+            // create array to store received times
+            long[] clientTimeOffsets = new long[precision];
+
+            // reset stopwatch and server time offset
+            stopwatch.Reset();
+            stopwatch.Stop();
+            serverTimeOffset = 0;
+
+            // start sync thread
+            Thread syncThread = new Thread(() =>
+            {
+                Stopwatch timeStopWatch = new Stopwatch();
+                timeStopWatch.Start();
+                // iterate precision times
+                for (int i = 0; i < precision; i++)
+                {
+                    long sendTime = timeStopWatch.ElapsedMilliseconds;
+                    // send sync message
+                    SendMessage(new NetworkMessage(NetSquareMessageType.ClientSynchronizeTime, Client.ID), (reply) =>
+                    {
+                        // get receive time
+                        long receiveTime = timeStopWatch.ElapsedMilliseconds;
+                        long localServerReceiveTime = (receiveTime - sendTime) / 2;
+
+                        // get server time
+                        long serverMsSinceStart = reply.GetLong();
+
+                        // get server client time offset
+                        long timeOffset = serverMsSinceStart - stopwatch.ElapsedMilliseconds + localServerReceiveTime;
+                        clientTimeOffsets[i] = timeOffset;
+
+                        // set time if first time
+                        if (i == 0)
+                        {
+                            serverTimeOffset = clientTimeOffsets[0] + stopwatch.ElapsedMilliseconds;
+                            stopwatch.Start();
+                        }
+                    });
+
+                    // wait for next sync
+                    Thread.Sleep(timeBetweenSyncs);
+                }
+
+                // calculate average time
+                long avgTime = 0;
+                for (int j = 0; j < precision; j++)
+                    avgTime += clientTimeOffsets[j];
+                avgTime /= precision;
+                serverTimeOffset = avgTime;
+
+                // stop synchronizing
+                isSynchronizingTime = false;
+                timeStopWatch.Stop();
+            });
+
+            // start sync thread
+            syncThread.IsBackground = true;
+            syncThread.Start();
         }
         #endregion
     }

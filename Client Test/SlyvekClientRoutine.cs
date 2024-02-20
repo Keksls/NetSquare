@@ -45,7 +45,7 @@ namespace Client_Test
                 if (response.GetBool())
                 {
                     Console.WriteLine("Bot connected");
-                    client.WorldsManager.TryJoinWorld(1, new Position(0, 0, 0), (success) =>
+                    client.WorldsManager.TryJoinWorld(1, new Transform(0, 0, 0), (success) =>
                     {
                         Console.WriteLine("rejoin le monde.");
                     });

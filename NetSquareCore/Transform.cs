@@ -2,48 +2,53 @@
 
 namespace NetSquareCore
 {
-    public struct Position
+    public struct Transform
     {
         public float x;
         public float y;
         public float z;
+        public byte rotation;
 
-        public Position(float _x = 0, float _y = 0, float _z = 0)
+        public Transform(float _x = 0, float _y = 0, float _z = 0, byte _rotation = 0)
         {
             x = _x;
             y = _y;
             z = _z;
+            rotation = _rotation;
         }
 
-        public Position(Position pos)
+        public Transform(Transform pos)
         {
             x = pos.x;
             y = pos.y;
             z = pos.z;
+            rotation = pos.rotation;
         }
 
-        public void Set(float _x, float _y, float _z)
+        public void Set(float _x, float _y, float _z, byte _rotation)
         {
             x = _x;
             y = _y;
             z = _z;
+            rotation = _rotation;
         }
 
-        public void Set(Position pos)
+        public void Set(Transform pos)
         {
             x = pos.x;
             y = pos.y;
             z = pos.z;
+            rotation = pos.rotation;
         }
 
-        public bool Equals(Position pos)
+        public bool Equals(Transform pos)
         {
-            return x == pos.x && y == pos.y && z == pos.z;
+            return x == pos.x && y == pos.y && z == pos.z && pos.rotation == rotation;
         }
 
-        public static Position zero { get { return new Position(); } }
+        public static Transform zero { get { return new Transform(); } }
 
-        public static float Distance(Position pos1, Position pos2)
+        public static float Distance(Transform pos1, Transform pos2)
         {
             float diff_x = pos1.x - pos2.x;
             float diff_y = pos1.y - pos2.y;
@@ -51,13 +56,14 @@ namespace NetSquareCore
             return Sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
         }
 
-        public static Position Lerp(Position a, Position b, float t)
+        public static Transform Lerp(Transform a, Transform b, float t)
         {
             t = Clamp01(t);
-            return new Position(
+            return new Transform(
                 a.x + (b.x - a.x) * t,
                 a.y + (b.y - a.y) * t,
-                a.z + (b.z - a.z) * t
+                a.z + (b.z - a.z) * t,
+                (byte)(a.rotation + (b.rotation - a.rotation) * t)
             );
         }
 

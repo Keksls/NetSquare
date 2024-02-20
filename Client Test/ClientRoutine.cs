@@ -8,7 +8,7 @@ namespace Client_Test
 {
     public class ClientRoutine
     {
-        NetSquare_Client client;
+        public NetSquare_Client client;
         bool readyToSync = false;
         float x = 0, y = 0, z = 0;
         Random rnd = new Random();
@@ -22,7 +22,7 @@ namespace Client_Test
             //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
 
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-           // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
             client.Connect("127.0.0.1", 5050);
         }
 
@@ -43,6 +43,8 @@ namespace Client_Test
 
         private void Client_Connected(uint ID)
         {
+            client.SyncTime(10, 1000);
+
             Console.WriteLine("Connected with ID " + ID);
             GetNextTargetPoint();
             client.WorldsManager.TryJoinWorld(1, currentPos, (success) =>
@@ -73,14 +75,14 @@ namespace Client_Test
             if (!readyToSync)
                 return;
             GetNextTargetPoint();
-            client.WorldsManager.SetPosition(currentPos);
+            client.WorldsManager.SetTransform(currentPos);
         }
 
         int nbStep = 100;
         int index = -1;
-        Position startPos = Position.zero;
-        Position targetPos;
-        Position currentPos = Position.zero;
+        Transform startPos = Transform.zero;
+        Transform targetPos;
+        Transform currentPos = Transform.zero;
         private void GetNextTargetPoint()
         {
             index++;
@@ -91,13 +93,13 @@ namespace Client_Test
                 x = ((float)rnd.Next(-1000, 1000)) / 20f;
                 y = 1f;
                 z = ((float)rnd.Next(-1000, 1000)) / 20f;
-                targetPos = new Position(x, y, z);
-                if (currentPos.Equals(Position.zero))
+                targetPos = new Transform(x, y, z);
+                if (currentPos.Equals(Transform.zero))
                     currentPos.Set(targetPos);
                 startPos.Set(currentPos);
             }
 
-            currentPos = Position.Lerp(startPos, targetPos, (float)index / (float)nbStep);
+            currentPos = Transform.Lerp(startPos, targetPos, (float)index / (float)nbStep);
         }
     }
 

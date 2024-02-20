@@ -67,7 +67,7 @@ namespace NetSquareServer.Server
                             // BroadcastMessage
                             if (currentMessage.TypeID == 1)
                                 server.Worlds.BroadcastToWorld(currentMessage);
-                            else if(currentMessage.TypeID == 2 && currentMessage.HeadID != (ushort)NetSquareMessageType.ClientSetPosition)
+                            else if(currentMessage.TypeID == 2 && currentMessage.HeadID != (ushort)NetSquareMessageType.ClientSetTransform)
                                 server.Worlds.ReceiveSyncronizationMessage(currentMessage);
                             else if (!server.Dispatcher.DispatchMessage(currentMessage))
                             {

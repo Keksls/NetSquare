@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>NetSquare.Core</RootNamespace>
     <AssemblyName>NetSquareCore</AssemblyName>
-    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
@@ -79,7 +79,9 @@
     <Compile Include="Encryption\XOR_Encryptor.cs" />
     <Compile Include="eProtocoleType.cs" />
     <Compile Include="HandShake.cs" />
-    <Compile Include="Messages\eMessagesType.cs" />
+    <Compile Include="Messages\NetSquareMessageType.cs" />
+    <Compile Include="Messages\Half.cs" />
+    <Compile Include="Messages\HalfHelper.cs" />
     <Compile Include="Messages\NetSquareMessageTypes.cs" />
     <Compile Include="Messages\UInt24.cs" />
     <Compile Include="NetSquareDispatcher.cs" />
@@ -87,7 +89,7 @@
     <Compile Include="NetSquareActionAttribute.cs" />
     <Compile Include="NetSquareHeadAction.cs" />
     <Compile Include="NetSquareScheduler.cs" />
-    <Compile Include="Position.cs" />
+    <Compile Include="Transform.cs" />
     <Compile Include="ProtocoleManager.cs" />
     <Compile Include="Client\UDPClient.cs" />
   </ItemGroup>

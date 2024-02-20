@@ -29,7 +29,7 @@ namespace NetSquareServer.Worlds
         /// <param name="client">ID of the client to add</param>
         public override void AddClient(ConnectedClient client)
         {
-            AddClient(client, Position.zero);
+            AddClient(client, Transform.zero);
         }
 
         /// <summary>
@@ -37,7 +37,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">ID of the client to add</param>
         /// <param name="pos">spawn position</param>
-        public override void AddClient(ConnectedClient client, Position pos)
+        public override void AddClient(ConnectedClient client, Transform pos)
         {
             SpatialClient spatializedClient = new SpatialClient(this, client, pos);
             if (!Clients.ContainsKey(client.ID))
@@ -66,7 +66,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
         /// <param name="pos">position</param>
-        public override void SetClientPosition(uint clientID, Position pos)
+        public override void SetClientPosition(uint clientID, Transform pos)
         {
             if (Clients.ContainsKey(clientID))
                 Clients[clientID].Position = pos;
@@ -134,11 +134,11 @@ namespace NetSquareServer.Worlds
             }
         }
 
-        public override Position GetClientPosition(uint clientID)
+        public override Transform GetClientPosition(uint clientID)
         {
             if (Clients.ContainsKey(clientID))
                 return Clients[clientID].Position;
-            return Position.zero;
+            return Transform.zero;
         }
 
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)
@@ -147,7 +147,7 @@ namespace NetSquareServer.Worlds
                 callback(client.Key, GetVisibleClients(client.Key));
         }
 
-        public override void AddStaticEntity(short type, uint id, Position pos)
+        public override void AddStaticEntity(short type, uint id, Transform pos)
         {
             StaticEntities.Add(new StaticEntity(type, id, pos));
             StaticEntitiesCount++;

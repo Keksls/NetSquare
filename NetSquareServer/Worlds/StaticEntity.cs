@@ -6,9 +6,9 @@ namespace NetSquareServer.Worlds
     {
         public short Type { get; set; }
         public uint Id { get; set; }
-        public Position Position { get; set; }
+        public Transform Position { get; set; }
 
-        public StaticEntity(short type, uint id, Position position)
+        public StaticEntity(short type, uint id, Transform position)
         {
             Type = type;
             Id = id;

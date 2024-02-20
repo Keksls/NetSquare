@@ -8,10 +8,10 @@ namespace Client_Test
     {
         static void Main(string[] args)
         {
-            SlyvekClientRoutine scr = new SlyvekClientRoutine();
-            scr.Start();
-            Console.ReadKey();
-            return;
+            //SlyvekClientRoutine scr = new SlyvekClientRoutine();
+            //scr.Start();
+            //Console.ReadKey();
+            //return;
 
             Console.WriteLine("How many clients : ");
             string nbClients = Console.ReadLine();
@@ -36,7 +36,14 @@ namespace Client_Test
                 while (true)
                 {
                     for (int i = 0; i < clients.Count; i++)
+                    {
                         clients[i].TestSync();
+                        if (i == 0)
+                        {
+                            string humanReadableTime = TimeSpan.FromMilliseconds(clients[i].client.Time).ToString(@"hh\:mm\:ss");
+                            Console.Title = "T:" + clients[i].client.Time + " - T:" + humanReadableTime;
+                        }
+                    }
                     Thread.Sleep(100);
                 }
             });

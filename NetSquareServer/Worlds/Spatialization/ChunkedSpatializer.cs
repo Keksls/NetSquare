@@ -35,7 +35,7 @@ namespace NetSquareServer.Worlds
         /// <param name="client">ID of the client to add</param>
         public override void AddClient(ConnectedClient client)
         {
-            AddClient(client, Position.zero);
+            AddClient(client, Transform.zero);
         }
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">ID of the client to add</param>
         /// <param name="pos">spawn position</param>
-        public override void AddClient(ConnectedClient client, Position pos)
+        public override void AddClient(ConnectedClient client, Transform pos)
         {
             var chunk = GetChunkForPosition(pos);
             if (chunk != null)
@@ -90,7 +90,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
         /// <param name="pos">position</param>
-        public override void SetClientPosition(uint clientID, Position pos)
+        public override void SetClientPosition(uint clientID, Transform pos)
         {
             if (Clients.ContainsKey(clientID))
             {
@@ -238,7 +238,7 @@ namespace NetSquareServer.Worlds
 
         }
 
-        private SpatialChunk GetChunkForPosition(Position position)
+        private SpatialChunk GetChunkForPosition(Transform position)
         {
             short chunkX, chunkY;
             GetChunkPosition(position, out chunkX, out chunkY);
@@ -255,7 +255,7 @@ namespace NetSquareServer.Worlds
             return chunkX >= 0 && chunkX < Width && chunkY >= 0 && chunkY < Height;
         }
 
-        private void GetChunkPosition(Position position, out short chunkX, out short chunkY)
+        private void GetChunkPosition(Transform position, out short chunkX, out short chunkY)
         {
             chunkX = (short)Math.Round((position.x - Bounds.MinX) / ChunkSize, MidpointRounding.ToEven);
             chunkY = (short)Math.Round((position.z - Bounds.MinY) / ChunkSize, MidpointRounding.ToEven);
@@ -291,11 +291,11 @@ namespace NetSquareServer.Worlds
             }
         }
 
-        public override Position GetClientPosition(uint clientID)
+        public override Transform GetClientPosition(uint clientID)
         {
             if (Clients.ContainsKey(clientID))
                 return Clients[clientID].Position;
-            return Position.zero;
+            return Transform.zero;
         }
 
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)
@@ -307,7 +307,7 @@ namespace NetSquareServer.Worlds
             }
         }
 
-        public override void AddStaticEntity(short type, uint id, Position pos)
+        public override void AddStaticEntity(short type, uint id, Transform pos)
         {
             short chunkX, chunkY;
             GetChunkPosition(pos, out chunkX, out chunkY);

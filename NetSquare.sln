@@ -9,8 +9,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client Test", "Client Test\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSquareClient", "NetSquareClient\NetSquareClient.csproj", "{775043F8-96A9-48E7-8A85-437D336BDE72}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Server Test Winform", "Server Test Winform\Server Test Winform.csproj", "{38855A36-CB54-4063-BC3C-AF5B969A4A51}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSquareCore", "NetSquareCore\NetSquareCore.csproj", "{F828690C-33D4-4C51-872E-CAE5EF3C7B7B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSquareServer", "NetSquareServer\NetSquareServer.csproj", "{73E58AB1-7E71-486E-98FD-3531AD2F3C1A}"
@@ -33,10 +31,6 @@ Global
 		{775043F8-96A9-48E7-8A85-437D336BDE72}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{775043F8-96A9-48E7-8A85-437D336BDE72}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{775043F8-96A9-48E7-8A85-437D336BDE72}.Release|Any CPU.Build.0 = Release|Any CPU
-		{38855A36-CB54-4063-BC3C-AF5B969A4A51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{38855A36-CB54-4063-BC3C-AF5B969A4A51}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{38855A36-CB54-4063-BC3C-AF5B969A4A51}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{38855A36-CB54-4063-BC3C-AF5B969A4A51}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F828690C-33D4-4C51-872E-CAE5EF3C7B7B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F828690C-33D4-4C51-872E-CAE5EF3C7B7B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F828690C-33D4-4C51-872E-CAE5EF3C7B7B}.Release|Any CPU.ActiveCfg = Release|Any CPU

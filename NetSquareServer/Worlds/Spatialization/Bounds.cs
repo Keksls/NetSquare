@@ -22,7 +22,7 @@ namespace NetSquareServer.Worlds
             return x >= MinX && x <= MaxX && y >= MinY && y <= MaxY;
         }
 
-        public bool IsInBounds(Position position)
+        public bool IsInBounds(Transform position)
         {
             return position.x >= MinX && position.x <= MaxX && position.z >= MinY && position.z <= MaxY;
         }

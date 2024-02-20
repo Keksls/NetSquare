@@ -13,6 +13,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Linq;
 using NetSquareServer.Worlds;
+using NetSquare.Core.Messages;
 
 namespace NetSquareServer
 {
@@ -34,8 +35,13 @@ namespace NetSquareServer
         public event Action<uint> OnClientDisconnected;
         public event Action<NetworkMessage> OnMessageReceived;
         public event Action<byte[]> OnMessageSend;
+        public event Action<long> OnTimeLoop;
         public Action<string> DrawHeaderOverrideCallback = null;
+
         #region Variables
+        public long Time { get; private set; }
+        public long StartTimeTicks { get; private set; }
+        private int serverTickRate = 1000 / 60;
         public bool IsStarted { get { return Listeners.Any(l => l.Listener.Active); } }
         public HashSet<string> ServerIPs { get; private set; }
         public List<TcpListener> Listeners = new List<TcpListener>();
@@ -54,6 +60,11 @@ namespace NetSquareServer
             Worlds = new WorldsManager(this);
             MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
             Statistics = new ServerStatisticsManager();
+            // register client sync time
+            Dispatcher.AddHeadAction(NetSquareMessageType.ClientSynchronizeTime, "ClientSyncTime", (message) =>
+            {
+                message.Reply(new NetworkMessage().Set(Time));
+            });
         }
 
         private void ServerRoutine(int port, bool allowLocalIP, bool bindDispatcher, bool CheckBlackList)
@@ -107,7 +118,15 @@ namespace NetSquareServer
                     return;
                 }
 
-                Writer.Write_Server("Processing Message Queue...", ConsoleColor.DarkYellow, false);
+                // start update loop
+                Writer.Write_Server("Starting Update Loop...", ConsoleColor.DarkYellow, false);
+                serverTickRate = 1000 / NetSquareConfigurationManager.Configuration.UpdateFrequencyHz;
+                Thread updateThread = new Thread(UpdateLoop);
+                updateThread.Start();
+                Writer.Write("Started", ConsoleColor.Green);
+
+                // start message queue
+                Writer.Write_Server("Starting Message Queues...", ConsoleColor.DarkYellow, false);
                 MessageQueueManager.StartQueues();
                 Statistics.StartReceivingStatistics(this);
                 Writer.Write("Started", ConsoleColor.Green);
@@ -120,6 +139,30 @@ namespace NetSquareServer
                 Writer.Write("A new configuration file have been created. Please restart the server.", ConsoleColor.DarkYellow);
             }
         }
+
+        #region Update Loop
+        /// <summary>
+        /// Update loop of the server
+        /// </summary>
+        private void UpdateLoop()
+        {
+            StartTimeTicks = DateTime.Now.Ticks;
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
+            long lastTime = Time;
+            while (IsStarted)
+            {
+                Time = sw.ElapsedMilliseconds;
+                if (Time - lastTime >= serverTickRate)
+                {
+                    lastTime = Time;
+                    OnTimeLoop?.Invoke(Time);
+                }
+                Thread.Sleep(1);
+            }
+            sw.Stop();
+        }
+        #endregion
 
         #region Start/Stop Server
         public void Start(int port = -1, bool allowLocalIP = true, bool bindDispatcher = true, bool CheckBlackList = true)

@@ -36,6 +36,7 @@ namespace Server_Test
             server.OnClientConnected += Server_OnClientConnected;
             server.Statistics.IntervalMs = 500;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;
+            server.OnTimeLoop += Server_OnTimeLoop;
 
             NetSquareWorld world = server.Worlds.AddWorld("Default World", ushort.MaxValue);
             //world.StartSynchronizer(10, false);
@@ -52,6 +53,15 @@ namespace Server_Test
             server.Start(allowLocalIP: true);
             //Writer.StopDisplayLog();
             Writer.StartDisplayTitle();
+        }
+
+        private static ServerStatistics currentStatistics;
+        private static void Server_OnTimeLoop(long obj)
+        {
+            if (!Writer.DisplayTitle)
+                return;
+            string humanReadableTime = TimeSpan.FromMilliseconds(server.Time).ToString(@"hh\:mm\:ss");
+            Writer.Title("T:" + server.Time + " " + humanReadableTime + " " + currentStatistics.ToString());
         }
 
         #region Server Events
@@ -72,7 +82,9 @@ namespace Server_Test
         {
             if (!Writer.DisplayTitle)
                 return;
-            Writer.Title(statistics.ToString());
+            currentStatistics = statistics;
+            string humanReadableTime = TimeSpan.FromMilliseconds(server.Time).ToString(@"hh\:mm\:ss");
+            Writer.Title("T:" + server.Time + " " + humanReadableTime + " " + statistics.ToString());
         }
 
         private static void Server_OnClientConnected(uint clientID)
