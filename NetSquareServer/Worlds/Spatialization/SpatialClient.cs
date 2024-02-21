@@ -8,18 +8,18 @@ namespace NetSquareServer.Worlds
     public class SpatialClient
     {
         public ConnectedClient Client;
-        public Transform Position;
-        public Transform LastPosition;
+        public NetsquareTransformFrame Transform;
+        public NetsquareTransformFrame LastPosition;
         public HashSet<SpatialClient> Visibles;
         public HashSet<uint> VisibleIDs;
         public HashSet<StaticEntity> VisibleStaticEntities;
         public SimpleSpatializer Spatializer;
 
-        public SpatialClient(SimpleSpatializer spatializer, ConnectedClient client, Transform position)
+        public SpatialClient(SimpleSpatializer spatializer, ConnectedClient client, NetsquareTransformFrame position)
         {
             Spatializer = spatializer;
             Client = client;
-            Position = position;
+            Transform = position;
             Visibles = new HashSet<SpatialClient>();
             VisibleIDs = new HashSet<uint>();
             VisibleStaticEntities = new HashSet<StaticEntity>();
@@ -34,7 +34,7 @@ namespace NetSquareServer.Worlds
                 bool clientLeaveFOV = false;
                 // pack message
                 foreach (SpatialClient oldVisible in Visibles)
-                    if (Transform.Distance(oldVisible.Position, Position) > Spatializer.MaxViewDistance)
+                    if (NetsquareTransformFrame.Distance(oldVisible.Transform, Transform) > Spatializer.MaxViewDistance)
                     {
                         // client just leave FOV
                         clientLeaveFOV = true;
@@ -52,7 +52,7 @@ namespace NetSquareServer.Worlds
                 // iterate on each clients in my spatializer
                 foreach (SpatialClient client in Spatializer.Clients.Values)
                 {
-                    if (Transform.Distance(client.Position, Position) <= Spatializer.MaxViewDistance)
+                    if (NetsquareTransformFrame.Distance(client.Transform, Transform) <= Spatializer.MaxViewDistance)
                     {
                         // new client in FOV
                         newVisibles.Add(client);
@@ -79,10 +79,10 @@ namespace NetSquareServer.Worlds
                 }
 
                 // client has move since last spatialization
-                if (!Position.Equals(LastPosition))
+                if (!Transform.Equals(LastPosition))
                 {
-                    Spatializer.World.server.Worlds.Fire_OnSpatializePlayer(Spatializer.World.ID, Client.ID, Position);
-                    LastPosition.Set(Position);
+                    Spatializer.World.server.Worlds.Fire_OnSpatializePlayer(Spatializer.World.ID, Client.ID, Transform);
+                    LastPosition.Set(Transform);
                 }
 
                 Visibles = newVisibles;
@@ -95,7 +95,7 @@ namespace NetSquareServer.Worlds
             List<StaticEntity> leaving = new List<StaticEntity>();
             // pack message
             foreach (StaticEntity oldVisible in VisibleStaticEntities)
-                if (Transform.Distance(oldVisible.Position, Position) > Spatializer.MaxViewDistance)
+                if (NetsquareTransformFrame.Distance(oldVisible.Transform, Transform) > Spatializer.MaxViewDistance)
                 {
                     // client just leave FOV
                     leaving.Add(oldVisible);
@@ -109,7 +109,7 @@ namespace NetSquareServer.Worlds
             // iterate on each entities in my spatializer
             foreach (StaticEntity entity in Spatializer.StaticEntities)
             {
-                if (Transform.Distance(entity.Position, Position) <= Spatializer.MaxViewDistance && !VisibleStaticEntities.Contains(entity))
+                if (NetsquareTransformFrame.Distance(entity.Transform, Transform) <= Spatializer.MaxViewDistance && !VisibleStaticEntities.Contains(entity))
                 {
                     // new client in FOV
                     VisibleStaticEntities.Add(entity);

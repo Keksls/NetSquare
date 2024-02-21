@@ -35,20 +35,20 @@ namespace NetSquareServer.Worlds
         /// <param name="client">ID of the client to add</param>
         public override void AddClient(ConnectedClient client)
         {
-            AddClient(client, Transform.zero);
+            AddClient(client, NetsquareTransformFrame.zero);
         }
 
         /// <summary>
         /// add a client to this spatializer and set his position
         /// </summary>
-        /// <param name="clientID">ID of the client to add</param>
-        /// <param name="pos">spawn position</param>
-        public override void AddClient(ConnectedClient client, Transform pos)
+        /// <param name="client">the client to add</param>
+        /// <param name="transform">spawn position</param>
+        public override void AddClient(ConnectedClient client, NetsquareTransformFrame transform)
         {
-            var chunk = GetChunkForPosition(pos);
+            var chunk = GetChunkForPosition(transform);
             if (chunk != null)
             {
-                ChunkedClient chunkClient = new ChunkedClient(client.ID, chunk.x, chunk.y, pos);
+                ChunkedClient chunkClient = new ChunkedClient(client.ID, chunk.x, chunk.y, transform);
                 if (!Clients.ContainsKey(client.ID))
                     while (!Clients.TryAdd(client.ID, chunkClient))
                         continue;
@@ -89,12 +89,12 @@ namespace NetSquareServer.Worlds
         /// set a client position
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
-        /// <param name="pos">position</param>
-        public override void SetClientPosition(uint clientID, Transform pos)
+        /// <param name="transform">position</param>
+        public override void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
         {
             if (Clients.ContainsKey(clientID))
             {
-                Clients[clientID].SetPostition(pos);
+                Clients[clientID].SetPostition(transform);
             }
         }
 
@@ -238,10 +238,10 @@ namespace NetSquareServer.Worlds
 
         }
 
-        private SpatialChunk GetChunkForPosition(Transform position)
+        private SpatialChunk GetChunkForPosition(NetsquareTransformFrame transform)
         {
             short chunkX, chunkY;
-            GetChunkPosition(position, out chunkX, out chunkY);
+            GetChunkPosition(transform, out chunkX, out chunkY);
             return GetChunk(chunkX, chunkY);
         }
 
@@ -255,10 +255,10 @@ namespace NetSquareServer.Worlds
             return chunkX >= 0 && chunkX < Width && chunkY >= 0 && chunkY < Height;
         }
 
-        private void GetChunkPosition(Transform position, out short chunkX, out short chunkY)
+        private void GetChunkPosition(NetsquareTransformFrame transform, out short chunkX, out short chunkY)
         {
-            chunkX = (short)Math.Round((position.x - Bounds.MinX) / ChunkSize, MidpointRounding.ToEven);
-            chunkY = (short)Math.Round((position.z - Bounds.MinY) / ChunkSize, MidpointRounding.ToEven);
+            chunkX = (short)Math.Round((transform.x - Bounds.MinX) / ChunkSize, MidpointRounding.ToEven);
+            chunkY = (short)Math.Round((transform.z - Bounds.MinY) / ChunkSize, MidpointRounding.ToEven);
         }
 
         private void CreateChunks(float xStart, float yStart, float xEnd, float yEnd)
@@ -291,11 +291,11 @@ namespace NetSquareServer.Worlds
             }
         }
 
-        public override Transform GetClientPosition(uint clientID)
+        public override NetsquareTransformFrame GetClientTransform(uint clientID)
         {
             if (Clients.ContainsKey(clientID))
                 return Clients[clientID].Position;
-            return Transform.zero;
+            return NetsquareTransformFrame.zero;
         }
 
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)
@@ -307,17 +307,17 @@ namespace NetSquareServer.Worlds
             }
         }
 
-        public override void AddStaticEntity(short type, uint id, Transform pos)
+        public override void AddStaticEntity(short type, uint id, NetsquareTransformFrame transform)
         {
             short chunkX, chunkY;
-            GetChunkPosition(pos, out chunkX, out chunkY);
+            GetChunkPosition(transform, out chunkX, out chunkY);
             if (HasChunk(chunkX, chunkY))
             {
-                GetChunk(chunkX, chunkY).StaticEntities.Add(new StaticEntity(type, id, pos));
+                GetChunk(chunkX, chunkY).StaticEntities.Add(new StaticEntity(type, id, transform));
                 StaticEntitiesCount++;
             }
             else
-                Writer.Write("Fail adding static entity. can't get chunk for pos " + pos.x + " " + pos.y, ConsoleColor.Red);
+                Writer.Write("Fail adding static entity. can't get chunk for pos " + transform.x + " " + transform.y, ConsoleColor.Red);
         }
     }
 }

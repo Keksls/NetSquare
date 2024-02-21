@@ -12,10 +12,12 @@ namespace NetSquareClient
         public ushort CurrentWorldID { get; private set; }
         public event Action<NetworkMessage> OnClientJoinWorld;
         public event Action<uint> OnClientLeaveWorld;
-        public event Action<uint, float, float, float> OnClientMove;
+        public event Action<uint, NetsquareTransformFrame[]> OnClientMove;
         public event Action<NetworkMessage> OnSynchronize;
-        public bool SynchronizeUsingUDP { get; set; }
+        public bool SynchronizeUsingUDP;
+        public bool AutoSendFrames = true;
         private NetSquare_Client client;
+        private List<NetsquareTransformFrame> currentClientFrames = new List<NetsquareTransformFrame>();
 
         public WorldsManager(NetSquare_Client _client, bool synchronizeUsingUDP)
         {
@@ -23,7 +25,7 @@ namespace NetSquareClient
             client = _client;
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientSetTransform, "ClientSetPosition", ClientSetPosition);
+            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientSetTransform, "ClientSetPosition", ClientSetTransform);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsLeaveWorld, "ClientsLeaveCurrentWorld", ClientsLeaveCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsJoinWorld, "ClientsJoinCurrentWorld", ClientsJoinCurrentWorld);
         }
@@ -36,7 +38,7 @@ namespace NetSquareClient
         /// <param name="worldID">ID of the world to join</param>
         /// <param name="position">position of the client in the world to join</param>
         /// <param name="Callback">Callback raised after server try added. if true, join success</param>
-        public void TryJoinWorld(ushort worldID, Transform? position, Action<bool> Callback)
+        public void TryJoinWorld(ushort worldID, NetsquareTransformFrame? position, Action<bool> Callback)
         {
             if (IsInWorld)
             {
@@ -51,7 +53,7 @@ namespace NetSquareClient
                     IsInWorld = true;
                     CurrentWorldID = worldID;
                     if (position.HasValue)
-                        SetTransform(position.Value);
+                        SendTransformFrame(position.Value);
                     Callback?.Invoke(true);
                     List<NetworkMessage> messages = response.Unpack();
                     foreach (NetworkMessage message in messages)
@@ -128,36 +130,54 @@ namespace NetSquareClient
             else
                 client.SendMessage(message);
         }
+        #endregion
 
+        #region Transforms Frames
         /// <summary>
         /// Synchronize message Data with other client in this world. 
         /// Server will pack clients message and send to anyone in the world at regular interval
         /// Must be in a world
         /// </summary>
-        /// <param name="position">position of the player</param>
-        public void SetTransform(Transform position)
-        {
-            SetTransform(position.x, position.y, position.z, position.rotation);
-        }
-
-        /// <summary>
-        /// Synchronize message Data with other client in this world. 
-        /// Server will pack clients message and send to anyone in the world at regular interval
-        /// Must be in a world
-        /// </summary>
-        /// <param name="x">x position of the player</param>
-        /// <param name="x">y position of the player</param>
-        /// <param name="x">z position of the player</param>
-        public void SetTransform(float x, float y, float z, byte rotation)
+        /// <param name="transformFrame">transform frame of the player</param>
+        public void SendTransformFrame(NetsquareTransformFrame transformFrame)
         {
             if (!IsInWorld)
                 return;
-            NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetTransform, client.ClientID)
-                .Set(x).Set(y).Set(z).Set(rotation);
+            NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetTransform, client.ClientID);
+            transformFrame.Serialize(message);
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
             else
                 client.SendMessage(message);
+        }
+
+        /// <summary>
+        /// Store a transform frame to send at the next frame
+        /// </summary>
+        /// <param name="transformFrame"> transform frame to store</param>
+        public void StoreTransformFrame(NetsquareTransformFrame transformFrame)
+        {
+            currentClientFrames.Add(transformFrame);
+        }
+
+        /// <summary>
+        /// Send all stored transform frames
+        /// </summary>
+        public void SendFrames()
+        {
+            if (!IsInWorld)
+                return;
+            if (currentClientFrames.Count == 0)
+                return;
+            NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetTransform, client.ClientID);
+            message.Set((byte)currentClientFrames.Count);
+            foreach (var frame in currentClientFrames)
+                frame.Serialize(message);
+            if (SynchronizeUsingUDP)
+                client.SendMessageUDP(message);
+            else
+                client.SendMessage(message);
+            currentClientFrames.Clear();
         }
         #endregion
 
@@ -196,17 +216,33 @@ namespace NetSquareClient
                 OnClientJoinWorld(message);
         }
 
-        private void ClientSetPosition(NetworkMessage message)
+        private void ClientSetTransform(NetworkMessage message)
         {
             if (OnClientMove == null)
                 return;
             if (message.IsBlockMessage())
+            {
                 while (message.NextBlock())
                 {
-                    OnClientMove(message.GetUInt24().UInt32, message.GetFloat(), message.GetFloat(), message.GetFloat());
+                    byte nbFrames = message.GetByte();
+                    NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
+                    for (int i = 0; i < nbFrames; i++)
+                    {
+                        frames[i] = new NetsquareTransformFrame(message);
+                    }
+                    OnClientMove(message.GetUInt24().UInt32, frames);
                 }
+            }
             else
-                OnClientMove(message.ClientID, message.GetFloat(), message.GetFloat(), message.GetFloat());
+            {
+                byte nbFrames = message.GetByte();
+                NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
+                for (int i = 0; i < nbFrames; i++)
+                {
+                    frames[i] = new NetsquareTransformFrame(message);
+                }
+                OnClientMove(message.ClientID, frames);
+            }
         }
         #endregion
     }

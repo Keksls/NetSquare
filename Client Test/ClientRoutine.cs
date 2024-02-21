@@ -2,6 +2,7 @@
 using NetSquareClient;
 using NetSquareCore;
 using System;
+using System.Runtime.Serialization;
 using System.Threading;
 
 namespace Client_Test
@@ -15,7 +16,7 @@ namespace Client_Test
 
         public void Start()
         {
-            client = new NetSquare_Client();
+            client = new NetSquare_Client(eProtocoleType.TCP, false);
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
@@ -47,6 +48,7 @@ namespace Client_Test
 
             Console.WriteLine("Connected with ID " + ID);
             GetNextTargetPoint();
+            client.WorldsManager.OnClientJoinWorld += WorldsManager_OnClientJoinWorld;
             client.WorldsManager.TryJoinWorld(1, currentPos, (success) =>
             {
                 if (success)
@@ -62,6 +64,12 @@ namespace Client_Test
             });
         }
 
+        private void WorldsManager_OnClientJoinWorld(NetworkMessage obj)
+        {
+            Console.WriteLine("Client Join World at pos : " + obj.GetFloat() + ", " + obj.GetFloat() + ", " + obj.GetFloat() + " - rot : " + obj.GetByte());
+            //throw new NotImplementedException();
+        }
+
         [NetSquareAction((ushort)MessagesTypes.WelcomeMessage)]
         public static void ReceivingDebugMessageFromServer(NetworkMessage message)
         {
@@ -75,14 +83,14 @@ namespace Client_Test
             if (!readyToSync)
                 return;
             GetNextTargetPoint();
-            client.WorldsManager.SetTransform(currentPos);
+            client.WorldsManager.SendTransformFrame(currentPos);
         }
 
         int nbStep = 100;
         int index = -1;
-        Transform startPos = Transform.zero;
-        Transform targetPos;
-        Transform currentPos = Transform.zero;
+        NetsquareTransformFrame startPos = NetsquareTransformFrame.zero;
+        NetsquareTransformFrame targetPos;
+        NetsquareTransformFrame currentPos = NetsquareTransformFrame.zero;
         private void GetNextTargetPoint()
         {
             index++;
@@ -90,16 +98,16 @@ namespace Client_Test
                 index = 0;
             if (index == 0)
             {
-                x = ((float)rnd.Next(-1000, 1000)) / 20f;
+                x = (float)rnd.Next(0, 100);
                 y = 1f;
-                z = ((float)rnd.Next(-1000, 1000)) / 20f;
-                targetPos = new Transform(x, y, z);
-                if (currentPos.Equals(Transform.zero))
+                z = (float)rnd.Next(0, 100);
+                targetPos = new NetsquareTransformFrame(x, y, z, (byte)rnd.Next(0, 255), 0, client.Time);
+                if (currentPos.Equals(NetsquareTransformFrame.zero))
                     currentPos.Set(targetPos);
                 startPos.Set(currentPos);
             }
 
-            currentPos = Transform.Lerp(startPos, targetPos, (float)index / (float)nbStep);
+            currentPos = NetsquareTransformFrame.Lerp(startPos, targetPos, (float)index / (float)nbStep);
         }
     }
 

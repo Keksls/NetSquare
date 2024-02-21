@@ -36,7 +36,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">ID of the client to add</param>
         /// <param name="pos">spawn position</param>
-        public abstract void AddClient(ConnectedClient client, Transform pos);
+        public abstract void AddClient(ConnectedClient client, NetsquareTransformFrame pos);
 
         /// <summary>
         /// Remove a client from the spatializer
@@ -49,14 +49,14 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
         /// <param name="pos">position</param>
-        public abstract void SetClientPosition(uint clientID, Transform pos);
+        public abstract void SetClientTransform(uint clientID, NetsquareTransformFrame pos);
 
         /// <summary>
         /// Get a client position
         /// </summary>
         /// <param name="clientID">id of the clienty to get position</param>
         /// <returns>position of the  client</returns>
-        public abstract Transform GetClientPosition(uint clientID);
+        public abstract NetsquareTransformFrame GetClientTransform(uint clientID);
 
         /// <summary>
         /// get all visible clients for a given client, according to a maximum view distance
@@ -79,7 +79,7 @@ namespace NetSquareServer.Worlds
 
         public abstract void ForEach(Action<uint, IEnumerable<uint>> callback);
 
-        public abstract void AddStaticEntity(short type, uint id, Transform pos);
+        public abstract void AddStaticEntity(short type, uint id, NetsquareTransformFrame pos);
     }
 
     public enum SpatializerType

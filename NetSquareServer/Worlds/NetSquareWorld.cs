@@ -107,10 +107,10 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">ID of the client</param>
         /// <param name="position">client position</param>
-        public void SetClientPosition(uint clientID, Transform position)
+        public void SetClientPosition(uint clientID, NetsquareTransformFrame position)
         {
             if (UseSpatializer)
-                Spatializer.SetClientPosition(clientID, position);
+                Spatializer.SetClientTransform(clientID, position);
         }
 
         /// <summary>
@@ -149,7 +149,7 @@ namespace NetSquareServer.Worlds
         /// <param name="type">Type of the entity</param>
         /// <param name="id">ID of  the entity</param>
         /// <param name="pos">Position of the entity</param>
-        public void AddStaticEntity(short type, uint id, Transform pos)
+        public void AddStaticEntity(short type, uint id, NetsquareTransformFrame pos)
         {
             Spatializer?.AddStaticEntity(type, id, pos);
         }

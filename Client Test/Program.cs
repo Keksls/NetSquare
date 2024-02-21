@@ -44,7 +44,7 @@ namespace Client_Test
                             Console.Title = "T:" + clients[i].client.Time + " - T:" + humanReadableTime;
                         }
                     }
-                    Thread.Sleep(100);
+                    Thread.Sleep(500);
                 }
             });
             s.Start();

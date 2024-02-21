@@ -2,7 +2,6 @@
 using NetSquareClient;
 using NetSquareCore;
 using System;
-using System.Security.Principal;
 
 namespace Client_Test
 {
@@ -45,7 +44,7 @@ namespace Client_Test
                 if (response.GetBool())
                 {
                     Console.WriteLine("Bot connected");
-                    client.WorldsManager.TryJoinWorld(1, new Transform(0, 0, 0), (success) =>
+                    client.WorldsManager.TryJoinWorld(1, NetsquareTransformFrame.zero, (success) =>
                     {
                         Console.WriteLine("rejoin le monde.");
                     });

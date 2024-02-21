@@ -6,13 +6,13 @@ namespace NetSquareServer.Worlds
     {
         public short Type { get; set; }
         public uint Id { get; set; }
-        public Transform Position { get; set; }
+        public NetsquareTransformFrame Transform { get; set; }
 
-        public StaticEntity(short type, uint id, Transform position)
+        public StaticEntity(short type, uint id, NetsquareTransformFrame transform)
         {
             Type = type;
             Id = id;
-            Position = position;
+            Transform = transform;
         }
     }
 }

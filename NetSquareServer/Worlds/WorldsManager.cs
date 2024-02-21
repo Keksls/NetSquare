@@ -22,11 +22,11 @@ namespace NetSquareServer.Worlds
         /// <summary>
         /// WorldID, ClientID, new client Position
         /// </summary>
-        public event Action<ushort, uint, Transform> OnPlayerSetPosition;
+        public event Action<ushort, uint, NetsquareTransformFrame> OnPlayerSetPosition;
         /// <summary>
         /// WorldID, ClientID, client Position
         /// </summary>
-        public event Action<ushort, uint, Transform> OnSpatializePlayer;
+        public event Action<ushort, uint, NetsquareTransformFrame> OnSpatializePlayer;
         private Dictionary<uint, ushort> ClientsWorlds = new Dictionary<uint, ushort>(); // clientID => worldID
         private NetSquare_Server server;
 
@@ -43,7 +43,7 @@ namespace NetSquareServer.Worlds
             OnSendWorldClients?.Invoke(worldID, clientID, message);
         }
 
-        internal void Fire_OnSpatializePlayer(ushort worldID, uint clientID, Transform position)
+        internal void Fire_OnSpatializePlayer(ushort worldID, uint clientID, NetsquareTransformFrame position)
         {
             OnSpatializePlayer?.Invoke(worldID, clientID, position);
         }
@@ -294,7 +294,7 @@ namespace NetSquareServer.Worlds
                     NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
                     if (world != null)
                     {
-                        Transform pos = new Transform(message.GetFloat(), message.GetFloat(), message.GetFloat());
+                        NetsquareTransformFrame pos = new NetsquareTransformFrame(message.GetFloat(), message.GetFloat(), message.GetFloat());
                         world.SetClientPosition(message.ClientID, pos);
                         message.RestartRead();
                         if (world.Synchronizer != null)
@@ -327,7 +327,7 @@ namespace NetSquareServer.Worlds
                     NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
                     if (world != null)
                     {
-                        Transform pos = new Transform(x, y, z);
+                        NetsquareTransformFrame pos = new NetsquareTransformFrame(x, y, z);
                         world.SetClientPosition(clientID, pos);
                         NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetTransform, clientID).Set(x).Set(y).Set(z);
                         message.Serialize();

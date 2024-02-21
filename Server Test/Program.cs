@@ -12,15 +12,6 @@ namespace Server_Test
         static NetSquare_Server server;
         static void Main(string[] args)
         {
-            //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.LZ4Compression);
-            SerializationPerformances sp = new SerializationPerformances();
-            sp.TestCustomObjectSerialization();
-            //sp.TestArrayPerfo(1000000);
-            //Console.ReadKey();
-            //sp.TestContainPerfo();
-            //sp.HashSetContainsPerfo();
-            //Console.ReadKey();
-
             // Set configuration
             NetSquareConfiguration config = NetSquareConfigurationManager.Configuration;
             config.BlackListFilePath = @"[current]\blackList.bl";
@@ -29,10 +20,11 @@ namespace Server_Test
             config.NbSendingThreads = 4;
             config.NbQueueThreads = 4;
             config.SynchronizingFrequency = 10;
+            config.UpdateFrequencyHz = 10;
             NetSquareConfigurationManager.SaveConfiguration(config);
 
             // Instantiate NetSquare Server
-            server = new NetSquare_Server();
+            server = new NetSquare_Server(eProtocoleType.TCP);
             server.OnClientConnected += Server_OnClientConnected;
             server.Statistics.IntervalMs = 500;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;
@@ -40,7 +32,7 @@ namespace Server_Test
 
             NetSquareWorld world = server.Worlds.AddWorld("Default World", ushort.MaxValue);
             //world.StartSynchronizer(10, false);
-            world.StartSpatializer(Spatializer.GetChunkedSpatializer(world, 10f, -100f, -100f, 100f, 100f), 1f);
+            world.StartSpatializer(Spatializer.GetChunkedSpatializer(world, 100f, 0f, 0f, 1000f, 1000f), 1f);
             server.Worlds.OnClientJoinWorld += OnClientJoinWorld;
             server.Worlds.OnSendWorldClients += OnClientJoinWorld;
 
@@ -51,7 +43,7 @@ namespace Server_Test
             // Start Server
             //Writer.StartRecordingLog();
             server.Start(allowLocalIP: true);
-            //Writer.StopDisplayLog();
+            //Writer.StopRecordingLog();
             Writer.StartDisplayTitle();
         }
 
@@ -70,10 +62,10 @@ namespace Server_Test
             try
             {
                 // add random color to network message that will be sended on client join lobby
-                message.Set(GetRandomColorArray());
+                //message.Set(GetRandomColorArray());
                 // set position
-                var pos = server.Worlds.GetWorld(1).Spatializer.GetClientPosition(clientID);
-                message.Set(pos.x).Set(pos.y).Set(pos.z);
+                var transform = server.Worlds.GetWorld(1).Spatializer.GetClientTransform(clientID);
+                transform.Serialize(message);
             }
             catch { }
         }

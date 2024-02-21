@@ -29,17 +29,17 @@ namespace NetSquareServer.Worlds
         /// <param name="client">ID of the client to add</param>
         public override void AddClient(ConnectedClient client)
         {
-            AddClient(client, Transform.zero);
+            AddClient(client, NetsquareTransformFrame.zero);
         }
 
         /// <summary>
         /// add a client to this spatializer and set his position
         /// </summary>
-        /// <param name="clientID">ID of the client to add</param>
-        /// <param name="pos">spawn position</param>
-        public override void AddClient(ConnectedClient client, Transform pos)
+        /// <param name="client">the client to add</param>
+        /// <param name="transform">spawn position</param>
+        public override void AddClient(ConnectedClient client, NetsquareTransformFrame transform)
         {
-            SpatialClient spatializedClient = new SpatialClient(this, client, pos);
+            SpatialClient spatializedClient = new SpatialClient(this, client, transform);
             if (!Clients.ContainsKey(client.ID))
                 while (!Clients.TryAdd(client.ID, spatializedClient))
                     continue;
@@ -65,11 +65,11 @@ namespace NetSquareServer.Worlds
         /// set a client position
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
-        /// <param name="pos">position</param>
-        public override void SetClientPosition(uint clientID, Transform pos)
+        /// <param name="transform">position</param>
+        public override void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
         {
             if (Clients.ContainsKey(clientID))
-                Clients[clientID].Position = pos;
+                Clients[clientID].Transform = transform;
         }
 
         /// <summary>
@@ -134,11 +134,11 @@ namespace NetSquareServer.Worlds
             }
         }
 
-        public override Transform GetClientPosition(uint clientID)
+        public override NetsquareTransformFrame GetClientTransform(uint clientID)
         {
             if (Clients.ContainsKey(clientID))
-                return Clients[clientID].Position;
-            return Transform.zero;
+                return Clients[clientID].Transform;
+            return NetsquareTransformFrame.zero;
         }
 
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)
@@ -147,7 +147,7 @@ namespace NetSquareServer.Worlds
                 callback(client.Key, GetVisibleClients(client.Key));
         }
 
-        public override void AddStaticEntity(short type, uint id, Transform pos)
+        public override void AddStaticEntity(short type, uint id, NetsquareTransformFrame pos)
         {
             StaticEntities.Add(new StaticEntity(type, id, pos));
             StaticEntitiesCount++;

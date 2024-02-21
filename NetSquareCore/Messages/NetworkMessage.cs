@@ -412,7 +412,7 @@ namespace NetSquare.Core
             if (CanGetUInt24())
             {
                 UInt24 blockSize = new UInt24(Data, currentReadingIndex);
-                return Data.Length - currentReadingIndex > blockSize.UInt32;
+                return Data.Length - currentReadingIndex >= blockSize.UInt32;
             }
             return false;
         }
@@ -901,13 +901,25 @@ namespace NetSquare.Core
 
         public NetworkMessage Pack(IEnumerable<NetworkMessage> messages, bool alreadySerialized = false)
         {
-            int lenght = 12;
+            // Packed message will be as follow
+            // ======== HEAD =========
+            //  - FullMessageSize : Int32   4 bytes
+            //  - ClientID :        Int24   3 bytes
+            //  - HeadAction :      Int16   2 bytes
+            //  - TypeID :          Int24   3 bytes
+            // ======== DATA =========  <= For each message
+            //  - BlockSize :       Int24   3 bytes
+            //  - ClientID :        Int24   3 bytes
+            //  - Data :            var     BlockSize bytes
+
+            // count packed message lenght
+            int lenght = 12; // headSize (12 bits)
             int nb = 0;
             foreach (NetworkMessage message in messages)
             {
                 if (!alreadySerialized)
                     message.Serialize(true);
-                lenght += message.Data.Length - 6; // blockSize (3 bits) + clientID (3 bits)  - headSize (12 bits)
+                lenght += message.Data.Length - 6; // blockSize (3 bits) + clientID (3 bits) - headSize (12 bits) <= we remove head (12 bits) and we add blockSize (3 bits) and clientID (3 bits)
                 nb++;
             }
 
@@ -915,19 +927,14 @@ namespace NetSquare.Core
                 return this;
 
             // create full empty array
-            Data = new byte[blocksSize + 12 + lenght];
-            // Write Blocks
+            Data = new byte[lenght];
+            // index start at 12, because the head will be written at the end
             int index = 12;
-            for (int i = 0; i < blocks.Count; i++)
-            {
-                Buffer.BlockCopy(blocks[i], 0, Data, index, blocks[i].Length);
-                index += blocks[i].Length;
-            }
-
+            // Write Blocks
             foreach (NetworkMessage message in messages)
             {
                 // Write block Lenght
-                UInt24 blockSize = new UInt24((uint)(message.Data.Length - 7));
+                UInt24 blockSize = new UInt24((uint)(message.Data.Length - 12)); // head size is 12
                 Data[index++] = blockSize.b0;
                 Data[index++] = blockSize.b1;
                 Data[index++] = blockSize.b2;
@@ -978,6 +985,10 @@ namespace NetSquare.Core
 
         public List<NetworkMessage> UnpackWithoutHead()
         {
+            // ======== DATA =========  <= For each message
+            //  - BlockSize :       Int24   3 bytes
+            //  - ClientID :        Int24   3 bytes
+            //  - Data :            var     BlockSize bytes
             List<NetworkMessage> messages = new List<NetworkMessage>();
 
             // reading each packed blocks
@@ -985,9 +996,10 @@ namespace NetSquare.Core
             {
                 // get block size
                 int size = (int)GetUInt24().UInt32;
+                // get clientID
+                uint clientID = GetUInt24().UInt32;
                 // create message
-                NetworkMessage message = new NetworkMessage(HeadID, GetUInt24().UInt32);
-                size -= 3;
+                NetworkMessage message = new NetworkMessage(HeadID, clientID);
                 message.SetType(TypeID);
                 // copy block data into message
                 message.Data = new byte[size];

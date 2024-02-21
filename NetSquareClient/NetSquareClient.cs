@@ -33,8 +33,8 @@ namespace NetSquareClient
         public float Time { get { return serverTimeOffset + (stopwatch.ElapsedMilliseconds / 1000f); } }
         public bool IsTimeSynchonized { get { return serverTimeOffset != 0f; } }
         private bool isSynchronizingTime = false;
-        private float serverTimeOffset;
-        private Stopwatch stopwatch = new Stopwatch();
+        public float serverTimeOffset;
+        public Stopwatch stopwatch = new Stopwatch();
         private uint nbReplyAsked = 1;
         private bool isStarted;
         private ConcurrentQueue<NetworkMessage> messagesQueue = new ConcurrentQueue<NetworkMessage>();
