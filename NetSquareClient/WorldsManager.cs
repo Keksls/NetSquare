@@ -220,17 +220,20 @@ namespace NetSquareClient
         {
             if (OnClientMove == null)
                 return;
-            if (message.IsBlockMessage())
+            // check if it's a packed message
+            if (message.TypeID == (uint)MessageType.SetClientPosition)
             {
                 while (message.NextBlock())
                 {
+                    uint blockSize = message.GetUInt24().UInt32;
+                    uint clientID = message.GetUInt24().UInt32;
                     byte nbFrames = message.GetByte();
                     NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
                     for (int i = 0; i < nbFrames; i++)
                     {
                         frames[i] = new NetsquareTransformFrame(message);
                     }
-                    OnClientMove(message.GetUInt24().UInt32, frames);
+                    OnClientMove(clientID, frames);
                 }
             }
             else

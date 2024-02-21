@@ -187,7 +187,7 @@ namespace NetSquareClient
                             replyCallBack.Remove(message.TypeID);
                         }
                         // sync message
-                        else if (message.TypeID == 2)
+                        else if (message.TypeID == (uint)MessageType.SynchronizeMessageCurrentWorld)
                         {
                             Dispatcher.ExecuteinMainThread((msg) =>
                             {

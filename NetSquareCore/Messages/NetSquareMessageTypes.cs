@@ -1,6 +1,6 @@
 ﻿namespace NetSquare.Core
 {
-    public enum MessageType
+    public enum MessageType : uint
     {
         Default = 0,
         BroadcastCurrentWorld = 1,

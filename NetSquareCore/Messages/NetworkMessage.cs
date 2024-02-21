@@ -430,22 +430,6 @@ namespace NetSquare.Core
             return false;
         }
 
-        public bool IsBlockMessage()
-        {
-            if (CanGetUInt24())
-            {
-                int cri = currentReadingIndex;
-                RestartRead();
-                UInt24 blockSize = new UInt24(Data, currentReadingIndex);
-                bool canGetNextBlock = Data.Length - currentReadingIndex > blockSize.UInt32;
-                if (canGetNextBlock)
-                    currentReadingIndex += 3;
-                currentReadingIndex = cri;
-                return canGetNextBlock;
-            }
-            return false;
-        }
-
         public void Get(ref UInt24 val)
         {
             val.b0 = Data[++currentReadingIndex];
