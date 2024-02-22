@@ -20,16 +20,16 @@ namespace Client_Test
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
-            //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
+            client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
 
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
             // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
             client.Connect("127.0.0.1", 5050);
         }
 
-        private void WorldsManager_OnClientMove(UInt24 clientID, float x, float y, float z)
+        private void WorldsManager_OnClientMove(uint arg1, NetsquareTransformFrame[] arg2)
         {
-            Console.WriteLine(client.ClientID + " : Client " + clientID + " move to : " + x + ", " + y + ", " + z);
+            Console.WriteLine("Client " + arg1 + " move to " + arg2[0].x + ", " + arg2[0].y + ", " + arg2[0].z);
         }
 
         private void Client_Disconected()

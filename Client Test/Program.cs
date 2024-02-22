@@ -26,7 +26,8 @@ namespace Client_Test
                     ClientRoutine routine = new ClientRoutine();
                     routine.Start();
                     clients.Add(routine);
-                    Thread.Sleep(1);
+                    while (!routine.client.WorldsManager.IsInWorld)
+                        Thread.Sleep(10);
                 }
             });
             t.Start();

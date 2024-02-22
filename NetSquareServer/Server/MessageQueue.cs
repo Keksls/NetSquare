@@ -51,13 +51,15 @@ namespace NetSquareServer.Server
                         {
                             if (currentMessage == null)
                             {
-                                Writer.Write("NullQueuedMessageException on queue " + QueueID, ConsoleColor.Red);
+                                // don't worry, it's surely due to a client disconnection
+                                Writer.Write("NullQueuedMessageException on queue " + QueueID, ConsoleColor.DarkYellow);
                                 continue;
                             }
 
                             if (currentMessage.Client == null || !currentMessage.Client.TcpSocket.Connected)
                             {
-                                Writer.Write("NullOrDisconectedClientQueuedMessageException on queue" + QueueID, ConsoleColor.Red);
+                                // don't worry, it's surely due to a client disconnection
+                                Writer.Write("NullOrDisconectedClientQueuedMessageException on queue" + QueueID, ConsoleColor.DarkYellow);
                                 continue;
                             }
 

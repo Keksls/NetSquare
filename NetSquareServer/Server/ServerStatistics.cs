@@ -110,8 +110,12 @@ namespace NetSquareServer.Server
 
                 long receivedThisTick = received - lastProcessReceived;
                 lastProcessReceived = received;
+                if(receivedThisTick < 0)
+                    receivedThisTick = 0;
                 long sendedThisTick = sended - lastProcessSended;
                 lastProcessSended = sended;
+                if(sendedThisTick < 0)
+                    sendedThisTick = 0;
 
                 int nbMessages = 0;
                 foreach (var queue in server.MessageQueueManager.Queues)

@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSquareCore", "NetSquareC
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSquareServer", "NetSquareServer\NetSquareServer.csproj", "{73E58AB1-7E71-486E-98FD-3531AD2F3C1A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServerMonitor", "ServerMonitor\ServerMonitor.csproj", "{A85B1AB8-0266-40C0-88F1-46000F319E16}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{73E58AB1-7E71-486E-98FD-3531AD2F3C1A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{73E58AB1-7E71-486E-98FD-3531AD2F3C1A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{73E58AB1-7E71-486E-98FD-3531AD2F3C1A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A85B1AB8-0266-40C0-88F1-46000F319E16}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A85B1AB8-0266-40C0-88F1-46000F319E16}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A85B1AB8-0266-40C0-88F1-46000F319E16}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A85B1AB8-0266-40C0-88F1-46000F319E16}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

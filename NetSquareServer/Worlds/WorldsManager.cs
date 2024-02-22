@@ -300,7 +300,11 @@ namespace NetSquareServer.Worlds
                         world.SetClientTransform(clientID, transformFrame);
                         message.RestartRead();
                         if (world.Synchronizer != null)
+                        {
+                            // the message will be packed by synchronizer, so let's update the HeadID so client can handle it correctly
+                            message.HeadID = (ushort)NetSquareMessageType.SetTransformsFramesPacked;
                             world.Synchronizer.AddMessage(message);
+                        }
                         else
                             world.Broadcast(message.Data, clientID, true);
                         OnPlayerSetPosition?.Invoke(ClientsWorlds[clientID], clientID, transformFrame);

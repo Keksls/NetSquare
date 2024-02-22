@@ -3,6 +3,7 @@ using NetSquare.Core.Messages;
 using NetSquareCore;
 using System;
 using System.Collections.Generic;
+using System.Runtime.Remoting.Messaging;
 
 namespace NetSquareClient
 {
@@ -148,6 +149,7 @@ namespace NetSquareClient
             if (!IsInWorld)
                 return;
             NetworkMessage message = new NetworkMessage(NetSquareMessageType.SetTransform, client.ClientID);
+            message.Set((byte)1);
             transformFrame.Serialize(message);
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
@@ -224,7 +226,7 @@ namespace NetSquareClient
         {
             if (OnClientMove == null)
                 return;
-
+            message.DummyRead(1);
             OnClientMove(message.ClientID, new NetsquareTransformFrame[] { new NetsquareTransformFrame(message) });
         }
 
@@ -247,9 +249,12 @@ namespace NetSquareClient
             if (OnClientMove == null)
                 return;
 
-            while (message.NextBlock())
+            List<NetworkMessage> messages = message.UnpackWithoutHead();
+
+            message.RestartRead();
+            while (message.CanGetNextBlock())
             {
-                uint blockSize = message.GetUInt24().UInt32;
+                message.DummyRead(3);
                 uint clientID = message.GetUInt24().UInt32;
                 byte nbFrames = message.GetByte();
                 NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];

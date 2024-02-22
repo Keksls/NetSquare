@@ -6,6 +6,7 @@ namespace NetSquareServer.Worlds
 {
     public class SynchronizedMessage
     {
+        public bool Empty { get { return messagesList.Count == 0; } }
         public ushort HeadID { get; set; }
         private ConcurrentDictionary<uint, NetworkMessage> messagesList = new ConcurrentDictionary<uint, NetworkMessage>(); // clientID => message
 
@@ -77,6 +78,14 @@ namespace NetSquareServer.Worlds
             packed.ClientID = clientID;
             packed.Pack(messages, true);
             return packed;
+        }
+
+        /// <summary>
+        /// Clear the synchronizer
+        /// </summary>
+        public void Clear()
+        {
+            messagesList.Clear();
         }
     }
 }

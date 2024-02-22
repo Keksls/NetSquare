@@ -13,9 +13,9 @@ namespace NetSquare.Core
         public event Action<byte[]> OnMessageSend;
         public event Action<Exception> OnException;
         // statistics
-        public int NbMessagesToSend { get { return SendingQueue.Count + UDP?.NbSendingMessages ?? 0; } }
+        public int NbMessagesToSend { get { return SendingQueue.Count + (UDP?.NbSendingMessages ?? 0); } }
         private int nbMessagesSended;
-        public int NbMessagesSended { get { return nbMessagesSended + UDP?.NbMessagesSended ?? 0; } }
+        public int NbMessagesSended { get { return nbMessagesSended + (UDP?.NbMessagesSended ?? 0); } }
         internal long sendedBytes = 0;
         internal long receivedBytes = 0;
         public long SendedBytes { get { return sendedBytes + UDP?.sendedBytes ?? 0; } set { sendedBytes = value; if (UDP != null) UDP.sendedBytes = value; } }
@@ -47,6 +47,8 @@ namespace NetSquare.Core
         #region Utils
         public bool IsConnected()
         {
+            if (!TcpSocket.Connected)
+                return false;
             if (TcpSocket.Poll(0, SelectMode.SelectRead))
             {
                 byte[] buff = new byte[1];
@@ -201,7 +203,7 @@ namespace NetSquare.Core
                 lock (bufferLock)
                 {
                     // Check if there's enough data in the buffer to process a message
-                    if (receiveBufferLength >= 4)
+                    while (receiveBufferLength >= 4)
                     {
                         // Extract message length
                         int messageLength = BitConverter.ToInt32(receiveBuffer, 0);
@@ -232,11 +234,8 @@ namespace NetSquare.Core
                             Monitor.Wait(bufferLock);
                         }
                     }
-                    else
-                    {
-                        // Wait for more data to arrive
-                        Monitor.Wait(bufferLock);
-                    }
+                    // Wait for more data to arrive
+                    Monitor.Wait(bufferLock);
                 }
             }
         }
@@ -253,8 +252,11 @@ namespace NetSquare.Core
 
                 if (!TcpSocket.ReceiveAsync(receivingArgs))
                 {
-                    // If the receive operation completed synchronously, handle it immediately
-                    MessageDataReceived(this, receivingArgs);
+                    if (TcpSocket.Connected)
+                    {
+                        // If the receive operation completed synchronously, handle it immediately
+                        MessageDataReceived(this, receivingArgs);
+                    }
                 }
             }
             catch (Exception ex)

@@ -86,6 +86,8 @@ namespace NetSquareServer.Worlds
                 {
                     foreach (SynchronizedMessage message in Messages.Values)
                     {
+                        if(message.Empty)
+                            continue;
                         // get spatialized messages
                         List<NetworkMessage> packedMessages = new List<NetworkMessage>();
                         World.Spatializer.ForEach((clientID, visibleIDs) =>
@@ -105,12 +107,15 @@ namespace NetSquareServer.Worlds
                             foreach (var packed in packedMessages)
                                 server.SafeGetClient(packed.ClientID)?.AddTCPMessage(packed);
                         }
+                        message.Clear();
                     }
                 }
                 else // don't use spatializer
                 {
                     foreach (SynchronizedMessage message in Messages.Values)
                     {
+                        if (message.Empty)
+                            continue;
                         if (SynchronizeUsingUDP)
                         {
                             NetworkMessage packed = message.GetPackedMessage();
@@ -123,6 +128,7 @@ namespace NetSquareServer.Worlds
                             foreach (uint clientID in World.Clients)
                                 server.SafeGetClient(clientID)?.AddTCPMessage(packed);
                         }
+                        message.Clear();
                     }
                 }
                 syncWatch.Stop();

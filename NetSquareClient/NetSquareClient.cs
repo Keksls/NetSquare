@@ -402,7 +402,7 @@ namespace NetSquareClient
                 {
                     float sendTime = timeStopWatch.ElapsedMilliseconds / 1000f;
                     // send sync message
-                    SendMessage(new NetworkMessage(NetSquareMessageType.ClientSynchronizeTime, Client.ID), (reply) =>
+                    SendMessage(new NetworkMessage(NetSquareMessageType.ClientSynchronizeTime, ClientID), (reply) =>
                     {
                         // get receive time
                         float receiveTime = timeStopWatch.ElapsedMilliseconds / 1000f;

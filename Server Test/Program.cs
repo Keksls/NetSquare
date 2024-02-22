@@ -4,12 +4,15 @@ using NetSquareServer.Server;
 using NetSquareServer.Utils;
 using NetSquareServer.Worlds;
 using System;
+using System.Windows.Forms;
 
 namespace Server_Test
 {
     internal class Program
     {
         static NetSquare_Server server;
+        static ServerMonitor.Form1 monitor;
+        [STAThread]
         static void Main(string[] args)
         {
             // Set configuration
@@ -26,12 +29,12 @@ namespace Server_Test
             // Instantiate NetSquare Server
             server = new NetSquare_Server(eProtocoleType.TCP);
             server.OnClientConnected += Server_OnClientConnected;
-            server.Statistics.IntervalMs = 500;
+            server.Statistics.IntervalMs = 1000;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;
             server.OnTimeLoop += Server_OnTimeLoop;
 
             NetSquareWorld world = server.Worlds.AddWorld("Default World", ushort.MaxValue);
-            //world.StartSynchronizer(10, false);
+            world.StartSynchronizer(5, false);
             world.StartSpatializer(Spatializer.GetChunkedSpatializer(world, 100f, 0f, 0f, 1000f, 1000f), 1f);
             server.Worlds.OnClientJoinWorld += OnClientJoinWorld;
             server.Worlds.OnSendWorldClients += OnClientJoinWorld;
@@ -45,6 +48,11 @@ namespace Server_Test
             server.Start(allowLocalIP: true);
             //Writer.StopRecordingLog();
             Writer.StartDisplayTitle();
+
+            // Start Server Monitor
+            Application.EnableVisualStyles();
+            monitor = new ServerMonitor.Form1();
+            Application.Run(monitor);
         }
 
         private static ServerStatistics currentStatistics;
@@ -77,6 +85,15 @@ namespace Server_Test
             currentStatistics = statistics;
             string humanReadableTime = TimeSpan.FromMilliseconds(server.Time * 1000f).ToString(@"hh\:mm\:ss");
             Writer.Title("T:" + server.Time + " " + humanReadableTime + " " + statistics.ToString());
+
+            // monitor form
+            if (monitor == null || monitor.IsDisposed)
+            {
+                return;
+            }
+            monitor.Clear();
+            monitor.Write("T:" + server.Time + " " + humanReadableTime + " " + currentStatistics.ToString());
+            monitor.UpdateStatistics(currentStatistics);
         }
 
         private static void Server_OnClientConnected(uint clientID)
