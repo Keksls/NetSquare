@@ -4,9 +4,21 @@
     {
         ClientJoinWorld = 65535,
         ClientLeaveWorld = 65534,
-        ClientSetTransform = 65533,
-        ClientsJoinWorld = 65532,
-        ClientsLeaveWorld = 65531,
-        ClientSynchronizeTime = 65530
+        ClientsJoinWorld = 65533,
+        ClientsLeaveWorld = 65532,
+        ClientSynchronizeTime = 65531,
+
+        /// <summary>
+        ///    Client sends a transform
+        /// </summary>
+        SetTransform = 65530,
+        /// <summary>
+        ///    Clienty sends some transform frames
+        /// </summary>
+        SetTransformFrames = 65529,
+        /// <summary>
+        ///    Server sends some transforms frames, for x clients, packed into a single message
+        /// </summary>
+        SetTransformsFramesPacked = 65528
     }
 }

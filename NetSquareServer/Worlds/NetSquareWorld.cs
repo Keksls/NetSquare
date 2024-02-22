@@ -107,7 +107,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">ID of the client</param>
         /// <param name="position">client position</param>
-        public void SetClientPosition(uint clientID, NetsquareTransformFrame position)
+        public void SetClientTransform(uint clientID, NetsquareTransformFrame position)
         {
             if (UseSpatializer)
                 Spatializer.SetClientTransform(clientID, position);

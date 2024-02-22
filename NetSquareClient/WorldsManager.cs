@@ -25,9 +25,13 @@ namespace NetSquareClient
             client = _client;
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientSetTransform, "ClientSetPosition", ClientSetTransform);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsLeaveWorld, "ClientsLeaveCurrentWorld", ClientsLeaveCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsJoinWorld, "ClientsJoinCurrentWorld", ClientsJoinCurrentWorld);
+
+            client.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransform, "SetTransform", SetTransform);
+            client.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransformFrames, "SetTransformFrames", SetTransformFrames);
+            client.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransformsFramesPacked, "SetTransformsFramesPacked", SetTransformsFramesPacked);
+
         }
 
         #region Public Network Methods
@@ -143,7 +147,7 @@ namespace NetSquareClient
         {
             if (!IsInWorld)
                 return;
-            NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetTransform, client.ClientID);
+            NetworkMessage message = new NetworkMessage(NetSquareMessageType.SetTransform, client.ClientID);
             transformFrame.Serialize(message);
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
@@ -169,7 +173,7 @@ namespace NetSquareClient
                 return;
             if (currentClientFrames.Count == 0)
                 return;
-            NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetTransform, client.ClientID);
+            NetworkMessage message = new NetworkMessage(NetSquareMessageType.SetTransformFrames, client.ClientID);
             message.Set((byte)currentClientFrames.Count);
             foreach (var frame in currentClientFrames)
                 frame.Serialize(message);
@@ -216,35 +220,44 @@ namespace NetSquareClient
                 OnClientJoinWorld(message);
         }
 
-        private void ClientSetTransform(NetworkMessage message)
+        private void SetTransform(NetworkMessage message)
         {
             if (OnClientMove == null)
                 return;
-            // check if it's a packed message
-            if (message.TypeID == (uint)MessageType.SetClientPosition)
+
+            OnClientMove(message.ClientID, new NetsquareTransformFrame[] { new NetsquareTransformFrame(message) });
+        }
+
+        private void SetTransformFrames(NetworkMessage message)
+        {
+            if (OnClientMove == null)
+                return;
+
+            byte nbFrames = message.GetByte();
+            NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
+            for (int i = 0; i < nbFrames; i++)
             {
-                while (message.NextBlock())
-                {
-                    uint blockSize = message.GetUInt24().UInt32;
-                    uint clientID = message.GetUInt24().UInt32;
-                    byte nbFrames = message.GetByte();
-                    NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
-                    for (int i = 0; i < nbFrames; i++)
-                    {
-                        frames[i] = new NetsquareTransformFrame(message);
-                    }
-                    OnClientMove(clientID, frames);
-                }
+                frames[i] = new NetsquareTransformFrame(message);
             }
-            else
+            OnClientMove(message.ClientID, frames);
+        }
+
+        private void SetTransformsFramesPacked(NetworkMessage message)
+        {
+            if (OnClientMove == null)
+                return;
+
+            while (message.NextBlock())
             {
+                uint blockSize = message.GetUInt24().UInt32;
+                uint clientID = message.GetUInt24().UInt32;
                 byte nbFrames = message.GetByte();
                 NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
                 for (int i = 0; i < nbFrames; i++)
                 {
                     frames[i] = new NetsquareTransformFrame(message);
                 }
-                OnClientMove(message.ClientID, frames);
+                OnClientMove(clientID, frames);
             }
         }
         #endregion

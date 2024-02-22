@@ -11,6 +11,7 @@ namespace NetSquare.Core
         private Dictionary<ushort, NetSquareHeadAction> HeadActions;
         public int Count { get { return HeadActions.Count; } }
         private Action<NetSquareAction, NetworkMessage> executeInMainThreadCallback;
+        private static List<MethodInfo> netSquareMethods = null;
 
         public NetSquareDispatcher()
         {
@@ -33,7 +34,7 @@ namespace NetSquare.Core
         public string GetRegisteredActionsString()
         {
             StringBuilder sb = new StringBuilder();
-            foreach( var pair in HeadActions.OrderBy(a => a.Value.HeadID))
+            foreach (var pair in HeadActions.OrderBy(a => a.Value.HeadID))
                 sb.AppendLine(" - [" + pair.Key + "] : " + pair.Value.HeadName + " (" + pair.Value.HeadAction.Method.Name + ")");
             return sb.ToString();
         }
@@ -102,12 +103,15 @@ namespace NetSquare.Core
         public void AutoBindHeadActionsFromAttributes()
         {
             // Get all methods in the loaded assembly that have NetSquareAction Attribute
-            IEnumerable<MethodInfo> methods = from assembly in AppDomain.CurrentDomain.GetAssemblies()
-                                              from type in assembly.GetTypes()
-                                              from method in type.GetMethods()
-                                              where method.IsDefined(typeof(NetSquareActionAttribute), false)
-                                              select method;
-            foreach (MethodInfo method in methods)
+            if (netSquareMethods == null)
+            {
+                netSquareMethods = (from assembly in AppDomain.CurrentDomain.GetAssemblies().AsParallel()
+                                   from type in assembly.GetTypes()
+                                   from method in type.GetMethods()
+                                   where method.IsDefined(typeof(NetSquareActionAttribute), false)
+                                   select method).ToList();
+            }
+            foreach (MethodInfo method in netSquareMethods)
             {
                 AddHeadAction(method.GetCustomAttribute<NetSquareActionAttribute>().HeadID,
                     method.Name,

@@ -1,11 +1,8 @@
 ﻿using NetSquare.Core;
-using NetSquareServer.Worlds;
 using NetSquareServer.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
-using NetSquare.Core.Messages;
-using System.Windows.Forms;
 
 namespace NetSquareServer.Server
 {
@@ -64,15 +61,27 @@ namespace NetSquareServer.Server
                                 continue;
                             }
 
-                            // BroadcastMessage
-                            if (currentMessage.TypeID == 1)
-                                server.Worlds.BroadcastToWorld(currentMessage);
-                            else if(currentMessage.TypeID == 2 && currentMessage.HeadID != (ushort)NetSquareMessageType.ClientSetTransform)
-                                server.Worlds.ReceiveSyncronizationMessage(currentMessage);
-                            else if (!server.Dispatcher.DispatchMessage(currentMessage))
+                            switch ((MessageType)currentMessage.MsgType)
                             {
-                                Writer.Write("Trying to Process message with head '" + currentMessage.HeadID.ToString() + "' but no action related... Message skipped.", ConsoleColor.DarkMagenta);
-                                server.Reply(currentMessage, new NetworkMessage(0, currentMessage.ClientID).Set(false));
+                                // It's a default message (may be a Reply, we don't want to handle this on server side, it will be handled on client side), we need to dispatch it to the right action
+                                default:
+                                case MessageType.Default:
+                                    if (!server.Dispatcher.DispatchMessage(currentMessage))
+                                    {
+                                        Writer.Write("Trying to Process message with head '" + currentMessage.HeadID.ToString() + "' but no action related... Message skipped.", ConsoleColor.DarkMagenta);
+                                        server.Reply(currentMessage, new NetworkMessage(0, currentMessage.ClientID).Set(false));
+                                    }
+                                    break;
+
+                                // It's a broadcast message, we need to broadcast it to all clients in the current world
+                                case MessageType.BroadcastCurrentWorld:
+                                    server.Worlds.BroadcastToWorld(currentMessage);
+                                    break;
+
+                                // It's a synchronization message, we need to synchronize it to all clients in the current world
+                                case MessageType.SynchronizeMessageCurrentWorld:
+                                    server.Worlds.ReceiveSyncronizationMessage(currentMessage);
+                                    break;
                             }
                             currentMessage = null;
                         }

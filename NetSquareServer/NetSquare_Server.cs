@@ -253,7 +253,8 @@ namespace NetSquareServer
         {
             message.HeadID = messageFrom.HeadID;
             message.ClientID = messageFrom.ClientID;
-            message.SetType(messageFrom.TypeID);
+            message.MsgType = (byte)MessageType.Reply;
+            message.ReplyID = messageFrom.ReplyID;
         }
         public void Reply(NetworkMessage messageFrom, NetworkMessage message)
         {

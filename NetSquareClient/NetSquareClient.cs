@@ -26,7 +26,7 @@ namespace NetSquareClient
         public int Port { get; private set; }
         public string IPAdress { get; private set; }
         public uint ClientID { get { return Client != null ? Client.ID : 0; } }
-        public bool IsConnected { get { return Client.TcpSocket.Connected; } }
+        public bool IsConnected { get { return Client?.TcpSocket?.Connected ?? false; } }
         public int NbSendingMessages { get { return Client != null ? Client.NbMessagesToSend : 0; } }
         public int NbProcessingMessages { get { return messagesQueue.Count; } }
         public eProtocoleType ProtocoleType;
@@ -180,25 +180,31 @@ namespace NetSquareClient
                 {
                     while (messagesQueue.TryDequeue(out message))
                     {
-                        // reply message
-                        if (replyCallBack.ContainsKey(message.TypeID))
+                        switch ((MessageType)message.MsgType)
                         {
-                            Dispatcher.ExecuteinMainThread(replyCallBack[message.TypeID], message);
-                            replyCallBack.Remove(message.TypeID);
-                        }
-                        // sync message
-                        else if (message.TypeID == (uint)MessageType.SynchronizeMessageCurrentWorld)
-                        {
-                            Dispatcher.ExecuteinMainThread((msg) =>
-                            {
-                                WorldsManager.Fire_OnSyncronize(msg);
-                            }, message);
-                        }
-                        // default message, let's use dispatcher to handle it
-                        else
-                        {
-                            if (!Dispatcher.DispatchMessage(message))
-                                OnUnregisteredMessageReceived?.Invoke(message);
+                            // It's a default message, we need to dispatch it to the right action
+                            default:
+                            case MessageType.Default:
+                                if (!Dispatcher.DispatchMessage(message))
+                                    OnUnregisteredMessageReceived?.Invoke(message);
+                                break;
+
+                            // It's a reply message, we need to invoke the callback
+                            case MessageType.Reply:
+                                if (replyCallBack.ContainsKey(message.ReplyID))
+                                {
+                                    Dispatcher.ExecuteinMainThread(replyCallBack[message.ReplyID], message);
+                                    replyCallBack.Remove(message.ReplyID);
+                                }
+                                break;
+
+                            // It's a Synchronize message, let's invoke WorldsManager Syncronizer to handle it
+                            case MessageType.SynchronizeMessageCurrentWorld:
+                                Dispatcher.ExecuteinMainThread((msg) =>
+                                {
+                                    WorldsManager.Fire_OnSyncronize(msg);
+                                }, message);
+                                break;
                         }
                     }
                 }
@@ -253,7 +259,7 @@ namespace NetSquareClient
         {
             msg.ReplyTo(nbReplyAsked);
             nbReplyAsked++;
-            replyCallBack.Add(msg.TypeID, callback);
+            replyCallBack.Add(msg.ReplyID, callback);
             SendMessage(msg);
         }
 
@@ -267,7 +273,7 @@ namespace NetSquareClient
             NetworkMessage msg = new NetworkMessage(headID);
             msg.ReplyTo(nbReplyAsked);
             nbReplyAsked++;
-            replyCallBack.Add(msg.TypeID, callback);
+            replyCallBack.Add(msg.ReplyID, callback);
             SendMessage(msg);
         }
 
@@ -281,7 +287,7 @@ namespace NetSquareClient
             NetworkMessage msg = new NetworkMessage(headID);
             msg.ReplyTo(nbReplyAsked);
             nbReplyAsked++;
-            replyCallBack.Add(msg.TypeID, callback);
+            replyCallBack.Add(msg.ReplyID, callback);
             SendMessage(msg);
         }
 
@@ -364,7 +370,8 @@ namespace NetSquareClient
         /// </summary>
         /// <param name="precision">1 to 10, 1 is the less precise, 10 is the most precise</param>
         /// <param name="timeBetweenSyncs">Time between each sync in milliseconds</param>
-        public void SyncTime(int precision, int timeBetweenSyncs = 1000)
+        /// <param name="onServerTimeGet">Callback when server time is get, parameter is server time</param>
+        public void SyncTime(int precision, int timeBetweenSyncs = 1000, Action<float> onServerTimeGet = null)
         {
             // clamp precision between 1 and 10
             precision = Math.Max(1, Math.Min(10, precision));
@@ -413,6 +420,8 @@ namespace NetSquareClient
                         {
                             serverTimeOffset = clientTimeOffsets[0] + stopwatch.ElapsedMilliseconds;
                             stopwatch.Start();
+                            // invoke callback
+                            onServerTimeGet?.Invoke(Time);
                         }
                     });
 
@@ -432,6 +441,9 @@ namespace NetSquareClient
                     avgTime += clientTimeOffsets[j];
                 avgTime /= precision;
                 serverTimeOffset = avgTime;
+
+                // invoke callback
+                onServerTimeGet?.Invoke(Time);
 
                 // stop synchronizing
                 isSynchronizingTime = false;

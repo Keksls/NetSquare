@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NetSquare.Core.Messages;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -7,38 +8,37 @@ namespace NetSquare.Core
     public class NetworkMessage
     {
         public uint ClientID { get; set; }
-        public uint TypeID { get; set; }
+        public byte MsgType { get; set; }
+        public uint ReplyID { get; set; }
         public ushort HeadID { get; set; }
-        private List<byte[]> blocks = new List<byte[]>();
         public bool HasBlock { get { return blocks?.Count > 0; } }
-        private int blocksSize = 0;
         public ConnectedClient Client { get; set; }
         public byte[] Data { get; private set; }
         public int Length { get; set; }
         public bool Packed { get; private set; }
         public int currentReadingIndex { get; set; } = 10;
+        private List<byte[]> blocks = new List<byte[]>();
+        private int blocksSize = 0;
 
         #region Type and Reply
         /// <summary>
         /// this id will be keeped and pass throw new message by the server. Used for reply callback
         /// </summary>
-        /// <param name="id"></param>
-        public void ReplyTo(uint id)
+        /// <param name="replyID">ID of the reply message</param>
+        public void ReplyTo(uint replyID)
         {
-            SetType(id + 10);
+            ReplyID = replyID;
+            MsgType = (byte)MessageType.Reply;
         }
 
         /// <summary>
         /// Set the type of this message. 
-        /// 0 => simple message send to server
-        /// 1 => message that will be broadcasted to every other clients on my lobby
-        /// 2 => message that will be packed and syncronized on every clients on my lobby
-        /// 10 or + => message send to server, client wait for response. Response ID will be that ID
+        /// Use this for custom message Type, overwise use MessageType enum
         /// </summary>
-        /// <param name="typeID"></param>
-        public void SetType(uint typeID)
+        /// <param name="typeID">ID of the type</param>
+        public void SetType(byte typeID)
         {
-            TypeID = typeID;
+            MsgType = (byte)(MessageType.MAX + typeID);
         }
 
         /// <summary>
@@ -51,17 +51,7 @@ namespace NetSquare.Core
         /// <param name="typeID"></param>
         public void SetType(MessageType type)
         {
-            TypeID = (uint)type;
-        }
-
-        /// <summary>
-        /// Set this message as a synchronization message
-        /// </summary>
-        /// <returns>itself</returns>
-        public NetworkMessage SetAsSynchronizationMessage()
-        {
-            SetType(MessageType.SynchronizeMessageCurrentWorld);
-            return this;
+            MsgType = (byte)MessageType.Reply;
         }
         #endregion
 
@@ -76,7 +66,8 @@ namespace NetSquare.Core
             HeadID = headID;
             ClientID = clientID;
             Length = 0;
-            TypeID = 0;
+            MsgType = 0;
+            ReplyID = 0;
         }
 
         /// <summary>
@@ -89,7 +80,8 @@ namespace NetSquare.Core
             HeadID = Convert.ToUInt16(headID);
             ClientID = clientID;
             Length = 0;
-            TypeID = 0;
+            MsgType = 0;
+            ReplyID = 0;
         }
 
         /// <summary>
@@ -100,7 +92,8 @@ namespace NetSquare.Core
             HeadID = 0;
             ClientID = 0;
             Length = 0;
-            TypeID = 0;
+            MsgType = 0;
+            ReplyID = 0;
         }
 
         /// <summary>
@@ -112,7 +105,8 @@ namespace NetSquare.Core
             HeadID = headID;
             ClientID = 0;
             Length = 0;
-            TypeID = 0;
+            MsgType = 0;
+            ReplyID = 0;
         }
 
         /// <summary>
@@ -124,11 +118,21 @@ namespace NetSquare.Core
             HeadID = Convert.ToUInt16(headEnum);
             ClientID = 0;
             Length = 0;
-            TypeID = 0;
+            MsgType = 0;
+            ReplyID = 0;
         }
         #endregion
 
         #region Head and Data
+        /// <summary>
+        /// Get the size of the head of the message
+        /// </summary>
+        /// <returns>size of the head of the message</returns>
+        public int GetHeadSize()
+        {
+            return MsgType == (byte)MessageType.Reply ? 13 : 10;
+        }
+
         /// <summary>
         /// Set data, decrypt and decompress it, read head, message is ready for reading
         /// </summary>
@@ -169,8 +173,9 @@ namespace NetSquare.Core
         /// <returns></returns>
         public byte[] GetBody()
         {
-            byte[] body = new byte[Data.Length - 12];
-            Buffer.BlockCopy(Data, 12, body, 0, body.Length);
+            int headSize = GetHeadSize();
+            byte[] body = new byte[Data.Length - headSize];
+            Buffer.BlockCopy(Data, headSize, body, 0, body.Length);
             return body;
         }
 
@@ -205,7 +210,11 @@ namespace NetSquare.Core
             Length = BitConverter.ToInt32(Data, 0);
             ClientID = UInt24.GetUInt(Data, 4);
             HeadID = BitConverter.ToUInt16(Data, 7);
-            TypeID = UInt24.GetUInt(Data, 9);
+            MsgType = Data[9];
+            if (MsgType == (byte)MessageType.Reply)
+                ReplyID = UInt24.GetUInt(Data, 10);
+            else
+                ReplyID = 0;
         }
 
         internal void WriteHead()
@@ -223,9 +232,13 @@ namespace NetSquare.Core
             Data[7] = (byte)HeadID;
             Data[8] = (byte)(HeadID >> 8);
             // write Type ID
-            Data[9] = (byte)((TypeID) & 0xFF);
-            Data[10] = (byte)((TypeID >> 8) & 0xFF);
-            Data[11] = (byte)((TypeID >> 16) & 0xFF);
+            Data[9] = MsgType;
+            if (MsgType == (byte)MessageType.Reply)
+            {
+                Data[10] = (byte)((ReplyID) & 0xFF);
+                Data[11] = (byte)((ReplyID >> 8) & 0xFF);
+                Data[12] = (byte)((ReplyID >> 16) & 0xFF);
+            }
         }
 
         public void SetHeadIDIntoData(ushort headID)
@@ -242,7 +255,7 @@ namespace NetSquare.Core
             try
             {
                 // check if at least we got full head
-                if (data.Length < 12)
+                if (data.Length < GetHeadSize())
                     return false;
                 SetDataUnsafe(data);
                 DecryptDecompressData();
@@ -266,7 +279,7 @@ namespace NetSquare.Core
         /// </summary>
         public void RestartRead()
         {
-            currentReadingIndex = 12;
+            currentReadingIndex = GetHeadSize();
         }
 
         /// <summary>
@@ -854,8 +867,9 @@ namespace NetSquare.Core
         ///     - FullMessageSize : Int32   4 bytes
         ///     - ClientID :        Int32   4 bytes
         ///     - HeadAction :      Int16   2 bytes
-        ///     - TypeID :         Int32   4 bytes
-        ///     - Data :            var     FullMessageSize - 14 bytes
+        ///     - MsgType :         byte    1 bytes
+        ///     - ReplyID :         Int32   4 bytes (only if MsgType == 1)
+        ///     - Data :            var     FullMessageSize - 12 bytes or 15 if MsgType == 1
         ///     
         /// Data Definition :
         ///     - Primitive type, size by type => Function Enum to Size
@@ -867,10 +881,11 @@ namespace NetSquare.Core
             if (Packed)
                 return Data;
 
+            int headSize = GetHeadSize();
             // create full empty array
-            Data = new byte[blocksSize + 12];
+            Data = new byte[blocksSize + headSize];
             // Write Blocks
-            int currentIndex = 12;
+            int currentIndex = headSize;
             for (int i = 0; i < blocks.Count; i++)
             {
                 Buffer.BlockCopy(blocks[i], 0, Data, currentIndex, blocks[i].Length);
@@ -890,20 +905,22 @@ namespace NetSquare.Core
             //  - FullMessageSize : Int32   4 bytes
             //  - ClientID :        Int24   3 bytes
             //  - HeadAction :      Int16   2 bytes
-            //  - TypeID :          Int24   3 bytes
+            //  - MsgType :          byte    1 bytes
+            //  - ReplyID :         Int24   3 bytes (only if MsgType == 1)
             // ======== DATA =========  <= For each message
             //  - BlockSize :       Int24   3 bytes
             //  - ClientID :        Int24   3 bytes
             //  - Data :            var     BlockSize bytes
 
             // count packed message lenght
-            int lenght = 12; // headSize (12 bits)
+            int headSize = GetHeadSize();
+            int lenght = headSize; // headSize (10 bits or 13 bits if MsgType == 1)
             int nb = 0;
             foreach (NetworkMessage message in messages)
             {
                 if (!alreadySerialized)
                     message.Serialize(true);
-                lenght += message.Data.Length - 6; // blockSize (3 bits) + clientID (3 bits) - headSize (12 bits) <= we remove head (12 bits) and we add blockSize (3 bits) and clientID (3 bits)
+                lenght += message.Data.Length + (6 - headSize); // blockSize (3 bits) + clientID (3 bits) - headSize (10 or 13 bits) <= we remove head (10 or 13 bits) and we add blockSize (3 bits) and clientID (3 bits)
                 nb++;
             }
 
@@ -912,13 +929,13 @@ namespace NetSquare.Core
 
             // create full empty array
             Data = new byte[lenght];
-            // index start at 12, because the head will be written at the end
-            int index = 12;
+            // index start at headSize, because the head will be written at the end
+            int index = headSize;
             // Write Blocks
             foreach (NetworkMessage message in messages)
             {
                 // Write block Lenght
-                UInt24 blockSize = new UInt24((uint)(message.Data.Length - 12)); // head size is 12
+                UInt24 blockSize = new UInt24((uint)(message.Data.Length - headSize));
                 Data[index++] = blockSize.b0;
                 Data[index++] = blockSize.b1;
                 Data[index++] = blockSize.b2;
@@ -928,8 +945,8 @@ namespace NetSquare.Core
                 Data[index++] = (byte)((message.ClientID >> 8) & 0xFF);
                 Data[index++] = (byte)((message.ClientID >> 16) & 0xFF);
 
-                Buffer.BlockCopy(message.Data, 12, Data, index, message.Data.Length - 12);
-                index += message.Data.Length - 12;
+                Buffer.BlockCopy(message.Data, headSize, Data, index, message.Data.Length - headSize);
+                index += message.Data.Length - headSize;
             }
 
             WriteHead();
@@ -944,6 +961,7 @@ namespace NetSquare.Core
         {
             List<NetworkMessage> messages = new List<NetworkMessage>();
 
+            int headSize = GetHeadSize();
             // reading each packed blocks
             while (CanGetNextBlock())
             {
@@ -953,11 +971,12 @@ namespace NetSquare.Core
                     break;
                 // create message
                 NetworkMessage message = new NetworkMessage(HeadID, GetUInt24().UInt32);
+                message.MsgType = MsgType;
+                message.ReplyID = ReplyID;
                 size -= 3;
-                message.SetType(TypeID);
                 // copy block data into message
-                message.Data = new byte[size + 12];
-                Buffer.BlockCopy(Data, currentReadingIndex, message.Data, 12, size);
+                message.Data = new byte[size + headSize];
+                Buffer.BlockCopy(Data, currentReadingIndex, message.Data, headSize, size);
                 currentReadingIndex += size;
                 // add message to list
                 message.RestartRead();
@@ -984,7 +1003,8 @@ namespace NetSquare.Core
                 uint clientID = GetUInt24().UInt32;
                 // create message
                 NetworkMessage message = new NetworkMessage(HeadID, clientID);
-                message.SetType(TypeID);
+                message.MsgType = MsgType;
+                message.ReplyID = ReplyID;
                 // copy block data into message
                 message.Data = new byte[size];
                 Buffer.BlockCopy(Data, currentReadingIndex, message.Data, 0, size);

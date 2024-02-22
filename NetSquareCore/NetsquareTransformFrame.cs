@@ -16,6 +16,7 @@ namespace NetSquareCore
         public byte State;
         public float Time;
         public static NetsquareTransformFrame zero { get { return new NetsquareTransformFrame(); } }
+        public static int Size { get { return 33; } }
 
         /// <summary>
         /// Create a new position

@@ -1,5 +1,4 @@
 ﻿using NetSquare.Core;
-using NetSquare.Core.Messages;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
@@ -51,10 +50,7 @@ namespace NetSquareServer.Worlds
         public NetworkMessage GetPackedMessage()
         {
             NetworkMessage packed = new NetworkMessage(HeadID);
-            if (HeadID == (ushort)NetSquareMessageType.ClientSetTransform)
-                packed.SetType(MessageType.SetClientPosition);
-            else
-                packed.SetType(MessageType.SynchronizeMessageCurrentWorld);
+            packed.HeadID = HeadID;
             packed.Pack(messagesList.Values, true);
             messagesList.Clear();
             return packed;
@@ -77,10 +73,7 @@ namespace NetSquareServer.Worlds
                 return null;
 
             NetworkMessage packed = new NetworkMessage(HeadID);
-            if (HeadID == (ushort)NetSquareMessageType.ClientSetTransform)
-                packed.SetType(MessageType.SetClientPosition);
-            else
-                packed.SetType(MessageType.SynchronizeMessageCurrentWorld);
+            packed.HeadID = HeadID;
             packed.ClientID = clientID;
             packed.Pack(messages, true);
             return packed;

@@ -35,7 +35,8 @@ namespace NetSquareServer.Worlds
             server = _server;
             server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinWorld", TryAddClientToWorld);
             server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveWorld", TryRemoveClientFromWorld);
-            server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientSetTransform, "ClientSetPosition", ClientSetPosition);
+            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransform, "SetTransform", SetTransform);
+            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransformFrames, "SetTransformFrames", SetTransformFrames);
         }
 
         internal void Fire_OnSendWorldClients(ushort worldID, uint clientID, NetworkMessage message)
@@ -128,7 +129,7 @@ namespace NetSquareServer.Worlds
         /// Get the worldID witch a client is in
         /// </summary>
         /// <param name="clientID">ID of the client</param>
-        /// <returns>ID of th world, or 0 if none. Check before with 'IsClientinWorld()'</returns>
+        /// <returns>ID of the world, or 0 if none. Check before with 'IsClientInWorld()'</returns>
         public ushort GetClientWorldID(uint clientID)
         {
             if (IsInWorld(clientID))
@@ -282,26 +283,27 @@ namespace NetSquareServer.Worlds
         }
 
         /// <summary>
-        /// A client just set his possition to the server
+        /// Set a client position in the world
         /// </summary>
-        /// <param name="message">message that contains 3 floats : x, y and z that represent his 3d position in the current World</param>
-        private void ClientSetPosition(NetworkMessage message)
+        /// <param name="clientID"> ID of the client</param>
+        /// <param name="transformFrame"> new position</param>
+        /// <param name="message"> message that contains the new position</param>
+        private void SetTransform(uint clientID, NetsquareTransformFrame transformFrame, NetworkMessage message)
         {
             try
             {
-                if (IsInWorld(message.ClientID))
+                if (IsInWorld(clientID))
                 {
-                    NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
+                    NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
                     if (world != null)
                     {
-                        NetsquareTransformFrame pos = new NetsquareTransformFrame(message.GetFloat(), message.GetFloat(), message.GetFloat());
-                        world.SetClientPosition(message.ClientID, pos);
+                        world.SetClientTransform(clientID, transformFrame);
                         message.RestartRead();
                         if (world.Synchronizer != null)
                             world.Synchronizer.AddMessage(message);
                         else
-                            world.Broadcast(message.Data, message.ClientID, true);
-                        OnPlayerSetPosition?.Invoke(ClientsWorlds[message.ClientID], message.ClientID, pos);
+                            world.Broadcast(message.Data, clientID, true);
+                        OnPlayerSetPosition?.Invoke(ClientsWorlds[clientID], clientID, transformFrame);
                     }
                 }
             }
@@ -312,37 +314,28 @@ namespace NetSquareServer.Worlds
         }
 
         /// <summary>
-        /// A client just set his possition to the server. If this world use a synchronizer, the message will be sended throw sync loop, else it will be sended imediatly
+        /// A client just set his possition to the server
         /// </summary>
-        /// <param name="clientID">id of the client that just move</param>
-        /// <param name="x">x position</param>
-        /// <param name="y">y position</param>
-        /// <param name="z">z position</param>
-        public void ClientSetPosition(uint clientID, float x, float y, float z)
+        /// <param name="message">message that contains a transform frames</param>
+        private void SetTransform(NetworkMessage message)
         {
-            try
+            NetsquareTransformFrame transform = new NetsquareTransformFrame(message);
+            SetTransform(message.ClientID, transform, message);
+        }
+
+        /// <summary>
+        /// A client just set his possition to the server
+        /// </summary>
+        /// <param name="message">message that contains multiple transform frames</param>
+        private void SetTransformFrames(NetworkMessage message)
+        {
+            byte nbFrames = message.GetByte();
+            for (int i = 0; i < nbFrames - 1; i++)
             {
-                if (IsInWorld(clientID))
-                {
-                    NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
-                    if (world != null)
-                    {
-                        NetsquareTransformFrame pos = new NetsquareTransformFrame(x, y, z);
-                        world.SetClientPosition(clientID, pos);
-                        NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientSetTransform, clientID).Set(x).Set(y).Set(z);
-                        message.Serialize();
-                        if (world.Synchronizer != null)
-                            world.Synchronizer.AddMessage(message);
-                        else
-                            world.Broadcast(message);
-                        OnPlayerSetPosition?.Invoke(ClientsWorlds[clientID], clientID, pos);
-                    }
-                }
+                message.DummyRead(NetsquareTransformFrame.Size);
             }
-            catch (Exception ex)
-            {
-                Writer.Write("Fail to set client position : \n\r" + ex.Message, ConsoleColor.Red);
-            }
+            NetsquareTransformFrame transform = new NetsquareTransformFrame(message);
+            SetTransform(message.ClientID, transform, message);
         }
         #endregion
     }

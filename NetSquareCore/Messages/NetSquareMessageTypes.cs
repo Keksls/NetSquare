@@ -1,10 +1,11 @@
 ﻿namespace NetSquare.Core
 {
-    public enum MessageType : uint
+    public enum MessageType : byte
     {
         Default = 0,
-        BroadcastCurrentWorld = 1,
-        SynchronizeMessageCurrentWorld = 2,
-        SetClientPosition = 3
+        Reply = 1,
+        BroadcastCurrentWorld = 2,
+        SynchronizeMessageCurrentWorld = 3,
+        MAX = 3
     }
 }
