@@ -1,7 +1,9 @@
 ﻿using NetSquare.Core;
 using NetSquareCore;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace NetSquareServer.Worlds
 {
@@ -9,20 +11,51 @@ namespace NetSquareServer.Worlds
     {
         public NetSquareWorld World { get; private set; }
         public uint StaticEntitiesCount { get; internal set; }
+        public ConcurrentDictionary<uint, List<NetsquareTransformFrame>> ClientsTransformFrames { get; internal set; }
+        private int synchFrequency;
+        private int spatializationFrequency;
+        private string synchName;
+        private string spatializationName;
 
-        public Spatializer(NetSquareWorld world)
+        /// <summary>
+        /// Instantiate a new spatializer
+        /// </summary>
+        /// <param name="world"> world to spatialize</param>
+        public Spatializer(NetSquareWorld world, float spatializationFreq, float synchFreq)
         {
             World = world;
+            ClientsTransformFrames = new ConcurrentDictionary<uint, List<NetsquareTransformFrame>>();
+            synchName = "Spatializer_Sync_World_" + World.ID;
+            spatializationName = "Spatializer_Spatialization_World_" + World.ID;
+            spatializationFrequency = NetSquareScheduler.GetMsFrequencyFromHz(spatializationFreq);
+            synchFrequency = NetSquareScheduler.GetMsFrequencyFromHz(synchFreq);
+            Start();
         }
 
-        public static ChunkedSpatializer GetChunkedSpatializer(NetSquareWorld world, float chunkSize, float xStart, float yStart, float xEnd, float yEnd)
+        /// <summary>
+        /// Get a chunked spatializer
+        /// </summary>
+        /// <param name="world"> world to spatialize</param>
+        /// <param name="chunkSize"> size of the chunks</param>
+        /// <param name="xStart"> start x of the world</param>
+        /// <param name="yStart"> start y of the world</param>
+        /// <param name="xEnd"> end x of the world</param>
+        /// <param name="yEnd"> end y of the world</param>
+        /// <returns> a chunked spatializer</returns>
+        public static ChunkedSpatializer GetChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd)
         {
-            return new ChunkedSpatializer(world, chunkSize, xStart, yStart, xEnd, yEnd);
+            return new ChunkedSpatializer(world, spatializationFreq, synchFreq, chunkSize, xStart, yStart, xEnd, yEnd);
         }
 
-        public static SimpleSpatializer GetSimpleSpatializer(NetSquareWorld world, float maxViewDistance)
+        /// <summary>
+        /// Get a simple spatializer
+        /// </summary>
+        /// <param name="world"> world to spatialize</param>
+        /// <param name="maxViewDistance"> maximum view distance of the clients</param>
+        /// <returns> a simple spatializer</returns>
+        public static SimpleSpatializer GetSimpleSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float maxViewDistance)
         {
-            return new SimpleSpatializer(world, maxViewDistance);
+            return new SimpleSpatializer(world, spatializationFreq, synchFreq, maxViewDistance);
         }
 
         /// <summary>
@@ -49,7 +82,62 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
         /// <param name="pos">position</param>
-        public abstract void SetClientTransform(uint clientID, NetsquareTransformFrame pos);
+        protected abstract void SetClientTransformFrame(uint clientID, NetsquareTransformFrame pos);
+
+        /// <summary>
+        /// Store a list of transform frames for a client
+        /// </summary>
+        /// <param name="clientID"> id of the client to store frames</param>
+        /// <param name="transformFrames"> list of frames to store</param>
+        public virtual void StoreClientTransformFrames(uint clientID, NetsquareTransformFrame[] transformFrames)
+        {
+            // create a new list of frames for the client if it doesn't exist
+            if (!ClientsTransformFrames.ContainsKey(clientID))
+            {
+                lock (ClientsTransformFrames)
+                {
+                    // add the first frame to the client current frames
+                    while (!ClientsTransformFrames.TryAdd(clientID, new List<NetsquareTransformFrame>()))
+                    {
+                        continue;
+                    }
+                }
+            }
+            // add frames to the client current frames
+            foreach (var frame in transformFrames)
+            {
+                lock (ClientsTransformFrames)
+                {
+                    ClientsTransformFrames[clientID].Add(frame);
+                }
+            }
+            // set client pos as last frame
+            SetClientTransformFrame(clientID, transformFrames[transformFrames.Length - 1]);
+        }
+
+        /// <summary>
+        /// Store a transform frame for a client
+        /// </summary>
+        /// <param name="clientID"> id of the client to store frame</param>
+        /// <param name="transformFrames"> frame to store</param>
+        public virtual void StoreClientTransformFrame(uint clientID, NetsquareTransformFrame transformFrames)
+        {
+            lock (ClientsTransformFrames)
+            {
+                // create a new list of frames for the client if it doesn't exist
+                if (!ClientsTransformFrames.ContainsKey(clientID))
+                {
+                    while (!ClientsTransformFrames.TryAdd(clientID, new List<NetsquareTransformFrame>()))
+                    {
+                        continue;
+                    }
+                }
+                // add frames to the client current frames
+                ClientsTransformFrames[clientID].Add(transformFrames);
+            }
+            // set client pos as last frame
+            SetClientTransformFrame(clientID, transformFrames);
+        }
 
         /// <summary>
         /// Get a client position
@@ -67,24 +155,59 @@ namespace NetSquareServer.Worlds
         public abstract HashSet<uint> GetVisibleClients(uint clientID);
 
         /// <summary>
-        /// Start spatializer loop that handle clients Spawn and unspawn
+        /// Execute a callback for each client in the spatializer
         /// </summary>
-        /// <param name="frequency">frequency of loop processing</param>
-        public abstract void StartSpatializer(float frequency);
-
-        /// <summary>
-        /// Stop spatializer Spawn / Unspawn loop
-        /// </summary>
-        public abstract void StopSpatializer();
-
+        /// <param name="callback"></param>
         public abstract void ForEach(Action<uint, IEnumerable<uint>> callback);
 
-        public abstract void AddStaticEntity(short type, uint id, NetsquareTransformFrame pos);
+        /// <summary>
+        /// Add a static entity to the spatializer
+        /// </summary>
+        /// <param name="type"> type of the entity</param>
+        /// <param name="id"> id of the entity</param>
+        /// <param name="transform"> transform of the entity</param>
+        public abstract void AddStaticEntity(short type, uint id, NetsquareTransformFrame transform);
+
+        /// <summary>
+        /// Send to spatialized clients the frames of the other clients
+        /// Typicaly for chuncked spatializer, we pack frames of clients in the same chunk and send it to the clients in the same chunk
+        /// </summary>
+        protected abstract void SynchLoop();
+
+        /// <summary>
+        /// synchronization loop will send frames to clients at a fixed frequency
+        /// </summary>
+        protected abstract void SpatializationLoop();
+
+        /// <summary>
+        /// Start synchronization loop, this will send frames to clients at a fixed frequency
+        /// Start spatialization loop, this will handle clients spawn and unspawn at a fixed frequency
+        /// </summary>
+        public void Start()
+        {
+            // start synchronization loop
+            NetSquareScheduler.AddAction(synchName, synchFrequency, true, SynchLoop);
+            NetSquareScheduler.StartAction(synchName);
+            // start spatialization loop
+            NetSquareScheduler.AddAction(spatializationName, spatializationFrequency, true, SpatializationLoop);
+            NetSquareScheduler.StartAction(spatializationName);
+        }
+
+        /// <summary>
+        /// Stop synchronization loop
+        /// Stop spatialization loop
+        /// </summary>
+        public void Stop()
+        {
+            NetSquareScheduler.StopAction(synchName);
+            NetSquareScheduler.StopAction(spatializationName);
+        }
     }
 
     public enum SpatializerType
     {
-        SimpleSpatializer = 0,
-        ChunkedSpatializer = 1
+        None = 0,
+        SimpleSpatializer = 1,
+        ChunkedSpatializer = 2
     }
 }

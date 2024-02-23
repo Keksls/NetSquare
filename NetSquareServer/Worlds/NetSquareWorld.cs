@@ -83,34 +83,25 @@ namespace NetSquareServer.Worlds
 
         /// <summary>
         /// synchronization will now use spatialization for better sync performances (use it on large worlds)
+        /// Set as null to stop using spatialization
         /// </summary>
-        /// <param name="frequency">frequency of loop processing (in Hz)</param>
-        public void StartSpatializer(Spatializer spatializer, float frequency)
+        public void SetSpatializer(Spatializer spatializer)
         {
+            // if spatializer is null, stop using spatializer
+            if (spatializer == null)
+            {
+                if (Spatializer != null)
+                {
+                    Spatializer.Stop();
+                    Spatializer = null;
+                }
+                UseSpatializer = false;
+                return;
+            }
+
+            // if spatializer is not null, start using spatializer
             Spatializer = spatializer;
-            Spatializer.StartSpatializer(frequency);
             UseSpatializer = true;
-        }
-
-        /// <summary>
-        /// synchronization will no longer use spatialization. Disable spatialization for small or screen-space worlds
-        /// </summary>
-        public void StopUsingSpatializer()
-        {
-            Spatializer?.StopSpatializer();
-            Spatializer = null;
-            UseSpatializer = false;
-        }
-
-        /// <summary>
-        /// Set client position on spatializer
-        /// </summary>
-        /// <param name="clientID">ID of the client</param>
-        /// <param name="position">client position</param>
-        public void SetClientTransform(uint clientID, NetsquareTransformFrame position)
-        {
-            if (UseSpatializer)
-                Spatializer.SetClientTransform(clientID, position);
         }
 
         /// <summary>

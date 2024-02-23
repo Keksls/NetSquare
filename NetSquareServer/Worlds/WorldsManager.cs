@@ -20,10 +20,6 @@ namespace NetSquareServer.Worlds
         /// </summary>
         public event Action<ushort, uint, NetworkMessage> OnSendWorldClients;
         /// <summary>
-        /// WorldID, ClientID, new client Position
-        /// </summary>
-        public event Action<ushort, uint, NetsquareTransformFrame> OnPlayerSetPosition;
-        /// <summary>
         /// WorldID, ClientID, client Position
         /// </summary>
         public event Action<ushort, uint, NetsquareTransformFrame> OnSpatializePlayer;
@@ -42,11 +38,6 @@ namespace NetSquareServer.Worlds
         internal void Fire_OnSendWorldClients(ushort worldID, uint clientID, NetworkMessage message)
         {
             OnSendWorldClients?.Invoke(worldID, clientID, message);
-        }
-
-        internal void Fire_OnSpatializePlayer(ushort worldID, uint clientID, NetsquareTransformFrame position)
-        {
-            OnSpatializePlayer?.Invoke(worldID, clientID, position);
         }
 
         /// <summary>
@@ -283,31 +274,30 @@ namespace NetSquareServer.Worlds
         }
 
         /// <summary>
-        /// Set a client position in the world
+        /// A client just set his possition to the server
         /// </summary>
-        /// <param name="clientID"> ID of the client</param>
-        /// <param name="transformFrame"> new position</param>
-        /// <param name="message"> message that contains the new position</param>
-        private void SetTransform(uint clientID, NetsquareTransformFrame transformFrame, NetworkMessage message)
+        /// <param name="message">message that contains a transform frames</param>
+        private void SetTransform(NetworkMessage message)
         {
             try
             {
-                if (IsInWorld(clientID))
+                if (IsInWorld(message.ClientID))
                 {
-                    NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
+                    NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
                     if (world != null)
                     {
-                        world.SetClientTransform(clientID, transformFrame);
-                        message.RestartRead();
-                        if (world.Synchronizer != null)
+                        NetsquareTransformFrame transform = new NetsquareTransformFrame(message);
+                        // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
+                        if (world.UseSpatializer)
                         {
-                            // the message will be packed by synchronizer, so let's update the HeadID so client can handle it correctly
-                            message.HeadID = (ushort)NetSquareMessageType.SetTransformsFramesPacked;
-                            world.Synchronizer.AddMessage(message);
+                            world.Spatializer.StoreClientTransformFrame(message.ClientID, transform);
                         }
+                        // if we don't use a spatializer, we send the new position directly to everyone in the world
                         else
-                            world.Broadcast(message.Data, clientID, true);
-                        OnPlayerSetPosition?.Invoke(ClientsWorlds[clientID], clientID, transformFrame);
+                        {
+                            world.Broadcast(message.Data, message.ClientID, true);
+                        }
+                        message.RestartRead();
                     }
                 }
             }
@@ -320,26 +310,40 @@ namespace NetSquareServer.Worlds
         /// <summary>
         /// A client just set his possition to the server
         /// </summary>
-        /// <param name="message">message that contains a transform frames</param>
-        private void SetTransform(NetworkMessage message)
-        {
-            NetsquareTransformFrame transform = new NetsquareTransformFrame(message);
-            SetTransform(message.ClientID, transform, message);
-        }
-
-        /// <summary>
-        /// A client just set his possition to the server
-        /// </summary>
         /// <param name="message">message that contains multiple transform frames</param>
         private void SetTransformFrames(NetworkMessage message)
         {
-            byte nbFrames = message.GetByte();
-            for (int i = 0; i < nbFrames - 1; i++)
+            try
             {
-                message.DummyRead(NetsquareTransformFrame.Size);
+                if (IsInWorld(message.ClientID))
+                {
+                    NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
+                    if (world != null)
+                    {
+                        // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
+                        if (world.UseSpatializer)
+                        {
+                            byte nbFrames = message.GetByte();
+                            NetsquareTransformFrame[] transformFrames = new NetsquareTransformFrame[nbFrames];
+                            for (int i = 0; i < nbFrames; i++)
+                            {
+                                transformFrames[i] = new NetsquareTransformFrame(message);
+                            }
+                            world.Spatializer.StoreClientTransformFrames(message.ClientID, transformFrames);
+                        }
+                        // if we don't use a spatializer, we send the new position directly to everyone in the world
+                        else
+                        {
+                            world.Broadcast(message.Data, message.ClientID, true);
+                        }
+                        message.RestartRead();
+                    }
+                }
             }
-            NetsquareTransformFrame transform = new NetsquareTransformFrame(message);
-            SetTransform(message.ClientID, transform, message);
+            catch (Exception ex)
+            {
+                Writer.Write("Fail to set client position : \n\r" + ex.Message, ConsoleColor.Red);
+            }
         }
         #endregion
     }

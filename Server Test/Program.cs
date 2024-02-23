@@ -34,10 +34,9 @@ namespace Server_Test
             server.OnTimeLoop += Server_OnTimeLoop;
 
             NetSquareWorld world = server.Worlds.AddWorld("Default World", ushort.MaxValue);
-            world.StartSynchronizer(5, false);
-            world.StartSpatializer(Spatializer.GetChunkedSpatializer(world, 100f, 0f, 0f, 1000f, 1000f), 1f);
-            server.Worlds.OnClientJoinWorld += OnClientJoinWorld;
-            server.Worlds.OnSendWorldClients += OnClientJoinWorld;
+            //world.StartSynchronizer(5, false);
+            world.SetSpatializer(Spatializer.GetChunkedSpatializer(world, 5f, 4f, 100f, 0f, 0f, 1000f, 1000f));
+            //world.SetSpatializer(Spatializer.GetSimpleSpatializer(world, 2f, 4f, 50f));
 
             // Optionnal, set encryption and compression protocole
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
@@ -65,19 +64,6 @@ namespace Server_Test
         }
 
         #region Server Events
-        private static void OnClientJoinWorld(ushort lobbyID, uint clientID, NetworkMessage message)
-        {
-            try
-            {
-                // add random color to network message that will be sended on client join lobby
-                //message.Set(GetRandomColorArray());
-                // set position
-                var transform = server.Worlds.GetWorld(1).Spatializer.GetClientTransform(clientID);
-                transform.Serialize(message);
-            }
-            catch { }
-        }
-
         private static void Statistics_OnGetStatistics(ServerStatistics statistics)
         {
             if (!Writer.DisplayTitle)

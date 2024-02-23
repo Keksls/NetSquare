@@ -2,8 +2,7 @@
 using NetSquareClient;
 using NetSquareCore;
 using System;
-using System.Runtime.Serialization;
-using System.Threading;
+using System.Numerics;
 
 namespace Client_Test
 {
@@ -11,16 +10,22 @@ namespace Client_Test
     {
         public NetSquare_Client client;
         bool readyToSync = false;
-        float x = 0, y = 0, z = 0;
         Random rnd = new Random();
+        float speed = 1.5f;
+        private float serverOffset = 0;
+        public float Time { get { return EnlapsedTime + serverOffset; } }
+        public float EnlapsedTime { get { return (float)(DateTime.Now - startTime).TotalSeconds; } }
+        DateTime startTime;
 
-        public void Start()
+        public void Start(float maxSpeed)
         {
+            startTime = DateTime.Now;
             client = new NetSquare_Client(eProtocoleType.TCP, false);
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
-            client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
+            //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
+            speed = maxSpeed;
 
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
             // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
@@ -29,7 +34,8 @@ namespace Client_Test
 
         private void WorldsManager_OnClientMove(uint arg1, NetsquareTransformFrame[] arg2)
         {
-            Console.WriteLine("Client " + arg1 + " move to " + arg2[0].x + ", " + arg2[0].y + ", " + arg2[0].z);
+            if (client.ClientID == 1)
+                Console.WriteLine("Client " + arg1 + " move to " + arg2[0].x + ", " + arg2[0].y + ", " + arg2[0].z);
         }
 
         private void Client_Disconected()
@@ -44,11 +50,13 @@ namespace Client_Test
 
         private void Client_Connected(uint ID)
         {
-            client.SyncTime(10, 1000);
+            client.SyncTime(5, 1000, (serverTime) =>
+            {
+                serverOffset = serverTime - EnlapsedTime;
+            });
 
             Console.WriteLine("Connected with ID " + ID);
             GetNextTargetPoint();
-            client.WorldsManager.OnClientJoinWorld += WorldsManager_OnClientJoinWorld;
             client.WorldsManager.TryJoinWorld(1, currentPos, (success) =>
             {
                 if (success)
@@ -64,12 +72,6 @@ namespace Client_Test
             });
         }
 
-        private void WorldsManager_OnClientJoinWorld(NetworkMessage obj)
-        {
-            Console.WriteLine("Client Join World at pos : " + obj.GetFloat() + ", " + obj.GetFloat() + ", " + obj.GetFloat() + " - rot : " + obj.GetByte());
-            //throw new NotImplementedException();
-        }
-
         [NetSquareAction((ushort)MessagesTypes.WelcomeMessage)]
         public static void ReceivingDebugMessageFromServer(NetworkMessage message)
         {
@@ -78,36 +80,34 @@ namespace Client_Test
             Console.WriteLine("from Server : " + text);
         }
 
-        public void TestSync()
+        public void TestSync(bool send)
         {
             if (!readyToSync)
                 return;
             GetNextTargetPoint();
-            client.WorldsManager.SendTransformFrame(currentPos);
+            client.WorldsManager.StoreTransformFrame(currentPos);
+            if (send)
+            {
+                client.WorldsManager.SendFrames();
+            }
         }
 
-        int nbStep = 100;
-        int index = -1;
         NetsquareTransformFrame startPos = NetsquareTransformFrame.zero;
         NetsquareTransformFrame targetPos;
         NetsquareTransformFrame currentPos = NetsquareTransformFrame.zero;
         private void GetNextTargetPoint()
         {
-            index++;
-            if (index >= nbStep)
-                index = 0;
-            if (index == 0)
+            if (NetsquareTransformFrame.Distance(targetPos, currentPos) < 0.5f)
             {
-                x = (float)rnd.Next(0, 100);
-                y = 1f;
-                z = (float)rnd.Next(0, 100);
-                targetPos = new NetsquareTransformFrame(x, y, z, (byte)rnd.Next(0, 255), 0, client.Time);
+                Quaternion q = Quaternion.Identity;
+                targetPos = new NetsquareTransformFrame((float)rnd.Next(0, 200), 1f, (float)rnd.Next(0, 200), q.X, q.Y, q.Z, q.W, 0, Time);
                 if (currentPos.Equals(NetsquareTransformFrame.zero))
                     currentPos.Set(targetPos);
                 startPos.Set(currentPos);
             }
 
-            currentPos = NetsquareTransformFrame.Lerp(startPos, targetPos, (float)index / (float)nbStep);
+            currentPos = currentPos.MoveToward(targetPos, speed);
+            currentPos.Time = Time;
         }
     }
 

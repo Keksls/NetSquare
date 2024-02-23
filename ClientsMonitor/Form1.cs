@@ -1,15 +1,9 @@
-﻿using NetSquareServer.Server;
+﻿using NetSquareClient;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace ServerMonitor
+namespace ClientsMonitor
 {
     public partial class Form1 : Form
     {
@@ -21,41 +15,32 @@ namespace ServerMonitor
         public Form1()
         {
             InitializeComponent();
-        }
-
-        private void Form1_Load(object sender, EventArgs e)
-        {
             receptionsSpeedValues = new List<int>();
             sendingSpeedValues = new List<int>();
             receptionsSizeValues = new List<float>();
             sendingSizeValues = new List<float>();
         }
 
-        public void Write(string text)
+        private void chart2_Click(object sender, EventArgs e)
         {
-            if (InvokeRequired)
-            {
-                Invoke(new Action<string>(Write), text);
-                return;
-            }
-            richTextBox1.AppendText(text + Environment.NewLine);
+
         }
 
-        public void Clear()
+        private void chart1_Click(object sender, EventArgs e)
         {
-            if (InvokeRequired)
-            {
-                Invoke(new Action(Clear));
-                return;
-            }
-            richTextBox1.Clear();
+
         }
 
-        public void UpdateStatistics(ServerStatistics statistics)
+        private void Form1_Load(object sender, EventArgs e)
+        {
+
+        }
+
+        public void UpdateStatistics(ClientStatistics statistics)
         {
             if (InvokeRequired)
             {
-                Invoke(new Action<ServerStatistics>(UpdateStatistics), statistics);
+                Invoke(new Action<ClientStatistics>(UpdateStatistics), statistics);
                 return;
             }
 

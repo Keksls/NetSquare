@@ -46,6 +46,19 @@ namespace NetSquare.Core
         /// <summary>
         /// Register an action to the scheduler
         /// </summary>
+        /// <param name="name">name of the action</param>
+        /// <param name="frequency">frequency in Hz</param>
+        /// <param name="enableSmartFrequencyAdjusting">if enabled, the action will be raised according to the duration of the last loop turn</param>
+        /// <param name="callback">callback to invoke each loop turn</param>
+        /// <returns>true if success</returns>
+        public static bool AddAction(string name, float frequency, bool enableSmartFrequencyAdjusting, Action callback)
+        {
+            return AddAction(new NetSquareScheduledAction(name, GetMsFrequencyFromHz(frequency), enableSmartFrequencyAdjusting, callback));
+        }
+
+        /// <summary>
+        /// Register an action to the scheduler
+        /// </summary>
         /// <param name="action">action to register</param>
         /// <returns>true if success</returns>
         public static bool AddAction(NetSquareScheduledAction action)
@@ -117,6 +130,22 @@ namespace NetSquare.Core
                     nbStopped++;
             return nbStopped;
         }
+
+        /// <summary>
+        /// Get the frequency in ms from a frequency in Hz
+        /// </summary>
+        /// <param name="frequency"> frequency in Hz</param>
+        /// <returns> frequency in ms</returns>
+        public static int GetMsFrequencyFromHz(float frequency)
+        {
+            // clamp frequency
+            if (frequency <= 0f)
+                frequency = 0.1f;
+            if (frequency > 30f)
+                frequency = 30f;
+            // set frequency
+            return (int)((1f / frequency) * 1000f);
+        }
     }
 
     public class NetSquareScheduledAction
@@ -181,6 +210,7 @@ namespace NetSquare.Core
             else
                 actionThread = new Thread(NormalFrequencyActionLoop);
             IsRunning = true;
+            actionThread.IsBackground = true;
             actionThread.Start();
             return true;
         }

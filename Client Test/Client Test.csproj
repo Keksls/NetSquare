@@ -36,6 +36,8 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -53,6 +55,10 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\ClientsMonitor\ClientsMonitor.csproj">
+      <Project>{f04e56f6-3747-4da3-9c82-2b5190749fc2}</Project>
+      <Name>ClientsMonitor</Name>
+    </ProjectReference>
     <ProjectReference Include="..\NetSquareClient\NetSquareClient.csproj">
       <Project>{775043F8-96A9-48E7-8A85-437D336BDE72}</Project>
       <Name>NetSquareClient</Name>

@@ -286,36 +286,51 @@ namespace NetSquareServer
 
         public void SendToClients(NetworkMessage message, List<ConnectedClient> clients)
         {
-            foreach (ConnectedClient client in clients)
-                client?.AddTCPMessage(message);
+            lock (clients)
+            {
+                foreach (ConnectedClient client in clients)
+                    client?.AddTCPMessage(message);
+            }
         }
 
         public void SendToClients(NetworkMessage message, IEnumerable<uint> clients)
         {
-            foreach (uint clientID in clients)
-                if (Clients.ContainsKey(clientID))
-                    Clients[clientID].AddTCPMessage(message);
+            lock (clients)
+            {
+                foreach (uint clientID in clients)
+                    if (Clients.ContainsKey(clientID))
+                        Clients[clientID].AddTCPMessage(message);
+            }
         }
 
         public void SendToClients(byte[] message, IEnumerable<uint> clients)
         {
-            foreach (uint clientID in clients)
-                if (Clients.ContainsKey(clientID))
-                    Clients[clientID].AddTCPMessage(message);
+            lock (clients)
+            {
+                foreach (uint clientID in clients)
+                    if (Clients.ContainsKey(clientID))
+                        Clients[clientID].AddTCPMessage(message);
+            }
         }
 
         public void Broadcast(NetworkMessage message)
         {
-            foreach (var pair in Clients)
-                if (Clients.ContainsKey(pair.Key))
-                    Clients[pair.Key].AddTCPMessage(message);
+            lock (Clients)
+            {
+                foreach (var pair in Clients)
+                    if (Clients.ContainsKey(pair.Key))
+                        Clients[pair.Key].AddTCPMessage(message);
+            }
         }
 
         public void SendToClientsUDP(NetworkMessage message, IEnumerable<uint> clients)
         {
-            foreach (uint clientID in clients)
-                if (Clients.ContainsKey(clientID))
-                    SendToClientUDP(message, Clients[clientID]);
+            lock (clients)
+            {
+                foreach (uint clientID in clients)
+                    if (Clients.ContainsKey(clientID))
+                        SendToClientUDP(message, Clients[clientID]);
+            }
         }
 
         public void SendToClientUDP(NetworkMessage message, ConnectedClient client)
@@ -344,9 +359,12 @@ namespace NetSquareServer
 
         public void SendToClientsUDP(ushort headID, byte[] message, IEnumerable<uint> clients)
         {
-            foreach (uint clientID in clients)
-                if (Clients.ContainsKey(clientID))
-                    SendToClientUDP(headID, message, Clients[clientID]);
+            lock (clients)
+            {
+                foreach (uint clientID in clients)
+                    if (Clients.ContainsKey(clientID))
+                        SendToClientUDP(headID, message, Clients[clientID]);
+            }
         }
 
         public void SendToClientUDP(ushort headID, byte[] message, ConnectedClient client)

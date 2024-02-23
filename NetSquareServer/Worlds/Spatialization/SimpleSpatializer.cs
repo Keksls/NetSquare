@@ -1,10 +1,9 @@
 ﻿using NetSquare.Core;
+using NetSquare.Core.Messages;
 using NetSquareCore;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Threading;
 
 namespace NetSquareServer.Worlds
 {
@@ -13,14 +12,19 @@ namespace NetSquareServer.Worlds
         public ConcurrentDictionary<uint, SpatialClient> Clients;
         public List<StaticEntity> StaticEntities;
         public float MaxViewDistance { get; private set; }
-        public bool Started { get; private set; }
-        public int Frequency { get; private set; }
 
-        /// <param name="maxViewDistance">maximum client view distance (clients will spawn and unspawn according to this value)</param>
-        public SimpleSpatializer(NetSquareWorld world, float maxViewDistance) : base(world)
+        /// <summary>
+        /// Instantiate a new simple spatializer based on distance between clients
+        /// </summary>
+        /// <param name="world"> world to spatialize</param>
+        /// <param name="spatializationFreq"> frequency of spatialization loop</param>
+        /// <param name="synchFreq"> frequency of synch loop</param>
+        /// <param name="maxViewDistance"> maximum view distance of the clients</param>
+        public SimpleSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float maxViewDistance) : base(world, spatializationFreq, synchFreq)
         {
             MaxViewDistance = maxViewDistance;
             Clients = new ConcurrentDictionary<uint, SpatialClient>();
+            StaticEntities = new List<StaticEntity>();
         }
 
         /// <summary>
@@ -66,7 +70,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
         /// <param name="transform">position</param>
-        public override void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
+        protected override void SetClientTransformFrame(uint clientID, NetsquareTransformFrame transform)
         {
             if (Clients.ContainsKey(clientID))
                 Clients[clientID].Transform = transform;
@@ -86,51 +90,54 @@ namespace NetSquareServer.Worlds
         }
 
         /// <summary>
-        /// Start spatializer loop that handle clients Spawn and unspawn
+        /// Main spatialization loop
+        /// Process visible clients and static entities
         /// </summary>
-        /// <param name="frequency">frequency of loop processing</param>
-        public override void StartSpatializer(float frequency)
+        protected override void SpatializationLoop()
         {
-            if (frequency <= 0)
-                frequency = 1;
-            if (frequency > 30)
-                frequency = 30;
-            Frequency = (int)((1f / frequency) * 1000f);
-            Started = true;
-            Thread spatializerThread = new Thread(SpawnUnspawnLoop);
-            spatializerThread.IsBackground = true;
-            spatializerThread.Start();
+            foreach (var client in Clients)
+            {
+                client.Value.ProcessVisibleClients();
+                client.Value.ProcessVisibleStaticEntities();
+            }
         }
 
         /// <summary>
-        /// Stop spatializer Spawn / Unspawn loop
+        /// Synchronization loop that pack and send visible clients to the clients
         /// </summary>
-        public override void StopSpatializer()
+        protected override void SynchLoop()
         {
-            Started = false;
-        }
-
-        Stopwatch spatialWatch = new Stopwatch();
-
-        private void SpawnUnspawnLoop()
-        {
-            while (Started)
+            foreach (var client in Clients)
             {
-                spatialWatch.Reset();
-                spatialWatch.Start();
-                foreach (var client in Clients)
+                lock (Clients)
                 {
-                    client.Value.ProcessVisibleClients();
-                    client.Value.ProcessVisibleStaticEntities();
+                    // get visible clients
+                    HashSet<uint> visibleClients = GetVisibleClients(client.Key);
+                    // create new synch message
+                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageType.SetTransformsFramesPacked);
 
-                    //// wait 1 ms for idle this thread, because frequency here is not realy important, better prevend server CPU usage
-                    //Thread.Sleep(1);
+                    // add visible clients to the message
+                    foreach (var visibleClient in visibleClients)
+                    {
+                        // if client has transform frames to send
+                        if (ClientsTransformFrames.ContainsKey(visibleClient) && ClientsTransformFrames[visibleClient].Count > 0)
+                        {
+                            // pack client id and frames count
+                            synchMessage.Set(new UInt24(visibleClient));
+                            synchMessage.Set((byte)ClientsTransformFrames[visibleClient].Count);
+                            // iterate on each frames of the client to pack them
+                            foreach (var frame in ClientsTransformFrames[visibleClient])
+                            {
+                                frame.Serialize(synchMessage);
+                            }
+                            // clear frames
+                            ClientsTransformFrames[visibleClient].Clear();
+                        }
+                    }
+                    // send message to client
+                    if (synchMessage.HasBlock)
+                        World.server.SendToClient(synchMessage, client.Key);
                 }
-                spatialWatch.Stop();
-                int freq = Frequency - (int)spatialWatch.ElapsedMilliseconds;
-                if (freq <= 0)
-                    freq = 1;
-                Thread.Sleep(freq);
             }
         }
 

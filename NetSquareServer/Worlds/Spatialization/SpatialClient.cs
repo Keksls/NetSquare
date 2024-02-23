@@ -81,7 +81,6 @@ namespace NetSquareServer.Worlds
                 // client has move since last spatialization
                 if (!Transform.Equals(LastPosition))
                 {
-                    Spatializer.World.server.Worlds.Fire_OnSpatializePlayer(Spatializer.World.ID, Client.ID, Transform);
                     LastPosition.Set(Transform);
                 }
 

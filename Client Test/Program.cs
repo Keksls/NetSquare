@@ -1,54 +1,76 @@
-﻿using System;
+﻿using NetSquare.Core;
+using NetSquareClient;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
+using System.Windows.Forms;
 
 namespace Client_Test
 {
     internal class Program
     {
+        static ClientsMonitor.Form1 monitor;
         static void Main(string[] args)
         {
-            //SlyvekClientRoutine scr = new SlyvekClientRoutine();
-            //scr.Start();
-            //Console.ReadKey();
-            //return;
-
             Console.WriteLine("How many clients : ");
             string nbClients = Console.ReadLine();
             int nbCLients = 10;
             int.TryParse(nbClients, out nbCLients);
             List<ClientRoutine> clients = new List<ClientRoutine>();
 
+            ClientStatisticsManager clientStatisticsManager = new ClientStatisticsManager();
+            clientStatisticsManager.IntervalMs = 1000;
+            clientStatisticsManager.OnGetStatistics += (statistics) =>
+            {
+                monitor?.UpdateStatistics(statistics);
+            };
+            clientStatisticsManager.Start();
+
             Thread t = new Thread(() =>
             {
                 for (int i = 0; i < nbCLients; i++)
                 {
                     ClientRoutine routine = new ClientRoutine();
-                    routine.Start();
+                    routine.Start(5f + (i % 10));
                     clients.Add(routine);
                     while (!routine.client.WorldsManager.IsInWorld)
                         Thread.Sleep(10);
+                    clientStatisticsManager.AddClient(routine.client);
                 }
             });
             t.Start();
 
-            Thread s = new Thread(() =>
+            Stopwatch stopwatch = new Stopwatch();
+            Stopwatch sendWatch = new Stopwatch();
+            sendWatch.Start();
+            bool sendNow = false;
+            NetSquareScheduler.AddAction("Client_Bot_Loop", 5f, true, () =>
             {
-                while (true)
+                if (clients.Count == 0)
                 {
-                    for (int i = 0; i < clients.Count; i++)
-                    {
-                        clients[i].TestSync();
-                        if (i == 0)
-                        {
-                            string humanReadableTime = TimeSpan.FromMilliseconds(clients[i].client.Time * 1000f).ToString(@"hh\:mm\:ss");
-                            Console.Title = "T:" + clients[i].client.Time + " - T:" + humanReadableTime;
-                        }
-                    }
-                    Thread.Sleep(500);
+                    return;
                 }
+                sendNow = sendWatch.ElapsedMilliseconds > 500;
+                if (sendNow)
+                    sendWatch.Restart();
+
+                stopwatch.Restart();
+                for (int i = 0; i < clients.Count; i++)
+                {
+                    clients[i].TestSync(sendNow);
+                }
+                float enlapsed = stopwatch.ElapsedMilliseconds;
+                string humanReadableTime = TimeSpan.FromMilliseconds(clients[0].Time * 1000f).ToString(@"hh\:mm\:ss");
+                Console.Title = "Sent : " + (sendNow ? "True" : "False") + " - Duration : " + enlapsed + "ms - T:" + humanReadableTime;
             });
-            s.Start();
+            NetSquareScheduler.StartAction("Client_Bot_Loop");
+
+            // Start Server Monitor
+            Application.EnableVisualStyles();
+            monitor = new ClientsMonitor.Form1();
+            Application.Run(monitor);
+
             Console.ReadKey();
         }
     }

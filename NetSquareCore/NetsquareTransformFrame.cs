@@ -196,6 +196,50 @@ namespace NetSquareCore
         }
 
         /// <summary>
+        /// Moves a position current towards target.
+        /// </summary>
+        /// <param name="current"> position to move</param>
+        /// <param name="target"> target position</param>
+        /// <param name="maxDistanceDelta"> max distance to move</param>
+        /// <returns> new position</returns>
+        public static NetsquareTransformFrame MoveToward(NetsquareTransformFrame current, NetsquareTransformFrame target, float maxDistanceDelta)
+        {
+            float toVector_x = target.x - current.x;
+            float toVector_y = target.y - current.y;
+            float toVector_z = target.z - current.z;
+
+            float sqdist = toVector_x * toVector_x + toVector_y * toVector_y + toVector_z * toVector_z;
+
+            if (sqdist == 0 || (maxDistanceDelta >= 0 && sqdist <= maxDistanceDelta * maxDistanceDelta))
+                return target;
+
+            float dist = Sqrt(sqdist);
+
+            return new NetsquareTransformFrame(
+                               current.x + toVector_x / dist * maxDistanceDelta,
+                                              current.y + toVector_y / dist * maxDistanceDelta,
+                                                             current.z + toVector_z / dist * maxDistanceDelta,
+                                                                            current.rx,
+                                                                                           current.ry,
+                                                                                                          current.rz,
+                                                                                                                         current.rw,
+                                                                                                                                        current.State,
+                                                                                                                                                       current.Time
+                                                                                                                                                                  );
+        }
+
+        /// <summary>
+        /// Moves a position current towards target.
+        /// </summary>
+        /// <param name="target"> target position</param>
+        /// <param name="maxDistanceDelta"> max distance to move</param>
+        /// <returns> new position</returns>
+        public NetsquareTransformFrame MoveToward(NetsquareTransformFrame target, float maxDistanceDelta)
+        {
+            return MoveToward(this, target, maxDistanceDelta);
+        }
+
+        /// <summary>
         /// Clamps value between 0 and 1 and returns value
         /// </summary>
         /// <param name="value">value to clamp</param>
@@ -247,6 +291,15 @@ namespace NetSquareCore
         public bool Equals(NetsquareTransformFrame transform)
         {
             return x == transform.x && y == transform.y && z == transform.z && rx == transform.rx && ry == transform.ry && rz == transform.rz && rw == transform.rw;
+        }
+
+        /// <summary>
+        /// Human readable position, rotation, state and time
+        /// </summary>
+        /// <returns> position, rotation, state and time</returns>
+        public override string ToString()
+        {
+            return "x : " + x + " y : " + y + " z : " + z + " rx : " + rx + " ry : " + ry + " rz : " + rz + " rw : " + rw + " state : " + State + " time : " + Time;
         }
     }
 }

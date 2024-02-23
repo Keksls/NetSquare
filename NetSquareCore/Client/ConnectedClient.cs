@@ -18,8 +18,8 @@ namespace NetSquare.Core
         public int NbMessagesSended { get { return nbMessagesSended + (UDP?.NbMessagesSended ?? 0); } }
         internal long sendedBytes = 0;
         internal long receivedBytes = 0;
-        public long SendedBytes { get { return sendedBytes + UDP?.sendedBytes ?? 0; } set { sendedBytes = value; if (UDP != null) UDP.sendedBytes = value; } }
-        public long ReceivedBytes { get { return receivedBytes + UDP?.receivedBytes ?? 0; } set { receivedBytes = value; if (UDP != null) UDP.receivedBytes = value; } }
+        public long SendedBytes { get { return sendedBytes + (UDP?.sendedBytes ?? 0); } set { sendedBytes = value; if (UDP != null) UDP.sendedBytes = value; } }
+        public long ReceivedBytes { get { return receivedBytes + (UDP?.receivedBytes ?? 0); } set { receivedBytes = value; if (UDP != null) UDP.receivedBytes = value; } }
         public long NbMessagesReceived { get; internal set; }
         // properties
         public uint ID { get; set; }
@@ -129,19 +129,19 @@ namespace NetSquare.Core
 
             nbMessagesSended = 0;
 
-            //receivingArgs = new SocketAsyncEventArgs();
-            //receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
-            //receivingArgs.UserToken = TcpSocket;
-            //receivingArgs.Completed += MessageDataReceived;
+            receivingArgs = new SocketAsyncEventArgs();
+            receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
+            receivingArgs.UserToken = TcpSocket;
+            receivingArgs.Completed += MessageDataReceived;
 
-            //receivingLenghtArgs = new SocketAsyncEventArgs();
-            //receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
-            //receivingArgs.UserToken = TcpSocket;
-            //receivingLenghtArgs.Completed += MessageLenghtReceived;
-            //receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, 0, 4);
+            receivingLenghtArgs = new SocketAsyncEventArgs();
+            receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
+            receivingArgs.UserToken = TcpSocket;
+            receivingLenghtArgs.Completed += MessageLenghtReceived;
+            receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, 0, 4);
 
-            //StartReceivingMessageLenght();
-            StartR();
+            StartReceivingMessageLenght();
+            //StartR();
         }
         #endregion
 
@@ -179,129 +179,128 @@ namespace NetSquare.Core
         }
 
         // ====================================== Receive
-        private readonly object bufferLock = new object();
-        private const int MaxBufferSize = 65536; // Adjust buffer size as needed
-        private byte[] receiveBuffer = new byte[MaxBufferSize];
-        private int receiveBufferLength = 0;
+        //private readonly object bufferLock = new object();
+        //private const int MaxBufferSize = 65536; // Adjust buffer size as needed
+        //private byte[] receiveBuffer = new byte[MaxBufferSize];
+        //private int receiveBufferLength = 0;
 
-        public void StartR()
-        {
-            SendingQueue = new ConcurrentQueue<byte[]>();
+        /*  public void StartR()
+          {
+              SendingQueue = new ConcurrentQueue<byte[]>();
 
-            // Start a separate thread for processing received data
-            Thread receiveThread = new Thread(ProcessReceivedData);
-            receiveThread.IsBackground = true;
-            receiveThread.Start();
-            StartReceivingData();
-        }
+              // Start a separate thread for processing received data
+              Thread receiveThread = new Thread(ProcessReceivedData);
+              receiveThread.IsBackground = true;
+              receiveThread.Start();
+              StartReceivingData();
+          }
 
-        // Method to process received data asynchronously
-        private void ProcessReceivedData()
-        {
-            while (true)
-            {
-                lock (bufferLock)
-                {
-                    // Check if there's enough data in the buffer to process a message
-                    while (receiveBufferLength >= 4)
-                    {
-                        // Extract message length
-                        int messageLength = BitConverter.ToInt32(receiveBuffer, 0);
+          // Method to process received data asynchronously
+          private void ProcessReceivedData()
+          {
+              while (true)
+              {
+                  lock (bufferLock)
+                  {
+                      // Check if there's enough data in the buffer to process a message
+                      while (receiveBufferLength >= 4)
+                      {
+                          // Extract message length
+                          int messageLength = BitConverter.ToInt32(receiveBuffer, 0);
 
-                        // Check if we have received the entire message
-                        if (receiveBufferLength >= messageLength)
-                        {
-                            // Construct message from buffer
-                            byte[] messageData = new byte[messageLength];
-                            Array.Copy(receiveBuffer, 0, messageData, 0, messageLength);
+                          // Check if we have received the entire message
+                          if (receiveBufferLength >= messageLength)
+                          {
+                              // Construct message from buffer
+                              byte[] messageData = new byte[messageLength];
+                              Array.Copy(receiveBuffer, 0, messageData, 0, messageLength);
 
-                            // Process message (e.g., raise event)
-                            receivingMessageReceived = 0;
-                            NbMessagesReceived++;
-                            receivedBytes += messageLength;
-                            receivingTCPMessage = new NetworkMessage();
-                            receivingTCPMessage.Client = this;
-                            receivingTCPMessage.SetData(messageData);
-                            OnMessageReceived?.Invoke(receivingTCPMessage);
-                            receivingTCPMessage = null;
-                            // Remove processed message from buffer
-                            Array.Copy(receiveBuffer, messageLength, receiveBuffer, 0, receiveBufferLength - messageLength);
-                            receiveBufferLength -= (messageLength);
-                        }
-                        else
-                        {
-                            // Wait for more data to arrive
-                            Monitor.Wait(bufferLock);
-                        }
-                    }
-                    // Wait for more data to arrive
-                    Monitor.Wait(bufferLock);
-                }
-            }
-        }
+                              // Process message (e.g., raise event)
+                              receivingMessageReceived = 0;
+                              NbMessagesReceived++;
+                              receivedBytes += messageLength;
+                              receivingTCPMessage = new NetworkMessage();
+                              receivingTCPMessage.Client = this;
+                              receivingTCPMessage.SetData(messageData);
+                              OnMessageReceived?.Invoke(receivingTCPMessage);
+                              receivingTCPMessage = null;
+                              // Remove processed message from buffer
+                              Array.Copy(receiveBuffer, messageLength, receiveBuffer, 0, receiveBufferLength - messageLength);
+                              receiveBufferLength -= (messageLength);
+                          }
+                          else
+                          {
+                              // Wait for more data to arrive
+                              Monitor.Wait(bufferLock);
+                          }
+                      }
+                      // Wait for more data to arrive
+                      Monitor.Wait(bufferLock);
+                  }
+              }
+          }
 
-        private void StartReceivingData()
-        {
-            try
-            {
-                SocketAsyncEventArgs receivingArgs = new SocketAsyncEventArgs();
-                receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
-                receivingArgs.UserToken = TcpSocket;
-                receivingArgs.SetBuffer(receiveBuffer, receiveBufferLength, receiveBuffer.Length - receiveBufferLength);
-                receivingArgs.Completed += MessageDataReceived; // Wire up the event handler
+          private void StartReceivingData()
+          {
+              try
+              {
+                  SocketAsyncEventArgs receivingArgs = new SocketAsyncEventArgs();
+                  receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
+                  receivingArgs.UserToken = TcpSocket;
+                  receivingArgs.SetBuffer(receiveBuffer, receiveBufferLength, receiveBuffer.Length - receiveBufferLength);
+                  receivingArgs.Completed += MessageDataReceived; // Wire up the event handler
 
-                if (!TcpSocket.ReceiveAsync(receivingArgs))
-                {
-                    if (TcpSocket.Connected)
-                    {
-                        // If the receive operation completed synchronously, handle it immediately
-                        MessageDataReceived(this, receivingArgs);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                OnException?.Invoke(ex);
-                if (ex is SocketException)
-                {
-                    OnDisconected?.Invoke(ID);
-                }
-            }
-        }
+                  if (!TcpSocket.ReceiveAsync(receivingArgs))
+                  {
+                      if (TcpSocket.Connected)
+                      {
+                          // If the receive operation completed synchronously, handle it immediately
+                          MessageDataReceived(this, receivingArgs);
+                      }
+                  }
+              }
+              catch (Exception ex)
+              {
+                  OnException?.Invoke(ex);
+                  if (ex is SocketException)
+                  {
+                      OnDisconected?.Invoke(ID);
+                  }
+              }
+          }
 
-        private void MessageDataReceived(object sender, SocketAsyncEventArgs e)
-        {
-            try
-            {
-                lock (bufferLock)
-                {
-                    // Copy received data to the receive buffer
-                    int bytesReceived = e.BytesTransferred;
-                    if (bytesReceived > 0)
-                    {
-                        Array.Copy(e.Buffer, e.Offset, receiveBuffer, receiveBufferLength, bytesReceived);
-                        receiveBufferLength += bytesReceived;
+          private void MessageDataReceived(object sender, SocketAsyncEventArgs e)
+          {
+              try
+              {
+                  lock (bufferLock)
+                  {
+                      // Copy received data to the receive buffer
+                      int bytesReceived = e.BytesTransferred;
+                      if (bytesReceived > 0)
+                      {
+                          Array.Copy(e.Buffer, e.Offset, receiveBuffer, receiveBufferLength, bytesReceived);
+                          receiveBufferLength += bytesReceived;
 
-                        // Notify the processing thread that new data is available
-                        Monitor.Pulse(bufferLock);
-                    }
-                }
+                          // Notify the processing thread that new data is available
+                          Monitor.Pulse(bufferLock);
+                      }
+                  }
 
-                // Continue receiving data
-                StartReceivingData();
-            }
-            catch (Exception ex)
-            {
-                // Handle exceptions
-                OnException?.Invoke(ex);
-                if (ex is SocketException)
-                {
-                    OnDisconected?.Invoke(ID);
-                }
-            }
-        }
+                  // Continue receiving data
+                  StartReceivingData();
+              }
+              catch (Exception ex)
+              {
+                  // Handle exceptions
+                  OnException?.Invoke(ex);
+                  if (ex is SocketException)
+                  {
+                      OnDisconected?.Invoke(ID);
+                  }
+              }
+          }*/
 
-        /*
         private void StartReceivingMessageLenght()
         {
             try
@@ -402,7 +401,7 @@ namespace NetSquare.Core
                 if (ex is SocketException)
                     OnDisconected?.Invoke(ID);
             }
-        }*/
+        }
         #endregion
     }
 }

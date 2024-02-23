@@ -5,7 +5,6 @@ using NetSquareServer.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 
 namespace NetSquareServer.Worlds
@@ -17,11 +16,9 @@ namespace NetSquareServer.Worlds
         private SpatialChunk[,] Chunks;
         private short Width;
         private short Height;
-        public bool Started { get; private set; }
-        public int Frequency { get; private set; }
         private ConcurrentDictionary<uint, ChunkedClient> Clients;
 
-        public ChunkedSpatializer(NetSquareWorld world, float chunkSize, float xStart, float yStart, float xEnd, float yEnd) : base(world)
+        public ChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd) : base(world, spatializationFreq, synchFreq)
         {
             Clients = new ConcurrentDictionary<uint, ChunkedClient>();
             ChunkSize = chunkSize;
@@ -90,7 +87,7 @@ namespace NetSquareServer.Worlds
         /// </summary>
         /// <param name="clientID">id of the client that just moved</param>
         /// <param name="transform">position</param>
-        public override void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
+        protected override void SetClientTransformFrame(uint clientID, NetsquareTransformFrame transform)
         {
             if (Clients.ContainsKey(clientID))
             {
@@ -110,56 +107,76 @@ namespace NetSquareServer.Worlds
         }
 
         /// <summary>
-        /// Start spatializer loop that handle clients Spawn and unspawn
+        /// Refresh the spatialization of clients in this world
+        /// Process visible clients
         /// </summary>
-        /// <param name="frequency">frequency of loop processing</param>
-        public override void StartSpatializer(float frequency)
+        protected override void SpatializationLoop()
         {
-            if (Started)
+            if (Clients == null)
+            {
                 return;
+            }
+            // refresh chunked client chunks
+            foreach (var client in Clients)
+                RefreshClientChunk(client.Value);
 
-            if (frequency <= 0f)
-                frequency = 1f;
-            if (frequency > 30f)
-                frequency = 30f;
-            Frequency = (int)((1f / frequency) * 1000f);
-            Started = true;
-            Thread spatializerThread = new Thread(SpawnUnspawnLoop);
-            spatializerThread.IsBackground = true;
-            spatializerThread.Start();
+            Thread.Sleep(1);
+
+            // process visible clients
+            foreach (var client in Clients)
+                ProcessVisible(client.Value);
         }
 
         /// <summary>
-        /// Stop spatializer Spawn / Unspawn loop
+        /// Synch clients transforms, pack them into messages and send them to clients
         /// </summary>
-        public override void StopSpatializer()
+        protected override void SynchLoop()
         {
-            Started = false;
-        }
-
-        Stopwatch spatialWatch = new Stopwatch();
-        private void SpawnUnspawnLoop()
-        {
-            while (Started)
+            if (Chunks == null)
             {
-                spatialWatch.Reset();
-                spatialWatch.Start();
-
-                // refresh chunked client chunks
-                foreach (var client in Clients)
-                    RefreshClientChunk(client.Value);
-
-                Thread.Sleep(1);
-
-                // process visible clients
-                foreach (var client in Clients)
-                    ProcessVisible(client.Value);
-
-                spatialWatch.Stop();
-                int freq = Frequency - (int)spatialWatch.ElapsedMilliseconds;
-                if (freq <= 0)
-                    freq = 1;
-                Thread.Sleep(freq);
+                return;
+            }
+            // iterate on each chunk
+            int width = Chunks.GetLength(0);
+            int height = Chunks.GetLength(1);
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    var chunk = Chunks[x, y];
+                    if (chunk != null && chunk.Clients.Count > 0)
+                    {
+                        // create new synch message
+                        NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageType.SetTransformsFramesPacked);
+                        // iterate on each clients in the chunk
+                        lock (chunk.Clients)
+                        {
+                            foreach (var client in chunk.Clients.Values)
+                            {
+                                // if client has transform frames to send
+                                if (ClientsTransformFrames.ContainsKey(client.ClientID) && ClientsTransformFrames[client.ClientID].Count > 0)
+                                {
+                                    // pack client id and frames count
+                                    synchMessage.Set(new UInt24(client.ClientID));
+                                    synchMessage.Set((byte)ClientsTransformFrames[client.ClientID].Count);
+                                    // iterate on each frames of the client to pack them
+                                    lock (ClientsTransformFrames)
+                                    {
+                                        foreach (var frame in ClientsTransformFrames[client.ClientID])
+                                        {
+                                            frame.Serialize(synchMessage);
+                                        }
+                                        // clear frames
+                                        ClientsTransformFrames[client.ClientID].Clear();
+                                    }
+                                }
+                            }
+                            // send message to clients
+                            if (synchMessage.HasBlock)
+                                World.server.SendToClients(synchMessage, chunk.Clients.Keys);
+                        }
+                    }
+                }
             }
         }
 
@@ -182,9 +199,11 @@ namespace NetSquareServer.Worlds
                 var newChunk = GetChunk(chunkX, chunkY);
                 newChunk.AddClient(client);
 
-                World.Fire_OnHideStaticEntities(client.ClientID, oldChunk.StaticEntities);
+                if (oldChunk.StaticEntities.Count > 0)
+                    World.Fire_OnHideStaticEntities(client.ClientID, oldChunk.StaticEntities);
                 client.SetChunk(chunkX, chunkY);
-                World.Fire_OnHideStaticEntities(client.ClientID, newChunk.StaticEntities);
+                if (newChunk.StaticEntities.Count > 0)
+                    World.Fire_OnShowStaticEntities(client.ClientID, newChunk.StaticEntities);
             }
         }
 
@@ -232,10 +251,8 @@ namespace NetSquareServer.Worlds
             // client has move since last spatialization
             if (!client.Position.Equals(client.LastPosition))
             {
-                World.server.Worlds.Fire_OnSpatializePlayer(World.ID, client.ClientID, client.Position);
                 client.LastPosition = client.Position;
             }
-
         }
 
         private SpatialChunk GetChunkForPosition(NetsquareTransformFrame transform)

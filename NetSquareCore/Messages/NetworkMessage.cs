@@ -1,5 +1,4 @@
-﻿using NetSquare.Core.Messages;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -13,9 +12,9 @@ namespace NetSquare.Core
         public ushort HeadID { get; set; }
         public bool HasBlock { get { return blocks?.Count > 0; } }
         public ConnectedClient Client { get; set; }
-        public byte[] Data { get; private set; }
+        public byte[] Data { get; internal set; }
         public int Length { get; set; }
-        public bool Packed { get; private set; }
+        public bool Serialized { get; private set; }
         public int currentReadingIndex { get; set; } = 10;
         private List<byte[]> blocks = new List<byte[]>();
         private int blocksSize = 0;
@@ -660,11 +659,6 @@ namespace NetSquare.Core
         #endregion
 
         #region Set Data
-        public void AlreadySerialized()
-        {
-            Packed = true;
-        }
-
         public NetworkMessage Set(byte[] val)
         {
             blocks.Add(BitConverter.GetBytes((ushort)val.Length));
@@ -878,7 +872,7 @@ namespace NetSquare.Core
         /// <returns></returns>
         public byte[] Serialize(bool ignoreCompression = false)
         {
-            if (Packed)
+            if (Serialized)
                 return Data;
 
             int headSize = GetHeadSize();
@@ -895,6 +889,7 @@ namespace NetSquare.Core
             WriteHead();
             if (!ProtocoleManager.NoCompressorOrEncryptor && !ignoreCompression)
                 EncryptCompressData();
+            Serialized = true;
             return Data;
         }
 
@@ -953,7 +948,7 @@ namespace NetSquare.Core
             if (!ProtocoleManager.NoCompressorOrEncryptor)
                 EncryptCompressData();
 
-            Packed = true;
+            Serialized = true;
             return this;
         }
 
