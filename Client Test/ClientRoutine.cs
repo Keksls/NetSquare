@@ -24,7 +24,7 @@ namespace Client_Test
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
-            //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
+            client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
             speed = maxSpeed;
 
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);

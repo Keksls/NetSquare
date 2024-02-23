@@ -125,13 +125,16 @@ namespace NetSquareServer.Worlds
                             // pack client id and frames count
                             synchMessage.Set(new UInt24(visibleClient));
                             synchMessage.Set((byte)ClientsTransformFrames[visibleClient].Count);
-                            // iterate on each frames of the client to pack them
-                            foreach (var frame in ClientsTransformFrames[visibleClient])
+                            lock (ClientsTransformFrames)
                             {
-                                frame.Serialize(synchMessage);
+                                // iterate on each frames of the client to pack them
+                                foreach (var frame in ClientsTransformFrames[visibleClient])
+                                {
+                                    frame.Serialize(synchMessage);
+                                }
+                                // clear frames
+                                ClientsTransformFrames[visibleClient].Clear();
                             }
-                            // clear frames
-                            ClientsTransformFrames[visibleClient].Clear();
                         }
                     }
                     // send message to client

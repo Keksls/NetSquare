@@ -659,9 +659,17 @@ namespace NetSquare.Core
         #endregion
 
         #region Set Data
-        public NetworkMessage Set(byte[] val)
+        /// <summary>
+        /// Add a byte array to the message
+        /// You can choose to write the lenght of the array or not
+        /// </summary>
+        /// <param name="val">byte array to add</param>
+        /// <param name="writeLenght">write the lenght of the array or not</param>
+        /// <returns></returns>
+        public NetworkMessage Set(byte[] val, bool writeLenght = true)
         {
-            blocks.Add(BitConverter.GetBytes((ushort)val.Length));
+            if (writeLenght)
+                blocks.Add(BitConverter.GetBytes((ushort)val.Length));
             blocks.Add(val);
             blocksSize += val.Length + 2;
             return this;

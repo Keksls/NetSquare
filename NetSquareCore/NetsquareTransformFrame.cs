@@ -89,17 +89,51 @@ namespace NetSquareCore
         /// Deserialize the position from a network message
         /// </summary>
         /// <param name="message"> message to deserialize the position</param>
-        public NetsquareTransformFrame(NetworkMessage message)
+        public unsafe NetsquareTransformFrame(NetworkMessage message)
         {
-            x = message.GetFloat();
-            y = message.GetFloat();
-            z = message.GetFloat();
-            rx = message.GetFloat();
-            ry = message.GetFloat();
-            rz = message.GetFloat();
-            rw = message.GetFloat();
-            State = message.GetByte();
-            Time = message.GetFloat();
+            // ensure we have enough data to read
+            if (!message.CanReadFor(33))
+            {
+                x = 0;
+                y = 0;
+                z = 0;
+                rx = 0;
+                ry = 0;
+                rz = 0;
+                rw = 0;
+                State = 0;
+                Time = 0;
+                return;
+            }
+
+            // get a pointer to the message data
+            fixed (byte* ptr = message.Data)
+            {
+                // ensure we start at the right position
+                byte* b = ptr;
+                b += message.currentReadingIndex;
+                // read transform values using pointer
+                float* f = (float*)b;
+                x = *f;
+                f++;
+                y = *f;
+                f++;
+                z = *f;
+                f++;
+                rx = *f;
+                f++;
+                ry = *f;
+                f++;
+                rz = *f;
+                f++;
+                rw = *f;
+                f++;
+                State = *b;
+                b++;
+                Time = *f;
+            }
+            // move the reading index of the message
+            message.DummyRead(33);
         }
 
         /// <summary>
@@ -155,9 +189,35 @@ namespace NetSquareCore
         /// Serialize the position to a network message
         /// </summary>
         /// <param name="message"> message to serialize the position</param>
-        public void Serialize(NetworkMessage message)
+        public unsafe void Serialize(NetworkMessage message)
         {
-            message.Set(x).Set(y).Set(z).Set(rx).Set(ry).Set(rz).Set(rw).Set(State).Set(Time);
+            byte[] bytes = new byte[33];
+
+            // write transform values using pointer
+            fixed (byte* p = bytes)
+            {
+                float* f = (float*)p;
+                *f = x;
+                f++;
+                *f = y;
+                f++;
+                *f = z;
+                f++;
+                *f = rx;
+                f++;
+                *f = ry;
+                f++;
+                *f = rz;
+                f++;
+                *f = rw;
+                f++;
+                *f = State;
+                byte* b = (byte*)p;
+                b++;
+                *f = Time;
+            }
+            // set the message data
+            message.Set(bytes, false);
         }
 
         /// <summary>
@@ -264,7 +324,7 @@ namespace NetSquareCore
             if (z == 0) return 0;
             FloatIntUnion u;
             u.tmp = 0;
-            u.f = z;    
+            u.f = z;
             u.tmp -= 1 << 23; /* Subtract 2^m. */
             u.tmp >>= 1; /* Divide by 2. */
             u.tmp += 1 << 29; /* Add ((b + 1) / 2) * 2^m. */

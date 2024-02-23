@@ -38,7 +38,7 @@ namespace NetSquareServer.Worlds
                     {
                         // client just leave FOV
                         clientLeaveFOV = true;
-                        leavingMessage.Set(oldVisible.Client.ID);
+                        leavingMessage.Set(new UInt24(oldVisible.Client.ID));
                     }
                 // send packed message to client
                 if (clientLeaveFOV)

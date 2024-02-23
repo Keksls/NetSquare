@@ -35,8 +35,8 @@ namespace Server_Test
 
             NetSquareWorld world = server.Worlds.AddWorld("Default World", ushort.MaxValue);
             //world.StartSynchronizer(5, false);
-            world.SetSpatializer(Spatializer.GetChunkedSpatializer(world, 5f, 4f, 100f, 0f, 0f, 1000f, 1000f));
-            //world.SetSpatializer(Spatializer.GetSimpleSpatializer(world, 2f, 4f, 50f));
+            //world.SetSpatializer(Spatializer.GetChunkedSpatializer(world, 5f, 4f, 100f, 0f, 0f, 1000f, 1000f));
+            world.SetSpatializer(Spatializer.GetSimpleSpatializer(world, 2f, 4f, 50f));
 
             // Optionnal, set encryption and compression protocole
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
