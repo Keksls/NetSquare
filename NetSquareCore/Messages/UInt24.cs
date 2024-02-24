@@ -3,15 +3,21 @@ using System.Runtime.InteropServices;
 
 namespace NetSquare.Core
 {
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit)]
     public struct UInt24 : IEquatable<UInt24>
     {
-        public byte b0 { get; internal set; }
-        public byte b1 { get; internal set; }
-        public byte b2 { get; internal set; }
-        public uint UInt32 { get; private set; }
+        [FieldOffset(0)]
+        public byte b0;
+        [FieldOffset(1)]
+        public byte b1;
+        [FieldOffset(2)]
+        public byte b2;
+        [FieldOffset(0)]
+        public uint UInt32;
 
         public static readonly UInt24 zero = new UInt24(0);
+        public const int MaxValue = 16777215;
+        public const int HalfValue = 8388607;
 
         public static uint GetUInt(byte[] bytes, int offset = 0)
         {
@@ -20,26 +26,26 @@ namespace NetSquare.Core
 
         public UInt24(UInt32 value)
         {
-            b0 = (byte)((value) & 0xFF);
-            b1 = (byte)((value >> 8) & 0xFF);
-            b2 = (byte)((value >> 16) & 0xFF);
-            UInt32 = (uint)(b0 | (b1 << 8) | (b2 << 16));
+            b0 = 0;
+            b1 = 0;
+            b2 = 0;
+            UInt32 = value;
         }
 
         public UInt24(byte _b0, byte _b1, byte _b2)
         {
+            UInt32 = 0;
             b0 = _b0;
             b1 = _b1;
             b2 = _b2;
-            UInt32 = (uint)(b0 | (b1 << 8) | (b2 << 16));
         }
 
         public UInt24(byte[] bytes, int offset)
         {
+            UInt32 = 0;
             b0 = bytes[offset];
             b1 = bytes[offset + 1];
             b2 = bytes[offset + 2];
-            UInt32 = (uint)(b0 | (b1 << 8) | (b2 << 16));
         }
 
         public byte[] GetBytes()
@@ -49,7 +55,7 @@ namespace NetSquare.Core
 
         public bool Equals(UInt24 val)
         {
-            return b0 == val.b0 && b1 == val.b1 && b2 == val.b2;
+            return UInt32.Equals(val.UInt32);
         }
 
         public override string ToString()

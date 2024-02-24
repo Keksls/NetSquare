@@ -124,8 +124,8 @@ namespace NetSquareServer.Worlds
                         {
                             // create new byte array to pack transform frames for this client
                             UInt24 clientId = new UInt24(visibleClient);
-                            byte nbFrames = (byte)ClientsTransformFrames[visibleClient].Count;
-                            byte[] bytes = new byte[4 + nbFrames * 33];
+                            ushort nbFrames = (ushort)ClientsTransformFrames[visibleClient].Count;
+                            byte[] bytes = new byte[5 + nbFrames * NetsquareTransformFrame.Size];
                             // write transform values using pointer
                             fixed (byte* p = bytes)
                             {
@@ -138,12 +138,13 @@ namespace NetSquareServer.Worlds
                                 lock (ClientsTransformFrames)
                                 {
                                     // write frames count
-                                    *(p + 3) = nbFrames;
+                                    *(p + 3) = (byte)nbFrames;
+                                    *(p + 4) = (byte)(nbFrames >> 8);
 
                                     // iterate on each frames of the client to pack them
-                                    for (byte i = 0; i < nbFrames; i++)
+                                    for (ushort i = 0; i < nbFrames; i++)
                                     {
-                                        ClientsTransformFrames[visibleClient][i].Serialize(p + 4 + i * 33);
+                                        ClientsTransformFrames[visibleClient][i].Serialize(p + 5 + i * NetsquareTransformFrame.Size);
                                     }
                                     // clear frames
                                     ClientsTransformFrames[visibleClient].Clear();

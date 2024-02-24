@@ -4,6 +4,10 @@ using System.Runtime.InteropServices;
 
 namespace NetSquareCore
 {
+    /// <summary>
+    /// Struct that store a position, rotation, state and time
+    /// Represent a transform frame at a given time
+    /// </summary>
     public struct NetsquareTransformFrame
     {
         public float x;
@@ -16,7 +20,7 @@ namespace NetSquareCore
         public byte State;
         public float Time;
         public static NetsquareTransformFrame zero { get { return new NetsquareTransformFrame(); } }
-        public static int Size { get { return 33; } }
+        public const int Size = 33;
 
         /// <summary>
         /// Create a new position
@@ -40,7 +44,8 @@ namespace NetSquareCore
             rz = _rz;
             rw = _rw;
             State = _state;
-            Time = _time;
+            Time = new Half(_time);
+            State = _state;
         }
 
         /// <summary>
@@ -64,7 +69,7 @@ namespace NetSquareCore
             ry = _ry;
             rz = _rz;
             rw = _rw;
-            Time = _time;
+            Time = new Half(_time);
             State = Convert.ToByte(_state);
         }
 
@@ -91,70 +96,146 @@ namespace NetSquareCore
         /// <param name="message"> message to deserialize the position</param>
         public unsafe NetsquareTransformFrame(NetworkMessage message)
         {
+            x = 0;
+            y = 0;
+            z = 0;
+            rx = 0;
+            ry = 0;
+            rz = 0;
+            rw = 0;
+            State = 0;
+            Time = 0;
+
             // ensure we have enough data to read
-            if (!message.CanReadFor(33))
+            if (!message.CanReadFor(Size))
             {
-                x = 0;
-                y = 0;
-                z = 0;
-                rx = 0;
-                ry = 0;
-                rz = 0;
-                rw = 0;
-                State = 0;
-                Time = 0;
                 return;
             }
 
             // get a pointer to the message data
             fixed (byte* ptr = message.Data)
             {
-                // ensure we start at the right position
-                byte* b = ptr;
-                b += message.currentReadingIndex;
-                // read transform values using pointer
-                float* f = (float*)b;
-                x = *f;
-                f++;
-                y = *f;
-                f++;
-                z = *f;
-                f++;
-                rx = *f;
-                f++;
-                ry = *f;
-                f++;
-                rz = *f;
-                f++;
-                rw = *f;
-                f++;
-                State = *b;
-                b++;
-                Time = *f;
+                Deserialize(ptr, message.currentReadingIndex);
             }
             // move the reading index of the message
-            message.DummyRead(33);
+            message.DummyRead(Size);
         }
 
         /// <summary>
-        /// Set the position to the given position
+        /// Deserialize the position from a buffer using pointer
         /// </summary>
-        /// <param name="_x"> x position</param>
-        /// <param name="_y"> y position</param>
-        /// <param name="_z"> z position</param>
-        /// <param name="_rx"> x rotation</param>
-        /// <param name="_ry"> y rotation</param>
-        /// <param name="_rz"> z rotation</param>
-        /// <param name="_rw"> w rotation</param>
-        public void Set(float _x, float _y, float _z, float _rx, float _ry, float _rz, float _rw)
+        /// <param name="ptr"> pointer to deserialize the transform</param>
+        public unsafe NetsquareTransformFrame(byte* ptr, int offset = 0)
         {
-            x = _x;
-            y = _y;
-            z = _z;
-            rx = _rx;
-            ry = _ry;
-            rz = _rz;
-            rw = _rw;
+            x = 0;
+            y = 0;
+            z = 0;
+            rx = 0;
+            ry = 0;
+            rz = 0;
+            rw = 0;
+            State = 0;
+            Time = 0;
+            Deserialize(ptr, offset);
+        }
+        /// <summary>
+        /// Serialize the position to a network message
+        /// </summary>
+        /// <param name="message"> message to serialize the position</param>
+        public unsafe void Serialize(NetworkMessage message)
+        {
+            byte[] bytes = new byte[Size];
+            // write transform values using pointer
+            fixed (byte* ptr = bytes)
+            {
+                Serialize(ptr);
+            }
+            // set the message data
+            message.Set(bytes, false);
+        }
+
+        /// <summary>
+        /// Serialize the position to a buffer using pointer
+        /// </summary>
+        /// <param name="p"> pointer to serialize the position</param>
+        public unsafe void Serialize(byte* ptr)
+        {
+            // write transform values using pointer
+            float* f = (float*)ptr;
+            *f = x;
+            f++;
+            *f = y;
+            f++;
+            *f = z;
+            f++;
+
+            *f = rx;
+            f++;
+            *f = ry;
+            f++;
+            *f = rz;
+            f++;
+            *f = rw;
+            f++;
+
+            *f = Time;
+            f++;
+
+            byte* b = (byte*)f;
+            *b = State;
+        }
+
+        /// <summary>
+        /// Deserialize the position from a byte array using pointer
+        /// </summary>
+        /// <param name="ptr"> pointer to deserialize the transform</param>
+        /// <param name="offset"> offset to start reading the transform</param>
+        public unsafe void Deserialize(NetworkMessage message)
+        {
+            if (message.CanReadFor(Size))
+            {
+                // write transform values using pointer
+                fixed (byte* ptr = message.Data)
+                {
+                    Deserialize(ptr, message.currentReadingIndex);
+                }
+                message.DummyRead(Size);
+            }
+        }
+
+        /// <summary>
+        /// Deserialize the position from a byte array using pointer
+        /// </summary>
+        /// <param name="ptr"> pointer to deserialize the transform</param>
+        /// <param name="offset"> offset to start reading the transform</param>
+        public unsafe void Deserialize(byte* ptr, int offset = 0)
+        {
+            // ensure we start at the right position
+            byte* b = ptr;
+            b += offset;
+            // read transform values using pointer
+            float* f = (float*)b;
+            x = *f;
+            f++;
+            y = *f;
+            f++;
+            z = *f;
+            f++;
+            
+            rx = *f;
+            f++;
+            ry = *f;
+            f++;
+            rz = *f;
+            f++;
+            rw = *f;
+            f++;
+
+            Time = *f;
+            f++;
+
+            b = (byte*)f;
+            State = *b;
         }
 
         /// <summary>
@@ -183,68 +264,6 @@ namespace NetSquareCore
             rw = pos.rw;
             State = pos.State;
             Time = pos.Time;
-        }
-
-        /// <summary>
-        /// Serialize the position to a network message
-        /// </summary>
-        /// <param name="message"> message to serialize the position</param>
-        public unsafe void Serialize(NetworkMessage message)
-        {
-            byte[] bytes = new byte[33];
-
-            // write transform values using pointer
-            fixed (byte* p = bytes)
-            {
-                float* f = (float*)p;
-                *f = x;
-                f++;
-                *f = y;
-                f++;
-                *f = z;
-                f++;
-                *f = rx;
-                f++;
-                *f = ry;
-                f++;
-                *f = rz;
-                f++;
-                *f = rw;
-                f++;
-                *f = State;
-                byte* b = (byte*)p;
-                b++;
-                *f = Time;
-            }
-            // set the message data
-            message.Set(bytes, false);
-        }
-
-        /// <summary>
-        /// Serialize the position to a buffer using pointer
-        /// </summary>
-        /// <param name="p"> pointer to serialize the position</param>
-        public unsafe void Serialize(byte* p)
-        {
-            float* f = (float*)p;
-            *f = x;
-            f++;
-            *f = y;
-            f++;
-            *f = z;
-            f++;
-            *f = rx;
-            f++;
-            *f = ry;
-            f++;
-            *f = rz;
-            f++;
-            *f = rw;
-            f++;
-            *f = State;
-            byte* b = (byte*)p;
-            b++;
-            *f = Time;
         }
 
         /// <summary>

@@ -1,9 +1,11 @@
 ﻿using NetSquare.Core;
+using NetSquareCore;
 using NetSquareServer;
 using NetSquareServer.Server;
 using NetSquareServer.Utils;
 using NetSquareServer.Worlds;
 using System;
+using System.Diagnostics;
 using System.Windows.Forms;
 
 namespace Server_Test
@@ -12,8 +14,9 @@ namespace Server_Test
     {
         static NetSquare_Server server;
         static ServerMonitor.Form1 monitor;
+
         [STAThread]
-        static void Main(string[] args)
+        static unsafe void Main(string[] args)
         {
             // Set configuration
             NetSquareConfiguration config = NetSquareConfigurationManager.Configuration;

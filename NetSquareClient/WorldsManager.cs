@@ -174,7 +174,7 @@ namespace NetSquareClient
             if (currentClientFrames.Count == 0)
                 return;
             NetworkMessage message = new NetworkMessage(NetSquareMessageType.SetTransformFrames, client.ClientID);
-            message.Set((byte)currentClientFrames.Count);
+            message.Set((ushort)currentClientFrames.Count);
             foreach (var frame in currentClientFrames)
                 frame.Serialize(message);
             if (SynchronizeUsingUDP)
@@ -233,11 +233,11 @@ namespace NetSquareClient
             if (OnClientMove == null)
                 return;
 
-            byte nbFrames = message.GetByte();
+            ushort nbFrames = message.GetUShort();
             NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
-            for (int i = 0; i < nbFrames; i++)
+            for (ushort i = 0; i < nbFrames; i++)
             {
-                frames[i] = new NetsquareTransformFrame(message);
+                frames[i].Deserialize(message);
             }
             OnClientMove(message.ClientID, frames);
         }
@@ -251,11 +251,11 @@ namespace NetSquareClient
             while (message.CanGetUInt24())
             {
                 uint clientID = message.GetUInt24().UInt32;
-                byte nbFrames = message.GetByte();
+                ushort nbFrames = message.GetUShort();
                 NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
-                for (int i = 0; i < nbFrames; i++)
+                for (ushort i = 0; i < nbFrames; i++)
                 {
-                    frames[i] = new NetsquareTransformFrame(message);
+                    frames[i].Deserialize(message);
                 }
                 OnClientMove(clientID, frames);
             }

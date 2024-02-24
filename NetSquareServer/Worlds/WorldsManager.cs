@@ -323,11 +323,11 @@ namespace NetSquareServer.Worlds
                         // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
                         if (world.UseSpatializer)
                         {
-                            byte nbFrames = message.GetByte();
+                            ushort nbFrames = message.GetUShort();
                             NetsquareTransformFrame[] transformFrames = new NetsquareTransformFrame[nbFrames];
                             for (int i = 0; i < nbFrames; i++)
                             {
-                                transformFrames[i] = new NetsquareTransformFrame(message);
+                                transformFrames[i].Deserialize(message);
                             }
                             world.Spatializer.StoreClientTransformFrames(message.ClientID, transformFrames);
                         }

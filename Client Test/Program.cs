@@ -46,7 +46,7 @@ namespace Client_Test
             sendWatch.Start();
             bool sendNow = false;
             long enlapsed = 0;
-            NetSquareScheduler.AddAction("Client_Bot_Loop", 5f, true, () =>
+            NetSquareScheduler.AddAction("Client_Bot_Loop", 10f, true, () =>
             {
                 if (clients.Count == 0)
                 {
