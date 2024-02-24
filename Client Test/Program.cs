@@ -45,6 +45,7 @@ namespace Client_Test
             Stopwatch sendWatch = new Stopwatch();
             sendWatch.Start();
             bool sendNow = false;
+            long enlapsed = 0;
             NetSquareScheduler.AddAction("Client_Bot_Loop", 5f, true, () =>
             {
                 if (clients.Count == 0)
@@ -60,7 +61,8 @@ namespace Client_Test
                 {
                     clients[i].TestSync(sendNow);
                 }
-                float enlapsed = stopwatch.ElapsedMilliseconds;
+                if (sendNow)
+                    enlapsed = stopwatch.ElapsedMilliseconds;
                 string humanReadableTime = TimeSpan.FromMilliseconds(clients[0].Time * 1000f).ToString(@"hh\:mm\:ss");
                 Console.Title = "Sent : " + (sendNow ? "True" : "False") + " - Duration : " + enlapsed + "ms - T:" + humanReadableTime;
             });

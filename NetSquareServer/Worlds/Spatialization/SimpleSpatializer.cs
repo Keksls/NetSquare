@@ -105,7 +105,7 @@ namespace NetSquareServer.Worlds
         /// <summary>
         /// Synchronization loop that pack and send visible clients to the clients
         /// </summary>
-        protected override void SynchLoop()
+        protected override unsafe void SynchLoop()
         {
             foreach (var client in Clients)
             {
@@ -122,19 +122,35 @@ namespace NetSquareServer.Worlds
                         // if client has transform frames to send
                         if (ClientsTransformFrames.ContainsKey(visibleClient) && ClientsTransformFrames[visibleClient].Count > 0)
                         {
-                            // pack client id and frames count
-                            synchMessage.Set(new UInt24(visibleClient));
-                            synchMessage.Set((byte)ClientsTransformFrames[visibleClient].Count);
-                            lock (ClientsTransformFrames)
+                            // create new byte array to pack transform frames for this client
+                            UInt24 clientId = new UInt24(visibleClient);
+                            byte nbFrames = (byte)ClientsTransformFrames[visibleClient].Count;
+                            byte[] bytes = new byte[4 + nbFrames * 33];
+                            // write transform values using pointer
+                            fixed (byte* p = bytes)
                             {
-                                // iterate on each frames of the client to pack them
-                                foreach (var frame in ClientsTransformFrames[visibleClient])
+                                // write client id
+                                *p = clientId.b0;
+                                *(p + 1) = clientId.b1;
+                                *(p + 2) = clientId.b2;
+
+                                // lock client frames list so we can read it safely
+                                lock (ClientsTransformFrames)
                                 {
-                                    frame.Serialize(synchMessage);
+                                    // write frames count
+                                    *(p + 3) = nbFrames;
+
+                                    // iterate on each frames of the client to pack them
+                                    for (byte i = 0; i < nbFrames; i++)
+                                    {
+                                        ClientsTransformFrames[visibleClient][i].Serialize(p + 4 + i * 33);
+                                    }
+                                    // clear frames
+                                    ClientsTransformFrames[visibleClient].Clear();
                                 }
-                                // clear frames
-                                ClientsTransformFrames[visibleClient].Clear();
                             }
+                            // set message bytes
+                            synchMessage.Set(bytes, false);
                         }
                     }
                     // send message to client

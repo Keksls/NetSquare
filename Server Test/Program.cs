@@ -34,9 +34,9 @@ namespace Server_Test
             server.OnTimeLoop += Server_OnTimeLoop;
 
             NetSquareWorld world = server.Worlds.AddWorld("Default World", ushort.MaxValue);
-            //world.StartSynchronizer(5, false);
-            //world.SetSpatializer(Spatializer.GetChunkedSpatializer(world, 5f, 4f, 100f, 0f, 0f, 1000f, 1000f));
-            world.SetSpatializer(Spatializer.GetSimpleSpatializer(world, 2f, 4f, 50f));
+            world.SetSpatializer(Spatializer.GetChunkedSpatializer(world, 5f, 4f, 100f, 0f, 0f, 1000f, 1000f));
+            //world.SetSpatializer(Spatializer.GetSimpleSpatializer(world, 2f, 4f, 50f));
+            world.Spatializer.SetAdaptiveSynchFrequency(10, 1000, 50, 5); // start adaptative synch frequency
 
             // Optionnal, set encryption and compression protocole
             //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
@@ -80,6 +80,7 @@ namespace Server_Test
             monitor.Clear();
             monitor.Write("T:" + server.Time + " " + humanReadableTime + " " + currentStatistics.ToString());
             monitor.UpdateStatistics(currentStatistics);
+            monitor.UpdateWorldData(server.Worlds.Worlds[1]);
         }
 
         private static void Server_OnClientConnected(uint clientID)

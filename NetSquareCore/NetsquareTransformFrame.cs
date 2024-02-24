@@ -221,6 +221,33 @@ namespace NetSquareCore
         }
 
         /// <summary>
+        /// Serialize the position to a buffer using pointer
+        /// </summary>
+        /// <param name="p"> pointer to serialize the position</param>
+        public unsafe void Serialize(byte* p)
+        {
+            float* f = (float*)p;
+            *f = x;
+            f++;
+            *f = y;
+            f++;
+            *f = z;
+            f++;
+            *f = rx;
+            f++;
+            *f = ry;
+            f++;
+            *f = rz;
+            f++;
+            *f = rw;
+            f++;
+            *f = State;
+            byte* b = (byte*)p;
+            b++;
+            *f = Time;
+        }
+
+        /// <summary>
         /// Get the distance between two positions
         /// </summary>
         /// <param name="pos1"> first position</param>

@@ -376,27 +376,30 @@ namespace NetSquareServer
         #region ServerEvent
         public void Server_ClientDisconnected(ConnectedClient client)
         {
-            if (!Clients.ContainsKey(client.ID))
-                return;
-            // remove client from world
-            Worlds.ClientDisconnected(client.ID);
-            // supprime des clients connectés
-            ConnectedClient c = null;
-            while (!Clients.TryRemove(client.ID, out c))
+            lock (Clients)
             {
                 if (!Clients.ContainsKey(client.ID))
                     return;
-                else
-                    continue;
+                // remove client from world
+                Worlds.ClientDisconnected(client.ID);
+                // supprime des clients connectés
+                ConnectedClient c = null;
+                while (!Clients.TryRemove(client.ID, out c))
+                {
+                    if (!Clients.ContainsKey(client.ID))
+                        return;
+                    else
+                        continue;
+                }
+                // unregister client event
+                client.OnMessageReceived -= MessageReceived;
+                client.OnMessageSend -= MessageSended;
+                // try clean disconnect if not already
+                try { client.TcpSocket.Disconnect(false); } catch { }
+                OnClientDisconnected?.Invoke(client.ID);
+                Writer.Write("Client " + client.ID + " disconnected", ConsoleColor.Green);
+                //Writer.Write(Environment.StackTrace, ConsoleColor.Gray);
             }
-            // unregister client event
-            client.OnMessageReceived -= MessageReceived;
-            client.OnMessageSend -= MessageSended;
-            // try clean disconnect if not already
-            try { client.TcpSocket.Disconnect(false); } catch { }
-            OnClientDisconnected?.Invoke(client.ID);
-            Writer.Write("Client " + client.ID + " disconnected", ConsoleColor.Green);
-            //Writer.Write(Environment.StackTrace, ConsoleColor.Gray);
         }
 
         public void Server_ClientConnected(ConnectedClient client, uint id)

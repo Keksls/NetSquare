@@ -130,12 +130,13 @@ namespace NetSquareServer.Worlds
         /// <summary>
         /// Synch clients transforms, pack them into messages and send them to clients
         /// </summary>
-        protected override void SynchLoop()
+        protected override unsafe void SynchLoop()
         {
             if (Chunks == null)
             {
                 return;
             }
+            syncStopWatch.Restart();
             // iterate on each chunk
             int width = Chunks.GetLength(0);
             int height = Chunks.GetLength(1);
@@ -156,19 +157,35 @@ namespace NetSquareServer.Worlds
                                 // if client has transform frames to send
                                 if (ClientsTransformFrames.ContainsKey(client.ClientID) && ClientsTransformFrames[client.ClientID].Count > 0)
                                 {
-                                    // pack client id and frames count
-                                    synchMessage.Set(new UInt24(client.ClientID));
-                                    synchMessage.Set((byte)ClientsTransformFrames[client.ClientID].Count);
-                                    // iterate on each frames of the client to pack them
-                                    lock (ClientsTransformFrames)
+                                    // create new byte array to pack transform frames for this client
+                                    UInt24 clientId = new UInt24(client.ClientID);
+                                    byte nbFrames = (byte)ClientsTransformFrames[client.ClientID].Count;
+                                    byte[] bytes = new byte[4 + nbFrames * 33];
+                                    // write transform values using pointer
+                                    fixed (byte* p = bytes)
                                     {
-                                        foreach (var frame in ClientsTransformFrames[client.ClientID])
+                                        // write client id
+                                        *p = clientId.b0;
+                                        *(p + 1) = clientId.b1;
+                                        *(p + 2) = clientId.b2;
+
+                                        // lock client frames list so we can read it safely
+                                        lock (ClientsTransformFrames)
                                         {
-                                            frame.Serialize(synchMessage);
+                                            // write frames count
+                                            *(p + 3) = nbFrames;
+
+                                            // iterate on each frames of the client to pack them
+                                            for (byte i = 0; i < nbFrames; i++)
+                                            {
+                                                ClientsTransformFrames[client.ClientID][i].Serialize(p + 4 + i * 33);
+                                            }
+                                            // clear frames
+                                            ClientsTransformFrames[client.ClientID].Clear();
                                         }
-                                        // clear frames
-                                        ClientsTransformFrames[client.ClientID].Clear();
                                     }
+                                    // set message bytes
+                                    synchMessage.Set(bytes, false);
                                 }
                             }
                             // send message to clients
@@ -178,6 +195,8 @@ namespace NetSquareServer.Worlds
                     }
                 }
             }
+            syncStopWatch.Stop();
+            UpdateSynchFrequency((int)syncStopWatch.ElapsedMilliseconds);
         }
 
         private void RefreshClientChunk(ChunkedClient client)

@@ -257,9 +257,13 @@ namespace NetSquareClient
         /// <param name="callback">callback to invoke when server respond</param>
         public void SendMessage(NetworkMessage msg, NetSquareAction callback)
         {
-            msg.ReplyTo(nbReplyAsked);
-            nbReplyAsked++;
-            replyCallBack.Add(msg.ReplyID, callback);
+            lock (replyCallBack)
+            {
+                msg.ReplyTo(nbReplyAsked);
+                nbReplyAsked++;
+                uint rplID = msg.ReplyID;
+                replyCallBack.Add(rplID, callback);
+            }
             SendMessage(msg);
         }
 
@@ -271,9 +275,13 @@ namespace NetSquareClient
         public void SendMessage(ushort headID, NetSquareAction callback)
         {
             NetworkMessage msg = new NetworkMessage(headID);
-            msg.ReplyTo(nbReplyAsked);
-            nbReplyAsked++;
-            replyCallBack.Add(msg.ReplyID, callback);
+            lock (replyCallBack)
+            {
+                msg.ReplyTo(nbReplyAsked);
+                nbReplyAsked++;
+                uint rplID = msg.ReplyID;
+                replyCallBack.Add(rplID, callback);
+            }
             SendMessage(msg);
         }
 
@@ -285,9 +293,13 @@ namespace NetSquareClient
         public void SendMessage(Enum headID, NetSquareAction callback)
         {
             NetworkMessage msg = new NetworkMessage(headID);
-            msg.ReplyTo(nbReplyAsked);
-            nbReplyAsked++;
-            replyCallBack.Add(msg.ReplyID, callback);
+            lock (replyCallBack)
+            {
+                msg.ReplyTo(nbReplyAsked);
+                nbReplyAsked++;
+                uint rplID = msg.ReplyID;
+                replyCallBack.Add(rplID, callback);
+            }
             SendMessage(msg);
         }
 

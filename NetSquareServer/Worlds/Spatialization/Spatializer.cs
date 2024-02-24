@@ -3,7 +3,7 @@ using NetSquareCore;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Threading;
+using System.Diagnostics;
 
 namespace NetSquareServer.Worlds
 {
@@ -12,10 +12,16 @@ namespace NetSquareServer.Worlds
         public NetSquareWorld World { get; private set; }
         public uint StaticEntitiesCount { get; internal set; }
         public ConcurrentDictionary<uint, List<NetsquareTransformFrame>> ClientsTransformFrames { get; internal set; }
-        private int synchFrequency;
-        private int spatializationFrequency;
+        public int SynchFrequency { get; private set; }
+        public int SpatializationFrequency { get; private set; }
         private string synchName;
         private string spatializationName;
+        private int synchMaxFrequency = -1;
+        private int synchMinFrequency = -1;
+        private int synchMinimumOffset = 50;
+        private int lastFramePendingMessages = 0;
+        private List<int> synchLastDurations;
+        protected Stopwatch syncStopWatch;
 
         /// <summary>
         /// Instantiate a new spatializer
@@ -27,8 +33,9 @@ namespace NetSquareServer.Worlds
             ClientsTransformFrames = new ConcurrentDictionary<uint, List<NetsquareTransformFrame>>();
             synchName = "Spatializer_Sync_World_" + World.ID;
             spatializationName = "Spatializer_Spatialization_World_" + World.ID;
-            spatializationFrequency = NetSquareScheduler.GetMsFrequencyFromHz(spatializationFreq);
-            synchFrequency = NetSquareScheduler.GetMsFrequencyFromHz(synchFreq);
+            SpatializationFrequency = NetSquareScheduler.GetMsFrequencyFromHz(spatializationFreq);
+            SynchFrequency = NetSquareScheduler.GetMsFrequencyFromHz(synchFreq);
+            syncStopWatch = new Stopwatch();
             Start();
         }
 
@@ -57,6 +64,89 @@ namespace NetSquareServer.Worlds
         {
             return new SimpleSpatializer(world, spatializationFreq, synchFreq, maxViewDistance);
         }
+
+        #region Adaptive Synch Frequency
+        /// <summary>
+        /// Set the adaptive synch frequency
+        /// </summary>
+        /// <param name="min"> minimum frequency (-1 to disable)</param>
+        /// <param name="max"> maximum frequency (-1 to disable)</param>
+        /// <param name="maxKeepingLastFrequencies"> number of last frequencies to keep for the average</param>
+        /// <param name="synchMinimumOffset"> minimum offset to change the frequency</param>
+        public void SetAdaptiveSynchFrequency(int min, int max, int maxKeepingLastFrequencies, int synchMinimumOffset)
+        {
+            synchMaxFrequency = max;
+            synchMinFrequency = min;
+            synchLastDurations = new List<int>(maxKeepingLastFrequencies);
+            this.synchMinimumOffset = synchMinimumOffset;
+
+            // start server statistics if not already started
+            if (!World.server.Statistics.Running && synchMinFrequency != -1 && synchMaxFrequency != -1)
+            {
+                World.server.Statistics.StartReceivingStatistics(World.server);
+            }
+        }
+
+        /// <summary>
+        /// Update the adaptive synch frequency
+        /// </summary>
+        protected void UpdateSynchFrequency(int lastSyncDurationMs)
+        {
+            if (synchMaxFrequency != -1 && synchMinFrequency != -1)
+            {
+                // add the last duration to the list
+                if (synchLastDurations.Count == synchLastDurations.Capacity)
+                {
+                    synchLastDurations.RemoveAt(0);
+                }
+                synchLastDurations.Add(lastSyncDurationMs);
+
+                // calculate the average of the last durations
+                int average = 0;
+                foreach (var duration in synchLastDurations)
+                {
+                    average += duration;
+                }
+                average /= synchLastDurations.Count;
+                // clamp the new frequency
+                if (average > synchMaxFrequency)
+                {
+                    average = synchMaxFrequency + synchMinimumOffset;
+                }
+                else if (average < synchMinFrequency)
+                {
+                    average = synchMinFrequency + synchMinimumOffset;
+                }
+                else
+                {
+                    average = average + synchMinimumOffset;
+                }
+
+                // check is server has too much pending messages to send, and low the frequency if it's the case
+                if (World.server.Statistics.CurrentStatistics.NbMessagesToSend > 100000 && lastFramePendingMessages > 100000)
+                {
+                    average += World.server.Statistics.CurrentStatistics.NbMessagesToSend / 10; // give 10ms more for each 100 messages, the time to empty the queue
+                }
+
+                // check is server has too much pending messages to send, and low the frequency if it's the case
+                if (World.server.Statistics.CurrentStatistics.NbMessagesToSend > 10000 && lastFramePendingMessages > 10000)
+                {
+                    average += World.server.Statistics.CurrentStatistics.NbMessagesToSend / 100; // give 10ms more for each 100 messages, the time to empty the queue
+                }
+
+                // check is server has too much pending messages to send, and low the frequency if it's the case
+                if (World.server.Statistics.CurrentStatistics.NbMessagesToSend > 1000 && lastFramePendingMessages > 1000)
+                {
+                    average += World.server.Statistics.CurrentStatistics.NbMessagesToSend / 200; // give 10ms more for each 100 messages, the time to empty the queue
+                }
+                lastFramePendingMessages = World.server.Statistics.CurrentStatistics.NbMessagesToSend;
+
+                // set the new frequency
+                SynchFrequency = average;
+                NetSquareScheduler.SetSchedulerFrequency(synchName, SynchFrequency);
+            }
+        }
+        #endregion
 
         /// <summary>
         /// Add a client to this spatializer
@@ -172,7 +262,7 @@ namespace NetSquareServer.Worlds
         /// Send to spatialized clients the frames of the other clients
         /// Typicaly for chuncked spatializer, we pack frames of clients in the same chunk and send it to the clients in the same chunk
         /// </summary>
-        protected abstract void SynchLoop();
+        protected abstract unsafe void SynchLoop();
 
         /// <summary>
         /// synchronization loop will send frames to clients at a fixed frequency
@@ -186,10 +276,10 @@ namespace NetSquareServer.Worlds
         public void Start()
         {
             // start synchronization loop
-            NetSquareScheduler.AddAction(synchName, synchFrequency, true, SynchLoop);
+            NetSquareScheduler.AddAction(synchName, SynchFrequency, true, SynchLoop);
             NetSquareScheduler.StartAction(synchName);
             // start spatialization loop
-            NetSquareScheduler.AddAction(spatializationName, spatializationFrequency, true, SpatializationLoop);
+            NetSquareScheduler.AddAction(spatializationName, SpatializationFrequency, true, SpatializationLoop);
             NetSquareScheduler.StartAction(spatializationName);
         }
 

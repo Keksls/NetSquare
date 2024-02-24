@@ -1,4 +1,5 @@
 ﻿using NetSquareServer.Server;
+using NetSquareServer.Worlds;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -93,6 +94,31 @@ namespace ServerMonitor
             {
                 chart2.Series[0].Points.AddY(receptionsSizeValues[i]);
                 chart2.Series[1].Points.AddY(sendingSizeValues[i]);
+            }
+        }
+
+        public void UpdateWorldData(NetSquareWorld world)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(new Action<NetSquareWorld>(UpdateWorldData), world);
+                return;
+            }
+
+            if (world != null)
+            {
+                if(world.UseSpatializer)
+                {
+                    lbWs.Text = "World " + world.ID + " uses spatializer.";
+                    if(world.Spatializer.SynchFrequency > 0)
+                    {
+                        lbWs.Text += " SynchFrequency: " + world.Spatializer.SynchFrequency;
+                    }
+                }
+                else
+                {
+                    lbWs.Text = "World " + world.ID + " does NOT use spatializer";
+                }
             }
         }
     }

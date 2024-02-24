@@ -113,7 +113,7 @@ namespace NetSquare.Core
         {
             int nbStarted = 0;
             foreach (NetSquareScheduledActionRunner runner in ScheduledActions.Values)
-                if(runner.StartAction())
+                if (runner.StartAction())
                     nbStarted++;
             return nbStarted;
         }
@@ -126,7 +126,7 @@ namespace NetSquare.Core
         {
             int nbStopped = 0;
             foreach (NetSquareScheduledActionRunner runner in ScheduledActions.Values)
-                if(runner.StopAction())
+                if (runner.StopAction())
                     nbStopped++;
             return nbStopped;
         }
@@ -145,6 +145,30 @@ namespace NetSquare.Core
                 frequency = 30f;
             // set frequency
             return (int)((1f / frequency) * 1000f);
+        }
+
+        /// <summary>
+        /// Set the frequency of an action
+        /// </summary>
+        /// <param name="actionName"> name of the action</param>
+        /// <param name="frequencyHz"> frequency in Hz</param>
+        public static void SetSchedulerFrequency(string actionName, float frequencyHz)
+        {
+            if (!ScheduledActions.ContainsKey(actionName))
+                return;
+            ScheduledActions[actionName].Action.Frequency = GetMsFrequencyFromHz(frequencyHz);
+        }
+
+        /// <summary>
+        /// Set the frequency of an action
+        /// </summary>
+        /// <param name="actionName"> name of the action</param>
+        /// <param name="frequencyMs"> frequency in Ms</param>
+        public static void SetSchedulerFrequency(string actionName, int frequencyMs)
+        {
+            if (!ScheduledActions.ContainsKey(actionName))
+                return;
+            ScheduledActions[actionName].Action.Frequency = frequencyMs;
         }
     }
 
