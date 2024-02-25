@@ -669,9 +669,16 @@ namespace NetSquare.Core
         public NetworkMessage Set(byte[] val, bool writeLenght = true)
         {
             if (writeLenght)
+            {
                 blocks.Add(BitConverter.GetBytes((ushort)val.Length));
-            blocks.Add(val);
-            blocksSize += val.Length + 2;
+                blocks.Add(val);
+                blocksSize += val.Length + 2;
+            }
+            else
+            {
+                blocks.Add(val);
+                blocksSize += val.Length;
+            }
             return this;
         }
 

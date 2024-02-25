@@ -34,7 +34,7 @@ namespace NetSquareCore
         /// <param name="_rw"> w rotation</param>
         /// <param name="_state"> state</param>
         /// <param name="_time"> time</param>
-        public NetsquareTransformFrame(float _x = 0, float _y = 0, float _z = 0, float _rx = 0, float _ry = 0, float _rz = 0, float _rw = 0, byte _state = 0, float _time = 0)
+        public NetsquareTransformFrame(float _x = 0, float _y = 0, float _z = 0, float _rx = 0, float _ry = 0, float _rz = 0, float _rw = 1, byte _state = 0, float _time = 0)
         {
             x = _x;
             y = _y;
@@ -44,7 +44,7 @@ namespace NetSquareCore
             rz = _rz;
             rw = _rw;
             State = _state;
-            Time = new Half(_time);
+            Time = _time;
             State = _state;
         }
 
@@ -69,7 +69,7 @@ namespace NetSquareCore
             ry = _ry;
             rz = _rz;
             rw = _rw;
-            Time = new Half(_time);
+            Time = _time;
             State = Convert.ToByte(_state);
         }
 
@@ -115,7 +115,9 @@ namespace NetSquareCore
             // get a pointer to the message data
             fixed (byte* ptr = message.Data)
             {
-                Deserialize(ptr, message.currentReadingIndex);
+                byte* b = ptr;
+                b += message.currentReadingIndex;
+                Deserialize(ref b);
             }
             // move the reading index of the message
             message.DummyRead(Size);
@@ -125,7 +127,7 @@ namespace NetSquareCore
         /// Deserialize the position from a buffer using pointer
         /// </summary>
         /// <param name="ptr"> pointer to deserialize the transform</param>
-        public unsafe NetsquareTransformFrame(byte* ptr, int offset = 0)
+        public unsafe NetsquareTransformFrame(ref byte* ptr)
         {
             x = 0;
             y = 0;
@@ -136,8 +138,9 @@ namespace NetSquareCore
             rw = 0;
             State = 0;
             Time = 0;
-            Deserialize(ptr, offset);
+            Deserialize(ref ptr);
         }
+
         /// <summary>
         /// Serialize the position to a network message
         /// </summary>
@@ -148,7 +151,8 @@ namespace NetSquareCore
             // write transform values using pointer
             fixed (byte* ptr = bytes)
             {
-                Serialize(ptr);
+                byte* b = ptr;
+                Serialize(ref b);
             }
             // set the message data
             message.Set(bytes, false);
@@ -158,7 +162,7 @@ namespace NetSquareCore
         /// Serialize the position to a buffer using pointer
         /// </summary>
         /// <param name="p"> pointer to serialize the position</param>
-        public unsafe void Serialize(byte* ptr)
+        public unsafe void Serialize(ref byte* ptr)
         {
             // write transform values using pointer
             float* f = (float*)ptr;
@@ -181,8 +185,9 @@ namespace NetSquareCore
             *f = Time;
             f++;
 
-            byte* b = (byte*)f;
-            *b = State;
+            ptr = (byte*)f;
+            *ptr = State;
+            ptr++;
         }
 
         /// <summary>
@@ -197,7 +202,9 @@ namespace NetSquareCore
                 // write transform values using pointer
                 fixed (byte* ptr = message.Data)
                 {
-                    Deserialize(ptr, message.currentReadingIndex);
+                    byte* b = ptr;
+                    b += message.currentReadingIndex;
+                    Deserialize(ref b);
                 }
                 message.DummyRead(Size);
             }
@@ -207,12 +214,8 @@ namespace NetSquareCore
         /// Deserialize the position from a byte array using pointer
         /// </summary>
         /// <param name="ptr"> pointer to deserialize the transform</param>
-        /// <param name="offset"> offset to start reading the transform</param>
-        public unsafe void Deserialize(byte* ptr, int offset = 0)
+        public unsafe void Deserialize(ref byte* b)
         {
-            // ensure we start at the right position
-            byte* b = ptr;
-            b += offset;
             // read transform values using pointer
             float* f = (float*)b;
             x = *f;
@@ -236,6 +239,7 @@ namespace NetSquareCore
 
             b = (byte*)f;
             State = *b;
+            b++;
         }
 
         /// <summary>

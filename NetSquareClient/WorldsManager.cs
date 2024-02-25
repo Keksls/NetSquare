@@ -167,16 +167,33 @@ namespace NetSquareClient
         /// <summary>
         /// Send all stored transform frames
         /// </summary>
-        public void SendFrames()
+        public unsafe void SendFrames()
         {
             if (!IsInWorld)
                 return;
             if (currentClientFrames.Count == 0)
                 return;
             NetworkMessage message = new NetworkMessage(NetSquareMessageType.SetTransformFrames, client.ClientID);
-            message.Set((ushort)currentClientFrames.Count);
-            foreach (var frame in currentClientFrames)
-                frame.Serialize(message);
+
+            ushort nbFrames = (ushort)currentClientFrames.Count;
+            byte[] bytes = new byte[2 + nbFrames * NetsquareTransformFrame.Size];
+            // write transform values using pointer
+            fixed (byte* ptr = bytes)
+            {
+                byte* b = ptr;
+                // write frames count
+                *b = (byte)nbFrames;
+                b++;
+                *b = (byte)(nbFrames >> 8);
+                b++;
+                // iterate on each frames of the client to pack them
+                for (ushort i = 0; i < nbFrames; i++)
+                {
+                    currentClientFrames[i].Serialize(ref b);
+                }
+            }
+            message.Set(bytes, false);
+
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
             else
@@ -242,22 +259,29 @@ namespace NetSquareClient
             OnClientMove(message.ClientID, frames);
         }
 
-        private void SetTransformsFramesPacked(NetworkMessage message)
+        private unsafe void SetTransformsFramesPacked(NetworkMessage message)
         {
             if (OnClientMove == null)
                 return;
 
             message.RestartRead();
-            while (message.CanGetUInt24())
+            fixed (byte* ptr = message.Data)
             {
-                uint clientID = message.GetUInt24().UInt32;
-                ushort nbFrames = message.GetUShort();
-                NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
-                for (ushort i = 0; i < nbFrames; i++)
+                byte* b = ptr + message.currentReadingIndex;
+                while (message.CanGetUInt24())
                 {
-                    frames[i].Deserialize(message);
+                    uint clientID = (uint)(*b | (*(b + 1) << 8) | (*(b + 2) << 16));
+                    b += 3;
+                    ushort nbFrames = *(ushort*)(b);
+                    b += 2;
+                    NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
+                    for (ushort i = 0; i < nbFrames; i++)
+                    {
+                        frames[i].Deserialize(ref b);
+                    }
+                    OnClientMove(clientID, frames);
+                    message.DummyRead(5 + nbFrames * NetsquareTransformFrame.Size);
                 }
-                OnClientMove(clientID, frames);
             }
         }
         #endregion

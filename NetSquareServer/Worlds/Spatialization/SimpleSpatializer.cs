@@ -127,24 +127,30 @@ namespace NetSquareServer.Worlds
                             ushort nbFrames = (ushort)ClientsTransformFrames[visibleClient].Count;
                             byte[] bytes = new byte[5 + nbFrames * NetsquareTransformFrame.Size];
                             // write transform values using pointer
-                            fixed (byte* p = bytes)
+                            fixed (byte* ptr = bytes)
                             {
+                                byte* b = ptr;
                                 // write client id
-                                *p = clientId.b0;
-                                *(p + 1) = clientId.b1;
-                                *(p + 2) = clientId.b2;
+                                *b = clientId.b0;
+                                b++;
+                                *b = clientId.b1;
+                                b++;
+                                *b = clientId.b2;
+                                b++;
 
                                 // lock client frames list so we can read it safely
                                 lock (ClientsTransformFrames)
                                 {
                                     // write frames count
-                                    *(p + 3) = (byte)nbFrames;
-                                    *(p + 4) = (byte)(nbFrames >> 8);
+                                    *b = (byte)nbFrames;
+                                    b++;
+                                    *b = (byte)(nbFrames >> 8);
+                                    b++;
 
                                     // iterate on each frames of the client to pack them
                                     for (ushort i = 0; i < nbFrames; i++)
                                     {
-                                        ClientsTransformFrames[visibleClient][i].Serialize(p + 5 + i * NetsquareTransformFrame.Size);
+                                        ClientsTransformFrames[visibleClient][i].Serialize(ref b);
                                     }
                                     // clear frames
                                     ClientsTransformFrames[visibleClient].Clear();

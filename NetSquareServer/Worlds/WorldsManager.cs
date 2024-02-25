@@ -311,7 +311,7 @@ namespace NetSquareServer.Worlds
         /// A client just set his possition to the server
         /// </summary>
         /// <param name="message">message that contains multiple transform frames</param>
-        private void SetTransformFrames(NetworkMessage message)
+        private unsafe void SetTransformFrames(NetworkMessage message)
         {
             try
             {
@@ -323,13 +323,18 @@ namespace NetSquareServer.Worlds
                         // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
                         if (world.UseSpatializer)
                         {
-                            ushort nbFrames = message.GetUShort();
-                            NetsquareTransformFrame[] transformFrames = new NetsquareTransformFrame[nbFrames];
-                            for (int i = 0; i < nbFrames; i++)
+                            fixed (byte* ptr = message.Data)
                             {
-                                transformFrames[i].Deserialize(message);
+                                byte* b = ptr + message.currentReadingIndex;
+                                ushort nbFrames = *(ushort*)(b);
+                                b += 2;
+                                NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
+                                for (ushort i = 0; i < nbFrames; i++)
+                                {
+                                    frames[i].Deserialize(ref b);
+                                }
+                                world.Spatializer.StoreClientTransformFrames(message.ClientID, frames);
                             }
-                            world.Spatializer.StoreClientTransformFrames(message.ClientID, transformFrames);
                         }
                         // if we don't use a spatializer, we send the new position directly to everyone in the world
                         else

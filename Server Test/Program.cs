@@ -32,7 +32,7 @@ namespace Server_Test
             // Instantiate NetSquare Server
             server = new NetSquare_Server(eProtocoleType.TCP);
             server.OnClientConnected += Server_OnClientConnected;
-            server.Statistics.IntervalMs = 1000;
+            server.Statistics.IntervalMs = 100;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;
             server.OnTimeLoop += Server_OnTimeLoop;
 
@@ -54,6 +54,7 @@ namespace Server_Test
             // Start Server Monitor
             Application.EnableVisualStyles();
             monitor = new ServerMonitor.Form1();
+            monitor.Initialize(600, 10);
             Application.Run(monitor);
         }
 
@@ -82,8 +83,8 @@ namespace Server_Test
             }
             monitor.Clear();
             monitor.Write("T:" + server.Time + " " + humanReadableTime + " " + currentStatistics.ToString());
-            monitor.UpdateStatistics(currentStatistics);
             monitor.UpdateWorldData(server.Worlds.Worlds[1]);
+            monitor.UpdateStatistics(currentStatistics);
         }
 
         private static void Server_OnClientConnected(uint clientID)

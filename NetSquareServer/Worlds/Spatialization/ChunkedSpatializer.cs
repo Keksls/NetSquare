@@ -162,24 +162,30 @@ namespace NetSquareServer.Worlds
                                     ushort nbFrames = (ushort)ClientsTransformFrames[client.ClientID].Count;
                                     byte[] bytes = new byte[5 + nbFrames * NetsquareTransformFrame.Size];
                                     // write transform values using pointer
-                                    fixed (byte* p = bytes)
+                                    fixed (byte* ptr = bytes)
                                     {
+                                        byte* b = ptr;
                                         // write client id
-                                        *p = clientId.b0;
-                                        *(p + 1) = clientId.b1;
-                                        *(p + 2) = clientId.b2;
+                                        *b = clientId.b0;
+                                        b++;
+                                        *b = clientId.b1;
+                                        b++;
+                                        *b = clientId.b2;
+                                        b++;
+                                        // write frames count
+                                        *b = (byte)nbFrames;
+                                        b++;
+                                        *b = (byte)(nbFrames >> 8);
+                                        b++;
 
                                         // lock client frames list so we can read it safely
                                         lock (ClientsTransformFrames)
                                         {
-                                            // write frames count
-                                            *(p + 3) = (byte)nbFrames;
-                                            *(p + 4) = (byte)(nbFrames >> 8);
-
                                             // iterate on each frames of the client to pack them
                                             for (ushort i = 0; i < nbFrames; i++)
                                             {
-                                                ClientsTransformFrames[client.ClientID][i].Serialize(p + 5 + i * NetsquareTransformFrame.Size);
+                                                ClientsTransformFrames[client.ClientID][i].Serialize(ref b);
+                                                //b += NetsquareTransformFrame.Size;
                                             }
                                             // clear frames
                                             ClientsTransformFrames[client.ClientID].Clear();

@@ -268,14 +268,13 @@ namespace NetSquare.Core
             Stopwatch sw = new Stopwatch();
             while (IsRunning)
             {
-                sw.Start();
+                sw.Restart();
                 Action.Callback();
                 OnDoAction?.Invoke();
                 sw.Stop();
                 int ms = (int)(Action.Frequency - sw.ElapsedMilliseconds);
                 if (ms < 1)
                     ms = 1;
-                sw.Reset();
                 Thread.Sleep(ms);
             }
         }

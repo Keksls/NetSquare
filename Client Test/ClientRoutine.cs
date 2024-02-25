@@ -2,7 +2,6 @@
 using NetSquareClient;
 using NetSquareCore;
 using System;
-using System.Numerics;
 
 namespace Client_Test
 {
@@ -10,14 +9,19 @@ namespace Client_Test
     {
         public NetSquare_Client client;
         bool readyToSync = false;
-        Random rnd = new Random();
         float speed = 1.5f;
-        private float serverOffset = 0;
-        public float Time { get { return EnlapsedTime + serverOffset; } }
-        public float EnlapsedTime { get { return (float)(DateTime.Now - startTime).TotalSeconds; } }
-        DateTime startTime;
+        private static float serverOffset = 0;
+        public static float Time { get { return EnlapsedTime + serverOffset; } }
+        public static float EnlapsedTime { get { return (float)(DateTime.Now - startTime).TotalSeconds; } }
+        private static DateTime startTime;
+        public int LineIndex = 0;
+        NetsquareTransformFrame targetPos;
+        NetsquareTransformFrame currentPos;
+        private float xOffset = 50;
+        private float zOffset = 50;
+        private static bool timeSynced = false;
 
-        public void Start(float maxSpeed)
+        public void Start(float _speed, float x, float y, float z, float startLineX, float startLineZ)
         {
             startTime = DateTime.Now;
             client = new NetSquare_Client(eProtocoleType.TCP, false);
@@ -25,10 +29,9 @@ namespace Client_Test
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
             client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
-            speed = maxSpeed;
-
-            //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            // ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            speed = _speed;
+            currentPos = new NetsquareTransformFrame(x + xOffset, y, z + zOffset, 0, 0, 0, 1f, 0, 0);
+            SetNextTargetPoint(startLineX, startLineZ);
             client.Connect("127.0.0.1", 5050);
         }
 
@@ -50,13 +53,17 @@ namespace Client_Test
 
         private void Client_Connected(uint ID)
         {
-            client.SyncTime(5, 1000, (serverTime) =>
+            if (!timeSynced)
             {
-                serverOffset = serverTime - EnlapsedTime;
-            });
+                timeSynced = true;
+                client.SyncTime(5, 1000, (serverTime) =>
+                {
+                    serverOffset = serverTime - EnlapsedTime;
+                });
+            }
 
             Console.WriteLine("Connected with ID " + ID);
-            GetNextTargetPoint();
+            currentPos.Set(0, Time);
             client.WorldsManager.TryJoinWorld(1, currentPos, (success) =>
             {
                 if (success)
@@ -80,11 +87,17 @@ namespace Client_Test
             Console.WriteLine("from Server : " + text);
         }
 
-        public void TestSync(bool send)
+        public void Update(bool send, float deltaTime)
         {
             if (!readyToSync)
                 return;
-            GetNextTargetPoint();
+            if (NetsquareTransformFrame.Distance(targetPos, currentPos) < 0.1f)
+            {
+                SetNextTargetPoint(targetPos.x, targetPos.z);
+            }
+
+            currentPos = currentPos.MoveToward(targetPos, speed * deltaTime);
+            currentPos.Time = Time;
             client.WorldsManager.StoreTransformFrame(currentPos);
             if (send)
             {
@@ -92,22 +105,34 @@ namespace Client_Test
             }
         }
 
-        NetsquareTransformFrame startPos = NetsquareTransformFrame.zero;
-        NetsquareTransformFrame targetPos;
-        NetsquareTransformFrame currentPos = NetsquareTransformFrame.zero;
-        private void GetNextTargetPoint()
+        private void SetNextTargetPoint(float _x, float _z)
         {
-            if (NetsquareTransformFrame.Distance(targetPos, currentPos) < 0.5f)
+            float x = _x - xOffset;
+            float z = _z - zOffset;
+            // we are on the top left corner
+            if (x < 0f && z > 0f)
             {
-                Quaternion q = Quaternion.Identity;
-                targetPos = new NetsquareTransformFrame((float)rnd.Next(0, 200), 1f, (float)rnd.Next(0, 200), q.X, q.Y, q.Z, q.W, 0, Time);
-                if (currentPos.Equals(NetsquareTransformFrame.zero))
-                    currentPos.Set(targetPos);
-                startPos.Set(currentPos);
+                // go to the top right corner
+                targetPos = new NetsquareTransformFrame(LineIndex + xOffset, 1f, LineIndex + xOffset);
             }
-
-            currentPos = currentPos.MoveToward(targetPos, speed);
-            currentPos.Time = Time;
+            // we are on the top right corner
+            else if (x > 0f && z > 0f)
+            {
+                // go to the bottom right corner
+                targetPos = new NetsquareTransformFrame(LineIndex + xOffset, 1f, -LineIndex + zOffset);
+            }
+            // we are on the bottom right corner
+            else if (x > 0f && z < 0f)
+            {
+                // go to the bottom left corner
+                targetPos = new NetsquareTransformFrame(-LineIndex + xOffset, 1f, -LineIndex + zOffset);
+            }
+            // we are on the bottom left corner
+            else if (x < 0f && z < 0f)
+            {
+                // go to the top left corner
+                targetPos = new NetsquareTransformFrame(-LineIndex + xOffset, 1f, LineIndex + zOffset);
+            }
         }
     }
 

@@ -18,6 +18,9 @@ namespace ServerMonitor
         List<int> sendingSpeedValues;
         List<float> receptionsSizeValues;
         List<float> sendingSizeValues;
+        private int maxLenght = 60;
+        private int eachTimeInvoke = 1;
+        private int invokeIndex = 0;
 
         public Form1()
         {
@@ -32,14 +35,21 @@ namespace ServerMonitor
             sendingSizeValues = new List<float>();
         }
 
+        public void Initialize(int maxlenght, int eachtimeinvoke)
+        {
+            maxLenght = maxlenght;
+            eachTimeInvoke = eachtimeinvoke;
+        }
+
         public void Write(string text)
         {
+            if (invokeIndex < eachTimeInvoke)
+                return;
             if (InvokeRequired)
             {
-                Invoke(new Action<string>(Write), text);
+                Invoke(new Action<string>((txt) => { richTextBox1.AppendText(txt + Environment.NewLine); }), text);
                 return;
             }
-            richTextBox1.AppendText(text + Environment.NewLine);
         }
 
         public void Clear()
@@ -54,51 +64,70 @@ namespace ServerMonitor
 
         public void UpdateStatistics(ServerStatistics statistics)
         {
-            if (InvokeRequired)
+            if (receptionsSpeedValues == null || sendingSpeedValues == null || receptionsSizeValues == null || sendingSizeValues == null)
             {
-                Invoke(new Action<ServerStatistics>(UpdateStatistics), statistics);
                 return;
             }
 
             // Update reception and sending speed
             receptionsSpeedValues.Add(statistics.NbMessagesReceiving);
             sendingSpeedValues.Add(statistics.NbMessagesSending);
-            if (receptionsSpeedValues.Count > 60)
+            if (receptionsSpeedValues.Count > maxLenght)
             {
                 receptionsSpeedValues.RemoveAt(0);
                 sendingSpeedValues.RemoveAt(0);
             }
 
-            // Update UI
-            chart1.Series[0].Points.Clear();
-            chart1.Series[1].Points.Clear();
-            for (int i = 0; i < receptionsSpeedValues.Count; i++)
-            {
-                chart1.Series[0].Points.AddY(receptionsSpeedValues[i]);
-                chart1.Series[1].Points.AddY(sendingSpeedValues[i]);
-            }
-
             // Update reception and sending size
             receptionsSizeValues.Add(statistics.Downloading);
             sendingSizeValues.Add(statistics.Uploading);
-            if (receptionsSizeValues.Count > 60)
+            if (receptionsSizeValues.Count > maxLenght)
             {
                 receptionsSizeValues.RemoveAt(0);
                 sendingSizeValues.RemoveAt(0);
             }
 
-            // Update UI
-            chart2.Series[0].Points.Clear();
-            chart2.Series[1].Points.Clear();
-            for (int i = 0; i < receptionsSizeValues.Count; i++)
+            if (invokeIndex < eachTimeInvoke)
             {
-                chart2.Series[0].Points.AddY(receptionsSizeValues[i]);
-                chart2.Series[1].Points.AddY(sendingSizeValues[i]);
+                invokeIndex++;
+                return;
+            }
+            else
+            {
+                invokeIndex = 0;
+            }
+
+            if (InvokeRequired)
+            {
+                Invoke(new Action(() =>
+                {
+                    // Update UI
+                    chart1.Series[0].Points.Clear();
+                    chart1.Series[1].Points.Clear();
+                    for (int i = 0; i < receptionsSpeedValues.Count; i++)
+                    {
+                        chart1.Series[0].Points.AddY(receptionsSpeedValues[i]);
+                        chart1.Series[1].Points.AddY(sendingSpeedValues[i]);
+                    }
+
+                    // Update UI
+                    chart2.Series[0].Points.Clear();
+                    chart2.Series[1].Points.Clear();
+                    for (int i = 0; i < receptionsSizeValues.Count; i++)
+                    {
+                        chart2.Series[0].Points.AddY(receptionsSizeValues[i]);
+                        chart2.Series[1].Points.AddY(sendingSizeValues[i]);
+                    }
+                }));
+                return;
             }
         }
 
         public void UpdateWorldData(NetSquareWorld world)
         {
+            if (invokeIndex < eachTimeInvoke)
+                return;
+
             if (InvokeRequired)
             {
                 Invoke(new Action<NetSquareWorld>(UpdateWorldData), world);
@@ -107,10 +136,10 @@ namespace ServerMonitor
 
             if (world != null)
             {
-                if(world.UseSpatializer)
+                if (world.UseSpatializer)
                 {
                     lbWs.Text = "World " + world.ID + " uses spatializer.";
-                    if(world.Spatializer.SynchFrequency > 0)
+                    if (world.Spatializer.SynchFrequency > 0)
                     {
                         lbWs.Text += " SynchFrequency: " + world.Spatializer.SynchFrequency;
                     }
