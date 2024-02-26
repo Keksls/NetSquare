@@ -32,16 +32,7 @@ namespace NetSquareServer.Worlds
         /// <param name="client">ID of the client to add</param>
         public override void AddClient(ConnectedClient client)
         {
-            AddClient(client, NetsquareTransformFrame.zero);
-        }
-
-        /// <summary>
-        /// add a client to this spatializer and set his position
-        /// </summary>
-        /// <param name="client">the client to add</param>
-        /// <param name="transform">spawn position</param>
-        public override void AddClient(ConnectedClient client, NetsquareTransformFrame transform)
-        {
+            NetsquareTransformFrame transform = World.Clients[client.ID];
             var chunk = GetChunkForPosition(transform);
             if (chunk != null)
             {
@@ -68,7 +59,7 @@ namespace NetSquareServer.Worlds
                     continue;
             }
 
-            var chunk = GetChunkForPosition(c.Position);
+            var chunk = GetChunkForPosition(World.Clients[clientID]);
             if (chunk != null)
                 chunk.RemoveClient(clientID);
 
@@ -79,19 +70,6 @@ namespace NetSquareServer.Worlds
                     return;
                 else
                     continue;
-            }
-        }
-
-        /// <summary>
-        /// set a client position
-        /// </summary>
-        /// <param name="clientID">id of the client that just moved</param>
-        /// <param name="transform">position</param>
-        protected override void SetClientTransformFrame(uint clientID, NetsquareTransformFrame transform)
-        {
-            if (Clients.ContainsKey(clientID))
-            {
-                Clients[clientID].SetPostition(transform);
             }
         }
 
@@ -208,9 +186,10 @@ namespace NetSquareServer.Worlds
 
         private void RefreshClientChunk(ChunkedClient client)
         {
+            NetsquareTransformFrame clientTransform = World.Clients[client.ClientID];
             // get new chunk position
-            short chunkX = (short)Math.Round((client.Position.x - Bounds.MinX) / ChunkSize, MidpointRounding.ToEven);
-            short chunkY = (short)Math.Round((client.Position.z - Bounds.MinY) / ChunkSize, MidpointRounding.ToEven);
+            short chunkX = (short)Math.Round((clientTransform.x - Bounds.MinX) / ChunkSize, MidpointRounding.ToEven);
+            short chunkY = (short)Math.Round((clientTransform.z - Bounds.MinY) / ChunkSize, MidpointRounding.ToEven);
             if (!HasChunk(chunkX, chunkY))
                 return;
 
@@ -259,6 +238,11 @@ namespace NetSquareServer.Worlds
                     {
                         //create new join message
                         NetworkMessage joiningClientMessage = new NetworkMessage(0, clientID);
+                        lock (World.Clients)
+                        {
+                            // set transform frame
+                            World.Clients[clientID].Serialize(joiningClientMessage);
+                        }
                         // send message to server event for being custom binded
                         World.server.Worlds.Fire_OnSendWorldClients(World.ID, clientID, joiningClientMessage);
                         // add message to list for packing
@@ -274,10 +258,13 @@ namespace NetSquareServer.Worlds
                 World.server.SendToClient(JoiningPacked, client.ClientID);
             }
 
-            // client has move since last spatialization
-            if (!client.Position.Equals(client.LastPosition))
+            lock (World.Clients)
             {
-                client.LastPosition = client.Position;
+                // client has move since last spatialization
+                if (!World.Clients[client.ClientID].Equals(client.LastPosition))
+                {
+                    client.LastPosition = World.Clients[client.ClientID];
+                }
             }
         }
 
@@ -332,13 +319,6 @@ namespace NetSquareServer.Worlds
                             Chunks[_x, _y].AddNeighbour(Chunks[x, y]);
                     }
             }
-        }
-
-        public override NetsquareTransformFrame GetClientTransform(uint clientID)
-        {
-            if (Clients.ContainsKey(clientID))
-                return Clients[clientID].Position;
-            return NetsquareTransformFrame.zero;
         }
 
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)

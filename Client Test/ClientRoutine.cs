@@ -9,29 +9,25 @@ namespace Client_Test
     {
         public NetSquare_Client client;
         bool readyToSync = false;
-        float speed = 1.5f;
         private static float serverOffset = 0;
         public static float Time { get { return EnlapsedTime + serverOffset; } }
         public static float EnlapsedTime { get { return (float)(DateTime.Now - startTime).TotalSeconds; } }
         private static DateTime startTime;
         public int LineIndex = 0;
-        NetsquareTransformFrame targetPos;
         NetsquareTransformFrame currentPos;
-        private float xOffset = 50;
-        private float zOffset = 50;
-        private static bool timeSynced = false;
+        private float xOffset = 100;
+        private float zOffset = 100;
+        private static bool timeSynced => nbTimeSynced > 1;
+        private static int nbTimeSynced = 0;
 
-        public void Start(float _speed, float x, float y, float z, float startLineX, float startLineZ)
+        public void Start(float x, float y, float z)
         {
-            startTime = DateTime.Now;
             client = new NetSquare_Client(eProtocoleType.TCP, false);
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
-            client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
-            speed = _speed;
+            //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
             currentPos = new NetsquareTransformFrame(x + xOffset, y, z + zOffset, 0, 0, 0, 1f, 0, 0);
-            SetNextTargetPoint(startLineX, startLineZ);
             client.Connect("127.0.0.1", 5050);
         }
 
@@ -55,11 +51,17 @@ namespace Client_Test
         {
             if (!timeSynced)
             {
-                timeSynced = true;
-                client.SyncTime(5, 1000, (serverTime) =>
+                startTime = DateTime.Now;
+                client.SyncTime(5, 200, (serverTime) =>
                 {
+                    nbTimeSynced++;
                     serverOffset = serverTime - EnlapsedTime;
                 });
+
+                while (!timeSynced)
+                {
+                    System.Threading.Thread.Sleep(10);
+                }
             }
 
             Console.WriteLine("Connected with ID " + ID);
@@ -87,51 +89,15 @@ namespace Client_Test
             Console.WriteLine("from Server : " + text);
         }
 
-        public void Update(bool send, float deltaTime)
+        public void Update(bool send, float x, float y)
         {
             if (!readyToSync)
                 return;
-            if (NetsquareTransformFrame.Distance(targetPos, currentPos) < 0.1f)
-            {
-                SetNextTargetPoint(targetPos.x, targetPos.z);
-            }
-
-            currentPos = currentPos.MoveToward(targetPos, speed * deltaTime);
-            currentPos.Time = Time;
+            currentPos = new NetsquareTransformFrame(x + xOffset, 1f, y + zOffset, 0, 0, 0, 1, 0, Time);
             client.WorldsManager.StoreTransformFrame(currentPos);
             if (send)
             {
                 client.WorldsManager.SendFrames();
-            }
-        }
-
-        private void SetNextTargetPoint(float _x, float _z)
-        {
-            float x = _x - xOffset;
-            float z = _z - zOffset;
-            // we are on the top left corner
-            if (x < 0f && z > 0f)
-            {
-                // go to the top right corner
-                targetPos = new NetsquareTransformFrame(LineIndex + xOffset, 1f, LineIndex + xOffset);
-            }
-            // we are on the top right corner
-            else if (x > 0f && z > 0f)
-            {
-                // go to the bottom right corner
-                targetPos = new NetsquareTransformFrame(LineIndex + xOffset, 1f, -LineIndex + zOffset);
-            }
-            // we are on the bottom right corner
-            else if (x > 0f && z < 0f)
-            {
-                // go to the bottom left corner
-                targetPos = new NetsquareTransformFrame(-LineIndex + xOffset, 1f, -LineIndex + zOffset);
-            }
-            // we are on the bottom left corner
-            else if (x < 0f && z < 0f)
-            {
-                // go to the top left corner
-                targetPos = new NetsquareTransformFrame(-LineIndex + xOffset, 1f, LineIndex + zOffset);
             }
         }
     }

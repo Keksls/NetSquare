@@ -19,9 +19,9 @@ namespace Client_Test
             client.Connect("127.0.0.1", 5555);
         }
 
-        private void WorldsManager_OnClientJoinWorld(NetSquare.Core.NetworkMessage obj)
+        private void WorldsManager_OnClientJoinWorld(uint clientID, NetsquareTransformFrame transform, NetworkMessage message)
         {
-            Console.WriteLine(obj.ClientID + " join my world");
+            Console.WriteLine(message.ClientID + " join my world at pos : " + transform.x + " " + transform.y + " " + transform.z);
         }
 
         private void Client_Disconected()

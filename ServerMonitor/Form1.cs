@@ -104,20 +104,30 @@ namespace ServerMonitor
                     // Update UI
                     chart1.Series[0].Points.Clear();
                     chart1.Series[1].Points.Clear();
-                    for (int i = 0; i < receptionsSpeedValues.Count; i++)
-                    {
-                        chart1.Series[0].Points.AddY(receptionsSpeedValues[i]);
-                        chart1.Series[1].Points.AddY(sendingSpeedValues[i]);
-                    }
+                    lock (receptionsSpeedValues)
+                        for (int i = 0; i < receptionsSpeedValues.Count; i++)
+                        {
+                            chart1.Series[0].Points.AddY(receptionsSpeedValues[i]);
+                        }
+                    lock (sendingSpeedValues)
+                        for (int i = 0; i < sendingSpeedValues.Count; i++)
+                        {
+                            chart1.Series[1].Points.AddY(sendingSpeedValues[i]);
+                        }
 
                     // Update UI
                     chart2.Series[0].Points.Clear();
                     chart2.Series[1].Points.Clear();
-                    for (int i = 0; i < receptionsSizeValues.Count; i++)
-                    {
-                        chart2.Series[0].Points.AddY(receptionsSizeValues[i]);
-                        chart2.Series[1].Points.AddY(sendingSizeValues[i]);
-                    }
+                    lock (receptionsSizeValues)
+                        for (int i = 0; i < receptionsSizeValues.Count; i++)
+                        {
+                            chart2.Series[0].Points.AddY(receptionsSizeValues[i]);
+                        }
+                    lock (sendingSizeValues)
+                        for (int i = 0; i < sendingSizeValues.Count; i++)
+                        {
+                            chart2.Series[1].Points.AddY(sendingSizeValues[i]);
+                        }
                 }));
                 return;
             }

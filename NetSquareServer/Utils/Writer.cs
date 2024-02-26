@@ -109,7 +109,7 @@ namespace NetSquareServer.Utils
                 {
                     Console.ForegroundColor = color;
                     Console.Write(text + (inline ? "\n\r" : ""));
-                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.ResetColor();
                 }
                 else
                 {

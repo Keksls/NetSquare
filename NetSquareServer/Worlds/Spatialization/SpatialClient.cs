@@ -8,18 +8,17 @@ namespace NetSquareServer.Worlds
     public class SpatialClient
     {
         public ConnectedClient Client;
-        public NetsquareTransformFrame Transform;
         public NetsquareTransformFrame LastPosition;
+        public NetsquareTransformFrame Transform => Spatializer.World.Clients[Client.ID];
         public HashSet<SpatialClient> Visibles;
         public HashSet<uint> VisibleIDs;
         public HashSet<StaticEntity> VisibleStaticEntities;
         public SimpleSpatializer Spatializer;
 
-        public SpatialClient(SimpleSpatializer spatializer, ConnectedClient client, NetsquareTransformFrame position)
+        public SpatialClient(SimpleSpatializer spatializer, ConnectedClient client)
         {
             Spatializer = spatializer;
             Client = client;
-            Transform = position;
             Visibles = new HashSet<SpatialClient>();
             VisibleIDs = new HashSet<uint>();
             VisibleStaticEntities = new HashSet<StaticEntity>();
@@ -61,6 +60,8 @@ namespace NetSquareServer.Worlds
                         {
                             //create new join message
                             NetworkMessage joiningClientMessage = new NetworkMessage(0, client.Client.ID);
+                            // set Transform frame
+                            client.Transform.Serialize(joiningClientMessage);
                             // send message so server event for being custom binded
                             Spatializer.World.server.Worlds.Fire_OnSendWorldClients(Spatializer.World.ID,
                                 client.Client.ID,

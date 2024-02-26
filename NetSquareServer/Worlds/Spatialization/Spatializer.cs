@@ -155,24 +155,10 @@ namespace NetSquareServer.Worlds
         public abstract void AddClient(ConnectedClient client);
 
         /// <summary>
-        /// add a client to this spatializer and set his position
-        /// </summary>
-        /// <param name="clientID">ID of the client to add</param>
-        /// <param name="pos">spawn position</param>
-        public abstract void AddClient(ConnectedClient client, NetsquareTransformFrame pos);
-
-        /// <summary>
         /// Remove a client from the spatializer
         /// </summary>
         /// <param name="clientID">ID of the client to remove</param>
         public abstract void RemoveClient(uint clientID);
-
-        /// <summary>
-        /// set a client position
-        /// </summary>
-        /// <param name="clientID">id of the client that just moved</param>
-        /// <param name="pos">position</param>
-        protected abstract void SetClientTransformFrame(uint clientID, NetsquareTransformFrame pos);
 
         /// <summary>
         /// Store a list of transform frames for a client
@@ -202,7 +188,7 @@ namespace NetSquareServer.Worlds
                 }
             }
             // set client pos as last frame
-            SetClientTransformFrame(clientID, transformFrames[transformFrames.Length - 1]);
+            World.SetClientTransform(clientID, transformFrames[transformFrames.Length - 1]);
         }
 
         /// <summary>
@@ -226,15 +212,8 @@ namespace NetSquareServer.Worlds
                 ClientsTransformFrames[clientID].Add(transformFrames);
             }
             // set client pos as last frame
-            SetClientTransformFrame(clientID, transformFrames);
+            World.SetClientTransform(clientID, transformFrames);
         }
-
-        /// <summary>
-        /// Get a client position
-        /// </summary>
-        /// <param name="clientID">id of the clienty to get position</param>
-        /// <returns>position of the  client</returns>
-        public abstract NetsquareTransformFrame GetClientTransform(uint clientID);
 
         /// <summary>
         /// get all visible clients for a given client, according to a maximum view distance

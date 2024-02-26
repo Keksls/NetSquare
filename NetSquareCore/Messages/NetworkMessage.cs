@@ -309,7 +309,7 @@ namespace NetSquare.Core
 
         public bool CanReadFor(int size)
         {
-            return currentReadingIndex + size < Data.Length;
+            return currentReadingIndex + size <= Data.Length;
         }
 
         public bool CanGetByte()

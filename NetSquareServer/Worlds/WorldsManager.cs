@@ -12,17 +12,13 @@ namespace NetSquareServer.Worlds
     {
         public Dictionary<ushort, NetSquareWorld> Worlds = new Dictionary<ushort, NetSquareWorld>(); // worldID => World object
         /// <summary>
-        /// WorldID, ClientID, Message to broadcast. Send new client data to already conneced clients
+        /// WorldID, ClientID, Transform of the client, Message to broadcast. Send new client data to already conneced clients
         /// </summary>
-        public event Action<ushort, uint, NetworkMessage> OnClientJoinWorld;
+        public event Action<ushort, uint, NetsquareTransformFrame, NetworkMessage> OnClientJoinWorld;
         /// <summary>
         /// WorldID, ClientID, Message to broadcast. Send connected clients to new client
         /// </summary>
         public event Action<ushort, uint, NetworkMessage> OnSendWorldClients;
-        /// <summary>
-        /// WorldID, ClientID, client Position
-        /// </summary>
-        public event Action<ushort, uint, NetsquareTransformFrame> OnSpatializePlayer;
         private Dictionary<uint, ushort> ClientsWorlds = new Dictionary<uint, ushort>(); // clientID => worldID
         private NetSquare_Server server;
 
@@ -149,13 +145,14 @@ namespace NetSquareServer.Worlds
             {
                 // get world ID
                 ushort worldID = message.GetUShort();
+                NetsquareTransformFrame clientTransform = new NetsquareTransformFrame(message);
                 // get world instance
                 NetSquareWorld world = GetWorld(worldID);
                 // throw new exception if world don't exists
                 if (world == null)
-                    throw new Exception("World " + worldID + " don't exists");
+                    Writer.Write("World " + worldID + " don't exists", ConsoleColor.Red);
                 // world exit so let's try add client into it
-                bool added = world.TryJoinWorld(message.ClientID);
+                bool added = world.TryJoinWorld(message.ClientID, clientTransform);
                 // reply to client the added state
                 NetworkMessage reply = new NetworkMessage().Set(added);
                 server.PrepareReply(message, reply);
@@ -165,32 +162,40 @@ namespace NetSquareServer.Worlds
                 {
                     ClientsWorlds.Remove(message.ClientID);
                     ClientsWorlds.Add(message.ClientID, worldID);
-                    Writer.Write("Client " + message.ClientID + " join world " + worldID, ConsoleColor.Gray);
+                    Writer.Write("Client " + message.ClientID + " join world " + worldID + " at pos : " + clientTransform.x + ", " + clientTransform.y + ", " + clientTransform.z, ConsoleColor.Gray);
 
                     // send already connected clients to new client
                     if (!world.UseSpatializer) // if spatializer is used, it will handle this event, so let's do nothing here
                     {
                         // send new client to connected clients but the new
                         NetworkMessage joinMessage = new NetworkMessage(NetSquareMessageType.ClientJoinWorld, message.ClientID);
-                        OnClientJoinWorld?.Invoke(worldID, message.ClientID, joinMessage);
+                        clientTransform.Serialize(joinMessage);
+                        OnClientJoinWorld?.Invoke(worldID, message.ClientID, clientTransform, joinMessage);
                         world.Broadcast(joinMessage, message.ClientID, true);
 
                         // send connected clients to new client but him
-                        HashSet<uint> clients = new HashSet<uint>(world.Clients);
                         List<NetworkMessage> messages = new List<NetworkMessage>();
-                        foreach (var clientID in clients)
+                        lock (world.Clients)
                         {
-                            if (clientID == message.ClientID)
-                                continue;
-
-                            NetworkMessage connectedClientMessage = new NetworkMessage(NetSquareMessageType.ClientJoinWorld, clientID);
-                            OnSendWorldClients?.Invoke(worldID, clientID, connectedClientMessage);
-                            messages.Add(connectedClientMessage);
+                            foreach (var client in world.Clients)
+                            {
+                                if (client.Key == message.ClientID)
+                                    continue;
+                                // create new message
+                                NetworkMessage connectedClientMessage = new NetworkMessage(NetSquareMessageType.ClientJoinWorld, client.Key);
+                                // set Transform frame
+                                client.Value.Serialize(connectedClientMessage);
+                                // send message so server event for being custom binded
+                                OnSendWorldClients?.Invoke(worldID, client.Key, connectedClientMessage);
+                                // add message to list for packing
+                                messages.Add(connectedClientMessage);
+                            }
                         }
+                        // pack messages
                         reply.Pack(messages);
                     }
                 }
-
+                // reply to the client
                 server.Reply(message, reply);
             }
             catch (Exception ex)

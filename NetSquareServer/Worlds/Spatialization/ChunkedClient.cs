@@ -8,7 +8,6 @@ namespace NetSquareServer.Worlds
         public uint ClientID { get; private set; }
         public short ChunkX { get; private set; }
         public short ChunkY { get; private set; }
-        public NetsquareTransformFrame Position { get; private set; }
         public NetsquareTransformFrame LastPosition { get; set; }
         public HashSet<uint> VisibleIDs;
 
@@ -17,14 +16,8 @@ namespace NetSquareServer.Worlds
             ClientID = clientID;
             ChunkX = chunkX;
             ChunkY = chunkY;
-            Position = pos;
             LastPosition = new NetsquareTransformFrame(pos);
             VisibleIDs = new HashSet<uint>();
-        }
-
-        public void SetPostition(NetsquareTransformFrame position)
-        {
-            Position = position;
         }
 
         public void SetChunk(short chunkX, short chunkY)

@@ -86,7 +86,7 @@ namespace NetSquareServer.Worlds
                 {
                     foreach (SynchronizedMessage message in Messages.Values)
                     {
-                        if(message.Empty)
+                        if (message.Empty)
                             continue;
                         // get spatialized messages
                         List<NetworkMessage> packedMessages = new List<NetworkMessage>();
@@ -116,17 +116,20 @@ namespace NetSquareServer.Worlds
                     {
                         if (message.Empty)
                             continue;
-                        if (SynchronizeUsingUDP)
+                        lock (World.Clients)
                         {
-                            NetworkMessage packed = message.GetPackedMessage();
-                            foreach (uint clientID in World.Clients)
-                                server.SafeGetClient(clientID)?.AddUDPMessage(packed);
-                        }
-                        else
-                        {
-                            NetworkMessage packed = message.GetPackedMessage();
-                            foreach (uint clientID in World.Clients)
-                                server.SafeGetClient(clientID)?.AddTCPMessage(packed);
+                            if (SynchronizeUsingUDP)
+                            {
+                                NetworkMessage packed = message.GetPackedMessage();
+                                foreach (uint clientID in World.Clients.Keys)
+                                    server.SafeGetClient(clientID)?.AddUDPMessage(packed);
+                            }
+                            else
+                            {
+                                NetworkMessage packed = message.GetPackedMessage();
+                                foreach (uint clientID in World.Clients.Keys)
+                                    server.SafeGetClient(clientID)?.AddTCPMessage(packed);
+                            }
                         }
                         message.Clear();
                     }

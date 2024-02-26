@@ -33,17 +33,7 @@ namespace NetSquareServer.Worlds
         /// <param name="client">ID of the client to add</param>
         public override void AddClient(ConnectedClient client)
         {
-            AddClient(client, NetsquareTransformFrame.zero);
-        }
-
-        /// <summary>
-        /// add a client to this spatializer and set his position
-        /// </summary>
-        /// <param name="client">the client to add</param>
-        /// <param name="transform">spawn position</param>
-        public override void AddClient(ConnectedClient client, NetsquareTransformFrame transform)
-        {
-            SpatialClient spatializedClient = new SpatialClient(this, client, transform);
+            SpatialClient spatializedClient = new SpatialClient(this, client);
             if (!Clients.ContainsKey(client.ID))
                 while (!Clients.TryAdd(client.ID, spatializedClient))
                     continue;
@@ -63,17 +53,6 @@ namespace NetSquareServer.Worlds
                 else
                     continue;
             }
-        }
-
-        /// <summary>
-        /// set a client position
-        /// </summary>
-        /// <param name="clientID">id of the client that just moved</param>
-        /// <param name="transform">position</param>
-        protected override void SetClientTransformFrame(uint clientID, NetsquareTransformFrame transform)
-        {
-            if (Clients.ContainsKey(clientID))
-                Clients[clientID].Transform = transform;
         }
 
         /// <summary>
@@ -165,13 +144,6 @@ namespace NetSquareServer.Worlds
                         World.server.SendToClient(synchMessage, client.Key);
                 }
             }
-        }
-
-        public override NetsquareTransformFrame GetClientTransform(uint clientID)
-        {
-            if (Clients.ContainsKey(clientID))
-                return Clients[clientID].Transform;
-            return NetsquareTransformFrame.zero;
         }
 
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)

@@ -10,10 +10,14 @@ namespace NetSquareClient
     {
         public bool IsInWorld { get; private set; }
         public ushort CurrentWorldID { get; private set; }
-        public event Action<NetworkMessage> OnClientJoinWorld;
+        /// <summary>
+        /// Event raised when a client join the world.
+        /// ClientID, transform of the client, message received
+        /// </summary>
+        public event Action<uint, NetsquareTransformFrame, NetworkMessage> OnClientJoinWorld;
+        public event NetSquareAction OnSynchronize;
         public event Action<uint> OnClientLeaveWorld;
         public event Action<uint, NetsquareTransformFrame[]> OnClientMove;
-        public event Action<NetworkMessage> OnSynchronize;
         public bool SynchronizeUsingUDP;
         public bool AutoSendFrames = true;
         private NetSquare_Client client;
@@ -31,7 +35,6 @@ namespace NetSquareClient
             client.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransform, "SetTransform", SetTransform);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransformFrames, "SetTransformFrames", SetTransformFrames);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransformsFramesPacked, "SetTransformsFramesPacked", SetTransformsFramesPacked);
-
         }
 
         #region Public Network Methods
@@ -40,43 +43,37 @@ namespace NetSquareClient
         /// if success, OnJoinWorld will be invoked, else OnFailJoinWorld will be invoked
         /// </summary>
         /// <param name="worldID">ID of the world to join</param>
-        /// <param name="position">position of the client in the world to join</param>
+        /// <param name="clientTransform">position of the client in the world to join</param>
         /// <param name="Callback">Callback raised after server try added. if true, join success</param>
-        public void TryJoinWorld(ushort worldID, NetsquareTransformFrame? position, Action<bool> Callback)
+        public void TryJoinWorld(ushort worldID, NetsquareTransformFrame clientTransform, Action<bool> Callback)
         {
+            // if already in world, return false, we must leave the world before join another
             if (IsInWorld)
             {
                 Callback?.Invoke(false);
                 return;
             }
 
-            client.SendMessage(new NetworkMessage(NetSquareMessageType.ClientJoinWorld).Set(worldID), (response) =>
+            // send a message to the server to join the world
+            NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientJoinWorld).Set(worldID);
+            clientTransform.Serialize(message);
+            // send the message to the server
+            client.SendMessage(message, (reply) =>
             {
-                if (response.GetBool())
+                // if the server reply true, the client is in the world
+                if (reply.GetBool())
                 {
                     IsInWorld = true;
                     CurrentWorldID = worldID;
-                    if (position.HasValue)
-                        SendTransformFrame(position.Value);
                     Callback?.Invoke(true);
-                    List<NetworkMessage> messages = response.Unpack();
-                    foreach (NetworkMessage message in messages)
-                        OnClientJoinWorld?.Invoke(message);
+                    // unpack the reply to get all clients in the world
+                    List<NetworkMessage> replyMessages = reply.Unpack();
+                    foreach (NetworkMessage replyMessage in replyMessages)
+                        ClientJoinCurrentWorld(replyMessage);
                 }
                 else
                     Callback?.Invoke(false);
             });
-        }
-
-        /// <summary>
-        /// Try to Join a world. Can fail if worldID don't exists or client already in world.
-        /// if success, OnJoinWorld will be invoked, else OnFailJoinWorld will be invoked
-        /// </summary>
-        /// <param name="worldID">ID of the world to join</param>
-        /// <param name="Callback">Callback raised after server try added. if true, join success</param>
-        public void TryJoinWorld(ushort worldID, Action<bool> Callback)
-        {
-            TryJoinWorld(worldID, null, Callback);
         }
 
         /// <summary>
@@ -112,7 +109,7 @@ namespace NetSquareClient
         {
             if (!IsInWorld)
                 return;
-            // set TypeID as 1, because 1 is the broadcast ID
+            // set TypeID as broadcast
             message.SetType(MessageType.BroadcastCurrentWorld);
             client.SendMessage(message);
         }
@@ -127,7 +124,7 @@ namespace NetSquareClient
         {
             if (!IsInWorld)
                 return;
-            // set TypeID as 2, because 2 is the sync ID
+            // set TypeID as synchronize
             message.SetType(MessageType.SynchronizeMessageCurrentWorld);
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
@@ -203,30 +200,29 @@ namespace NetSquareClient
         #endregion
 
         #region Private Utils
+        /// <summary>
+        /// Fire OnSynchronize event
+        /// </summary>
+        /// <param name="message">message to send</param>
         internal void Fire_OnSyncronize(NetworkMessage message)
         {
             OnSynchronize?.Invoke(message);
         }
 
+        /// <summary>
+        /// A client join the current world
+        /// </summary>
+        /// <param name="message"> message to read</param>
         private void ClientJoinCurrentWorld(NetworkMessage message)
         {
-            OnClientJoinWorld?.Invoke(message);
+            NetsquareTransformFrame transform = new NetsquareTransformFrame(message);
+            OnClientJoinWorld?.Invoke(message.ClientID, transform, message);
         }
 
-        private void ClientLeaveCurrentWorld(NetworkMessage message)
-        {
-            OnClientLeaveWorld?.Invoke(message.GetUInt24().UInt32);
-        }
-
-        private void ClientsLeaveCurrentWorld(NetworkMessage message)
-        {
-            if (OnClientLeaveWorld == null)
-                return;
-
-            while (message.CanGetUInt24())
-                OnClientLeaveWorld(message.GetUInt24().UInt32);
-        }
-
+        /// <summary>
+        /// Some clients join the current world
+        /// </summary>
+        /// <param name="packedMessage"> message to read</param>
         private void ClientsJoinCurrentWorld(NetworkMessage packedMessage)
         {
             if (OnClientJoinWorld == null)
@@ -234,7 +230,29 @@ namespace NetSquareClient
 
             List<NetworkMessage> messages = packedMessage.UnpackWithoutHead();
             foreach (var message in messages)
-                OnClientJoinWorld(message);
+                ClientJoinCurrentWorld(message);
+        }
+
+        /// <summary>
+        /// A client leave the current world
+        /// </summary>
+        /// <param name="message"> message to read</param>
+        private void ClientLeaveCurrentWorld(NetworkMessage message)
+        {
+            OnClientLeaveWorld?.Invoke(message.GetUInt24().UInt32);
+        }
+
+        /// <summary>
+        /// Some clients leave the current world
+        /// </summary>
+        /// <param name="message"> message to read</param>
+        private void ClientsLeaveCurrentWorld(NetworkMessage message)
+        {
+            if (OnClientLeaveWorld == null)
+                return;
+
+            while (message.CanGetUInt24())
+                OnClientLeaveWorld(message.GetUInt24().UInt32);
         }
 
         private void SetTransform(NetworkMessage message)

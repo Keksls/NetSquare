@@ -1,6 +1,7 @@
 ﻿using NetSquare.Core;
 using NetSquareCore;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace NetSquareServer.Worlds
@@ -9,9 +10,9 @@ namespace NetSquareServer.Worlds
     {
         public event Action<uint, List<StaticEntity>> OnShowStaticEntities;
         public event Action<uint, List<StaticEntity>> OnHideStaticEntities;
-        public event Action<uint> OnClientJoinWorld;
+        public event Action<uint, NetsquareTransformFrame> OnClientJoinWorld;
         public ushort ID { get; private set; }
-        public HashSet<uint> Clients { get; private set; }
+        public ConcurrentDictionary<uint, NetsquareTransformFrame> Clients { get; private set; }
         public ushort MaxClientsInWorld { get; private set; }
         public string Name { get; private set; }
         public bool UseSpatializer { get; private set; }
@@ -32,7 +33,7 @@ namespace NetSquareServer.Worlds
                 name = "World " + id;
             ID = id;
             MaxClientsInWorld = maxClients;
-            Clients = new HashSet<uint>();
+            Clients = new ConcurrentDictionary<uint, NetsquareTransformFrame>();
             server = _server;
             Name = name;
         }
@@ -108,14 +109,18 @@ namespace NetSquareServer.Worlds
         /// Try to add a client to this world. Can fail if world is full or client already is in this world
         /// </summary>
         /// <param name="clientID">id of the client to add</param>
+        /// <param name="clientTransform">transform of the client</param>
         /// <returns>true if success</returns>
-        public bool TryJoinWorld(uint clientID)
+        public bool TryJoinWorld(uint clientID, NetsquareTransformFrame clientTransform)
         {
-            if (Clients.Contains(clientID) || Clients.Count >= MaxClientsInWorld)
+            if (Clients.ContainsKey(clientID) || Clients.Count >= MaxClientsInWorld)
                 return false;
-            Clients.Add(clientID);
+            while (!Clients.TryAdd(clientID, clientTransform))
+            {
+                continue;
+            }
             Spatializer?.AddClient(server.GetClient(clientID));
-            OnClientJoinWorld?.Invoke(clientID);
+            OnClientJoinWorld?.Invoke(clientID, clientTransform);
             return true;
         }
 
@@ -127,8 +132,12 @@ namespace NetSquareServer.Worlds
         public bool TryLeaveWorld(uint clientID)
         {
             Spatializer?.RemoveClient(clientID);
-            if (Clients.Remove(clientID))
+            if (Clients.ContainsKey(clientID))
             {
+                while (!Clients.TryRemove(clientID, out NetsquareTransformFrame clientTransform))
+                {
+                    continue;
+                }
                 return true;
             }
             return false;
@@ -145,6 +154,17 @@ namespace NetSquareServer.Worlds
             Spatializer?.AddStaticEntity(type, id, pos);
         }
 
+        /// <summary>
+        /// Set the transform of a client in this world
+        /// </summary>
+        /// <param name="clientID"> ID of the client</param>
+        /// <param name="transform"> new transform of the client</param>
+        public void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
+        {
+            if (Clients.ContainsKey(clientID))
+                Clients[clientID] = transform;
+        }
+
         #region Broadcast
         /// <summary>
         /// Send message to anyone in this world
@@ -156,7 +176,7 @@ namespace NetSquareServer.Worlds
             if (UseSpatializer && useSpatialization)
                 server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
             else
-                server.SendToClients(message, new HashSet<uint>(Clients));
+                server.SendToClients(message, new HashSet<uint>(Clients.Keys));
         }
 
         /// <summary>
@@ -170,7 +190,7 @@ namespace NetSquareServer.Worlds
                 server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
             else
             {
-                HashSet<uint> clients = new HashSet<uint>(Clients);
+                HashSet<uint> clients = new HashSet<uint>(Clients.Keys);
                 clients.Remove(excludedClientID);
                 server.SendToClients(message, clients);
             }
@@ -187,7 +207,7 @@ namespace NetSquareServer.Worlds
                 server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
             else
             {
-                HashSet<uint> clients = new HashSet<uint>(Clients);
+                HashSet<uint> clients = new HashSet<uint>(Clients.Keys);
                 foreach (uint excludedClientID in excludedClientIDs)
                     clients.Remove(excludedClientID);
                 server.SendToClients(message, clients);
@@ -204,7 +224,7 @@ namespace NetSquareServer.Worlds
             if (UseSpatializer && useSpatialization)
                 server.SendToClients(message, Spatializer.GetVisibleClients(clientID));
             else
-                server.SendToClients(message, new HashSet<uint>(Clients));
+                server.SendToClients(message, new HashSet<uint>(Clients.Keys));
         }
 
         /// <summary>
@@ -217,7 +237,7 @@ namespace NetSquareServer.Worlds
             if (UseSpatializer && useSpatialization)
                 server.SendToClientsUDP(message, Spatializer.GetVisibleClients(message.ClientID));
             else
-                server.SendToClientsUDP(message, new HashSet<uint>(Clients));
+                server.SendToClientsUDP(message, new HashSet<uint>(Clients.Keys));
         }
         #endregion
     }
