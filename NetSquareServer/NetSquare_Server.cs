@@ -45,14 +45,14 @@ namespace NetSquareServer
         public HashSet<string> ServerIPs { get; private set; }
         public List<TcpListener> Listeners = new List<TcpListener>();
         public NetSquareDispatcher Dispatcher;
-        public eProtocoleType ProtocoleType { get; private set; }
+        public NetSquareProtocoleType ProtocoleType { get; private set; }
         internal MessageQueueManager MessageQueueManager;
         public WorldsManager Worlds;
         public ServerStatisticsManager Statistics;
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
         #endregion
 
-        public NetSquare_Server(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP)
+        public NetSquare_Server(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP)
         {
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();

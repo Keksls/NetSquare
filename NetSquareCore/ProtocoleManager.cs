@@ -7,16 +7,16 @@ namespace NetSquare.Core
 {
     public static class ProtocoleManager
     {
-        private static eCompression compressorType;
+        private static NetSquareCompression compressorType;
         private static Compressor compressor;
-        private static eEncryption encryptorType;
+        private static NetSquareEncryption encryptorType;
         private static Encryptor encryptor;
-        public static bool NoCompressorOrEncryptor { get { return compressorType == eCompression.NoCompression && encryptorType == eEncryption.NoEncryption; } }
+        public static bool NoCompressorOrEncryptor { get { return compressorType == NetSquareCompression.NoCompression && encryptorType == NetSquareEncryption.NoEncryption; } }
 
         static ProtocoleManager()
         {
-            SetEncryptor(eEncryption.NoEncryption);
-            SetCompressor(eCompression.NoCompression);
+            SetEncryptor(NetSquareEncryption.NoEncryption);
+            SetCompressor(NetSquareCompression.NoCompression);
         }
 
         #region Encryptor Initalisation
@@ -25,7 +25,7 @@ namespace NetSquare.Core
         /// </summary>
         /// <param name="_encryptorType">The encryptor you want to use</param>
         /// <param name="key">The plainText key you want to use for the selected encryptor</param>
-        public static void SetEncryptor(eEncryption _encryptorType, string key)
+        public static void SetEncryptor(NetSquareEncryption _encryptorType, string key)
         {
             SetEncryptor(_encryptorType);
             if (encryptor != null)
@@ -38,7 +38,7 @@ namespace NetSquare.Core
         /// <param name="_encryptorType">The encryptor you want to use</param>
         /// <param name="key">The byte[] Key</param>
         /// <param name="IV">The byte[] IV</param>
-        public static void SetEncryptor(eEncryption _encryptorType, byte[] key, byte[] IV)
+        public static void SetEncryptor(NetSquareEncryption _encryptorType, byte[] key, byte[] IV)
         {
             SetEncryptor(_encryptorType);
             if (encryptor != null)
@@ -50,7 +50,7 @@ namespace NetSquare.Core
         /// </summary>
         /// <param name="_encryptorType">The encryptor you want to use</param>
         /// <param name="keyIV">The KeyIV Instance you want to use (Key + IV)</param>
-        public static void SetEncryptor(eEncryption _encryptorType, KeyIV keyIV)
+        public static void SetEncryptor(NetSquareEncryption _encryptorType, KeyIV keyIV)
         {
             SetEncryptor(_encryptorType);
             if (encryptor != null)
@@ -61,33 +61,33 @@ namespace NetSquare.Core
         /// Set Encryptor for next operations
         /// </summary>
         /// <param name="_encryptorType">The encryptor you want to use</param>
-        public static void SetEncryptor(eEncryption _encryptorType)
+        public static void SetEncryptor(NetSquareEncryption _encryptorType)
         {
             encryptorType = _encryptorType;
             switch (encryptorType)
             {
-                case eEncryption.ReverseByte:
+                case NetSquareEncryption.ReverseByte:
                     encryptor = new ReverseByte_Encryptor();
                     break;
-                case eEncryption.OneToZeroBit:
+                case NetSquareEncryption.OneToZeroBit:
                     encryptor = new OneToZeroBit_Encryptor();
                     break;
-                case eEncryption.AES:
+                case NetSquareEncryption.AES:
                     encryptor = new AES_Encryptor();
                     break;
-                case eEncryption.CaesarChipher:
+                case NetSquareEncryption.CaesarChipher:
                     encryptor = new CaesarChipher_Encryptor();
                     break;
-                case eEncryption.Rijndael:
+                case NetSquareEncryption.Rijndael:
                     encryptor = new Rijndael_Encryptor();
                     break;
-                case eEncryption.SimplePasswordedCipher:
+                case NetSquareEncryption.SimplePasswordedCipher:
                     encryptor = new SimplePasswordedCipher_Encryptor();
                     break;
-                case eEncryption.CustomSBC:
+                case NetSquareEncryption.CustomSBC:
                     encryptor = new CustomSBC_Encryptor();
                     break;
-                case eEncryption.XOR:
+                case NetSquareEncryption.XOR:
                     encryptor = new XOR_Encryptor();
                     break;
                 default:
@@ -159,19 +159,19 @@ namespace NetSquare.Core
         #endregion
 
         #region Compression
-        public static void SetCompressor(eCompression _compressorType)
+        public static void SetCompressor(NetSquareCompression _compressorType)
         {
             compressorType = _compressorType;
             switch (compressorType)
             {
                 default:
-                case eCompression.NoCompression:
+                case NetSquareCompression.NoCompression:
                     compressor = new NoCompression();
                     break;
-                case eCompression.GZipCompression:
+                case NetSquareCompression.GZipCompression:
                     compressor = new GZipCompressor();
                     break;
-                case eCompression.DeflateCompression:
+                case NetSquareCompression.DeflateCompression:
                     compressor = new DeflateCompressor();
                     break;
             }

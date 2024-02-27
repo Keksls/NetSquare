@@ -1,6 +1,6 @@
 ﻿namespace NetSquare.Core.Encryption
 {
-    public enum eEncryption
+    public enum NetSquareEncryption
     {
         NoEncryption = 0,
         ReverseByte = 1,

@@ -30,7 +30,7 @@ namespace Server_Test
             NetSquareConfigurationManager.SaveConfiguration(config);
 
             // Instantiate NetSquare Server
-            server = new NetSquare_Server(eProtocoleType.TCP);
+            server = new NetSquare_Server(NetSquareProtocoleType.TCP);
             server.OnClientConnected += Server_OnClientConnected;
             server.Statistics.IntervalMs = 100;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;

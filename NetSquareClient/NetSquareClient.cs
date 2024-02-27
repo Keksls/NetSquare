@@ -29,7 +29,7 @@ namespace NetSquareClient
         public bool IsConnected { get { return Client?.TcpSocket?.Connected ?? false; } }
         public int NbSendingMessages { get { return Client != null ? Client.NbMessagesToSend : 0; } }
         public int NbProcessingMessages { get { return messagesQueue.Count; } }
-        public eProtocoleType ProtocoleType;
+        public NetSquareProtocoleType ProtocoleType;
         public float Time { get { return serverTimeOffset + (stopwatch.ElapsedMilliseconds / 1000f); } }
         public bool IsTimeSynchonized { get { return serverTimeOffset != 0f; } }
         private bool isSynchronizingTime = false;
@@ -45,10 +45,10 @@ namespace NetSquareClient
         /// <summary>
         /// Instantiate a new NetSquare client
         /// </summary>
-        public NetSquare_Client(eProtocoleType protocoleType = eProtocoleType.TCP_AND_UDP, bool synchronizeUsingUDP = true)
+        public NetSquare_Client(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP, bool synchronizeUsingUDP = true)
         {
             if (synchronizeUsingUDP)
-                protocoleType = eProtocoleType.TCP_AND_UDP;
+                protocoleType = NetSquareProtocoleType.TCP_AND_UDP;
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
             Dispatcher.AutoBindHeadActionsFromAttributes();
@@ -143,7 +143,7 @@ namespace NetSquareClient
                     {
                         ID = UInt24.GetUInt(array)
                     };
-                    Client.SetClient(tcpClient.Client, true, ProtocoleType == eProtocoleType.TCP_AND_UDP);
+                    Client.SetClient(tcpClient.Client, true, ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP);
                     Client.OnMessageReceived += Client_OnMessageReceived;
                     // start processing message loop
                     Thread processingThread = new Thread(ProcessMessagesLoop);

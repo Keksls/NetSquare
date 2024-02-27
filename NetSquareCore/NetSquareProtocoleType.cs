@@ -1,6 +1,6 @@
 ﻿namespace NetSquare.Core
 {
-    public enum eProtocoleType
+    public enum NetSquareProtocoleType
     {
         TCP = 0,
         TCP_AND_UDP = 1

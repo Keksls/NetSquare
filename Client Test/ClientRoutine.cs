@@ -22,7 +22,7 @@ namespace Client_Test
 
         public void Start(float x, float y, float z)
         {
-            client = new NetSquare_Client(eProtocoleType.TCP, false);
+            client = new NetSquare_Client(NetSquareProtocoleType.TCP, false);
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;

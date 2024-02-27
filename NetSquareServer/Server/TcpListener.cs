@@ -127,7 +127,7 @@ namespace NetSquareServer
                     Writer.Write("Client awnser good handshake key. Accept it.", ConsoleColor.Green);
 
                     ConnectedClient cClient = new ConnectedClient();
-                    cClient.SetClient(client, false, server.ProtocoleType == eProtocoleType.TCP_AND_UDP);
+                    cClient.SetClient(client, false, server.ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP);
                     uint clientID = server.AddClient(cClient);
 
                     // client disconnect
