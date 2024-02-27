@@ -1,4 +1,4 @@
-﻿using NetSquareServer.Utils;
+﻿using NetSquare.Server.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,7 +7,7 @@ using System.Net.Sockets;
 using System.Text;
 using Utf8Json;
 
-namespace NetSquareServer
+namespace NetSquare.Server
 {
     public static class BlackListManager
     {

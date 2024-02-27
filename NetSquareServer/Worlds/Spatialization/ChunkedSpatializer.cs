@@ -1,13 +1,13 @@
 ﻿using NetSquare.Core;
 using NetSquare.Core.Messages;
 using NetSquareCore;
-using NetSquareServer.Utils;
+using NetSquare.Server.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public class ChunkedSpatializer : Spatializer
     {

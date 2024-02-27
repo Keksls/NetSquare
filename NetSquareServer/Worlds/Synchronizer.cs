@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public class Synchronizer
     {
@@ -13,9 +13,9 @@ namespace NetSquareServer.Worlds
         public bool Synchronizing { get; private set; }
         public int Frequency { get; private set; }
         public NetSquareWorld World { get; private set; }
-        private NetSquare_Server server;
+        private NetSquareServer server;
 
-        public Synchronizer(NetSquare_Server _server, NetSquareWorld world, bool synchronizeUsingUDP)
+        public Synchronizer(NetSquareServer _server, NetSquareWorld world, bool synchronizeUsingUDP)
         {
             World = world;
             SynchronizeUsingUDP = synchronizeUsingUDP;

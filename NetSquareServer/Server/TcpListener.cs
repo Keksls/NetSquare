@@ -1,11 +1,11 @@
 ﻿using NetSquare.Core;
-using NetSquareServer.Utils;
+using NetSquare.Server.Utils;
 using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 
-namespace NetSquareServer
+namespace NetSquare.Server
 {
     public class TcpListener
     {
@@ -13,12 +13,12 @@ namespace NetSquareServer
         public int VerifyingClients { get; private set; }
         public bool CheckBlackList { get; private set; }
         private TcpListenerEx _listener = null;
-        private NetSquare_Server server = null;
+        private NetSquareServer server = null;
         internal IPAddress IPAddress { get; private set; }
         internal int Port { get; private set; }
         internal TcpListenerEx Listener { get { return _listener; } }
 
-        public TcpListener(NetSquare_Server _server, IPAddress ipAddress, int port, bool checkBlackList)
+        public TcpListener(NetSquareServer _server, IPAddress ipAddress, int port, bool checkBlackList)
         {
             CheckBlackList = checkBlackList;
             Started = true;

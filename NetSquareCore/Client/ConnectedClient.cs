@@ -112,7 +112,7 @@ namespace NetSquare.Core
         /// set tcp client and start UDP if necessary (used by NetSquare, don't use it yourself)
         /// </summary>
         /// <param name="tcpClient">TCP client</param>
-        /// <param name="isClient">if true, invoked by netsquareClient, else by netSquare setver</param>
+        /// <param name="isClient">if true, invoked by NetSquare.Client, else by netSquare setver</param>
         /// <param name="enableUDP">if true, netsquare will enable UDP for this connection</param>
         public void SetClient(Socket tcpClient, bool isClient, bool enableUDP)
         {

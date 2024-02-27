@@ -4,7 +4,7 @@ using NetSquareCore;
 using System;
 using System.Collections.Generic;
 
-namespace NetSquareClient
+namespace NetSquare.Client
 {
     public class WorldsManager
     {
@@ -18,14 +18,13 @@ namespace NetSquareClient
         public event NetSquareAction OnSynchronize;
         public event Action<uint> OnClientLeaveWorld;
         public event Action<uint, NetsquareTransformFrame[]> OnClientMove;
-        public bool SynchronizeUsingUDP;
+        public bool SynchronizeUsingUDP { get; set; }
         public bool AutoSendFrames = true;
-        private NetSquare_Client client;
+        private NetSquareClient client;
         private List<NetsquareTransformFrame> currentClientFrames = new List<NetsquareTransformFrame>();
 
-        public WorldsManager(NetSquare_Client _client, bool synchronizeUsingUDP)
+        public WorldsManager(NetSquareClient _client)
         {
-            SynchronizeUsingUDP = synchronizeUsingUDP;
             client = _client;
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);

@@ -4,7 +4,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public class NetSquareWorld
     {
@@ -19,7 +19,7 @@ namespace NetSquareServer.Worlds
         public bool UseSynchronizer { get; private set; }
         public Spatializer Spatializer { get; private set; }
         public Synchronizer Synchronizer { get; private set; }
-        internal NetSquare_Server server;
+        internal NetSquareServer server;
 
         /// <summary>
         /// instantiate a new World
@@ -27,7 +27,7 @@ namespace NetSquareServer.Worlds
         /// <param name="id">ID of the world (must be unique)</param>
         /// <param name="name">Name of the World</param>
         /// <param name="maxClients">Number max oc clients in this world</param>
-        public NetSquareWorld(NetSquare_Server _server, ushort id, string name = "", ushort maxClients = 128)
+        public NetSquareWorld(NetSquareServer _server, ushort id, string name = "", ushort maxClients = 128)
         {
             if (string.IsNullOrEmpty(name))
                 name = "World " + id;

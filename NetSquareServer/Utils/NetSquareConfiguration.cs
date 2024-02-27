@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Text;
 using Utf8Json;
 
-namespace NetSquareServer
+namespace NetSquare.Server
 {
     public class NetSquareConfiguration
     {

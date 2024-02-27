@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public class SpatialChunk
     {

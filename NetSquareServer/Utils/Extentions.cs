@@ -1,6 +1,6 @@
 ﻿using NetSquare.Core;
 
-namespace NetSquareServer.Utils
+namespace NetSquare.Server.Utils
 {
     public static class NetworkMessageExtentions
     {

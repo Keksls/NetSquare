@@ -2,22 +2,22 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Reflection;
-using NetSquareServer.Utils;
+using NetSquare.Server.Utils;
 using System.Collections.Generic;
 using System.Net.Sockets;
 using NetSquare.Core;
 using System.Collections.Concurrent;
 using System.Threading;
-using NetSquareServer.Server;
+using NetSquare.Server.Server;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Linq;
-using NetSquareServer.Worlds;
+using NetSquare.Server.Worlds;
 using NetSquare.Core.Messages;
 
-namespace NetSquareServer
+namespace NetSquare.Server
 {
-    public class NetSquare_Server
+    public class NetSquareServer
     {
         [DllImport("kernel32.dll")]
         static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
@@ -52,7 +52,7 @@ namespace NetSquareServer
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
         #endregion
 
-        public NetSquare_Server(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP)
+        public NetSquareServer(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP)
         {
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
@@ -70,7 +70,7 @@ namespace NetSquareServer
         {
             Writer.StartDisplayLog();
             // Start by drawing header
-            DrawHeader("v" + Assembly.GetAssembly(typeof(NetSquare_Server)).GetName().Version);
+            DrawHeader("v" + Assembly.GetAssembly(typeof(NetSquareServer)).GetName().Version);
             BeforeLoadConfiguration_StepOne?.Invoke();
 
             // Load Configuration

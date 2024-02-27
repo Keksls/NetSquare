@@ -1,5 +1,5 @@
 ﻿using NetSquare.Core;
-using NetSquareClient;
+using NetSquare.Client;
 using NetSquareCore;
 using System;
 
@@ -7,11 +7,11 @@ namespace Client_Test
 {
     public class SlyvekClientRoutine
     {
-        NetSquare_Client client;
+        NetSquareClient client;
 
         public void Start()
         {
-            client = new NetSquare_Client();
+            client = new NetSquareClient();
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;

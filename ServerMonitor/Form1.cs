@@ -1,5 +1,5 @@
-﻿using NetSquareServer.Server;
-using NetSquareServer.Worlds;
+﻿using NetSquare.Server.Server;
+using NetSquare.Server.Worlds;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;

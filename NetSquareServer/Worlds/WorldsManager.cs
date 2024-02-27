@@ -1,12 +1,12 @@
 ﻿using NetSquare.Core;
 using NetSquare.Core.Messages;
 using NetSquareCore;
-using NetSquareServer.Utils;
+using NetSquare.Server.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public class WorldsManager
     {
@@ -20,9 +20,9 @@ namespace NetSquareServer.Worlds
         /// </summary>
         public event Action<ushort, uint, NetworkMessage> OnSendWorldClients;
         private Dictionary<uint, ushort> ClientsWorlds = new Dictionary<uint, ushort>(); // clientID => worldID
-        private NetSquare_Server server;
+        private NetSquareServer server;
 
-        public WorldsManager(NetSquare_Server _server)
+        public WorldsManager(NetSquareServer _server)
         {
             server = _server;
             server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinWorld", TryAddClientToWorld);

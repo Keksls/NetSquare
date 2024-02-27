@@ -1,6 +1,6 @@
 ﻿using NetSquareCore;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public class StaticEntity
     {

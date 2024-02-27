@@ -1,5 +1,5 @@
 ﻿using NetSquare.Core;
-using NetSquareClient;
+using NetSquare.Client;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

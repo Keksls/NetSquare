@@ -3,7 +3,7 @@ using NetSquare.Core.Messages;
 using NetSquareCore;
 using System.Collections.Generic;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public class SpatialClient
     {

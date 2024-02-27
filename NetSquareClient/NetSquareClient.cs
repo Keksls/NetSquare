@@ -7,9 +7,9 @@ using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading;
 
-namespace NetSquareClient
+namespace NetSquare.Client
 {
-    public class NetSquare_Client
+    public class NetSquareClient
     {
         #region Events
         public event Action OnDisconected;
@@ -45,14 +45,11 @@ namespace NetSquareClient
         /// <summary>
         /// Instantiate a new NetSquare client
         /// </summary>
-        public NetSquare_Client(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP, bool synchronizeUsingUDP = true)
+        public NetSquareClient()
         {
-            if (synchronizeUsingUDP)
-                protocoleType = NetSquareProtocoleType.TCP_AND_UDP;
-            ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
             Dispatcher.AutoBindHeadActionsFromAttributes();
-            WorldsManager = new WorldsManager(this, synchronizeUsingUDP);
+            WorldsManager = new WorldsManager(this);
 
             // initiate Type Dictionnary
             typesDic = new Dictionary<Type, Action<NetworkMessage, object>>
@@ -78,10 +75,16 @@ namespace NetSquareClient
         /// </summary>
         /// <param name="hostNameOrIpAddress">HostName or IP Adress to connect on</param>
         /// <param name="port">Port to connect on</param>
-        public void Connect(string hostNameOrIpAddress, int port)
+        public void Connect(string hostNameOrIpAddress, int port, NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP, bool synchronizeUsingUDP = true)
         {
             try
             {
+                // if we want to synchronize using UDP, we need to use TCP too
+                if (synchronizeUsingUDP)
+                    protocoleType = NetSquareProtocoleType.TCP_AND_UDP;
+                ProtocoleType = protocoleType;
+                WorldsManager.SynchronizeUsingUDP = synchronizeUsingUDP;
+                // connect to server
                 Port = port;
                 IPAdress = hostNameOrIpAddress;
                 TcpClient tcpClient = new TcpClient();

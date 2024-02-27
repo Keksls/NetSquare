@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 
-namespace NetSquareClient
+namespace NetSquare.Client
 {
     public struct ClientStatistics
     {
@@ -39,7 +39,7 @@ namespace NetSquareClient
 
     public class ClientStatisticsManager
     {
-        private List<NetSquare_Client> clients;
+        private List<NetSquareClient> clients;
         private bool stopOrder = false;
         public event Action<ClientStatistics> OnGetStatistics;
         public bool Running { get; private set; }
@@ -61,10 +61,10 @@ namespace NetSquareClient
 
         public ClientStatisticsManager()
         {
-            clients = new List<NetSquare_Client>();
+            clients = new List<NetSquareClient>();
         }
 
-        public void AddClient(NetSquare_Client client)
+        public void AddClient(NetSquareClient client)
         {
             lock (clients)
             {
@@ -72,7 +72,7 @@ namespace NetSquareClient
             }
         }
 
-        public void AddClients(List<NetSquare_Client> clients)
+        public void AddClients(List<NetSquareClient> clients)
         {
             lock (clients)
             {
@@ -80,7 +80,7 @@ namespace NetSquareClient
             }
         }
 
-        public void RemoveClient(NetSquare_Client client)
+        public void RemoveClient(NetSquareClient client)
         {
             lock (clients)
             {
@@ -96,7 +96,7 @@ namespace NetSquareClient
             }
         }
 
-        public void RemoveClients(List<NetSquare_Client> clients)
+        public void RemoveClients(List<NetSquareClient> clients)
         {
             lock (clients)
             {

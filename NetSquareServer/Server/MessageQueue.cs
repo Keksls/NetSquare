@@ -1,10 +1,10 @@
 ﻿using NetSquare.Core;
-using NetSquareServer.Utils;
+using NetSquare.Server.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
 
-namespace NetSquareServer.Server
+namespace NetSquare.Server.Server
 {
     public class MessageQueue
     {
@@ -13,10 +13,10 @@ namespace NetSquareServer.Server
         public bool Started { get; private set; }
         public int NbMessages { get { return Queue.Count; } }
         public Thread ProcessQueueThread { get; private set; }
-        private NetSquare_Server server;
+        private NetSquareServer server;
         private NetworkMessage currentMessage = null;
 
-        public MessageQueue(int queueID, NetSquare_Server _server)
+        public MessageQueue(int queueID, NetSquareServer _server)
         {
             server = _server;
             Started = false;
@@ -103,12 +103,12 @@ namespace NetSquareServer.Server
     public class MessageQueueManager
     {
         public MessageQueue[] Queues;
-        private NetSquare_Server server;
+        private NetSquareServer server;
         public int NbQueues { get; private set; }
         public bool QueuesStarted { get; private set; }
         public int EmptiestQueueID { get; private set; }
 
-        public MessageQueueManager(NetSquare_Server _server, int nbQueues)
+        public MessageQueueManager(NetSquareServer _server, int nbQueues)
         {
             server = _server;
             NbQueues = nbQueues;

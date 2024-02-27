@@ -1,9 +1,9 @@
 ﻿using NetSquare.Core;
 using NetSquareCore;
-using NetSquareServer;
-using NetSquareServer.Server;
-using NetSquareServer.Utils;
-using NetSquareServer.Worlds;
+using NetSquare.Server;
+using NetSquare.Server.Server;
+using NetSquare.Server.Utils;
+using NetSquare.Server.Worlds;
 using System;
 using System.Diagnostics;
 using System.Windows.Forms;
@@ -12,7 +12,7 @@ namespace Server_Test
 {
     internal class Program
     {
-        static NetSquare_Server server;
+        static NetSquareServer server;
         static ServerMonitor.Form1 monitor;
 
         [STAThread]
@@ -30,7 +30,7 @@ namespace Server_Test
             NetSquareConfigurationManager.SaveConfiguration(config);
 
             // Instantiate NetSquare Server
-            server = new NetSquare_Server(NetSquareProtocoleType.TCP);
+            server = new NetSquareServer(NetSquareProtocoleType.TCP);
             server.OnClientConnected += Server_OnClientConnected;
             server.Statistics.IntervalMs = 100;
             server.Statistics.OnGetStatistics += Statistics_OnGetStatistics;

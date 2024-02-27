@@ -1,7 +1,7 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 
-namespace NetSquareServer
+namespace NetSquare.Server
 {
 	/// <summary>
 	/// Wrapper around TcpListener that exposes the Active property

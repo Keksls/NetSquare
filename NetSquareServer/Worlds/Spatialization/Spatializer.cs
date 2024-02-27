@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 
-namespace NetSquareServer.Worlds
+namespace NetSquare.Server.Worlds
 {
     public abstract class Spatializer
     {

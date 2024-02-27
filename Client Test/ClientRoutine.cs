@@ -1,5 +1,5 @@
 ﻿using NetSquare.Core;
-using NetSquareClient;
+using NetSquare.Client;
 using NetSquareCore;
 using System;
 
@@ -7,7 +7,7 @@ namespace Client_Test
 {
     public class ClientRoutine
     {
-        public NetSquare_Client client;
+        public NetSquareClient client;
         bool readyToSync = false;
         private static float serverOffset = 0;
         public static float Time { get { return EnlapsedTime + serverOffset; } }
@@ -22,13 +22,13 @@ namespace Client_Test
 
         public void Start(float x, float y, float z)
         {
-            client = new NetSquare_Client(NetSquareProtocoleType.TCP, false);
+            client = new NetSquareClient();
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
             //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
             currentPos = new NetsquareTransformFrame(x + xOffset, y, z + zOffset, 0, 0, 0, 1f, 0, 0);
-            client.Connect("127.0.0.1", 5050);
+            client.Connect("127.0.0.1", 5050, NetSquareProtocoleType.TCP, false);
         }
 
         private void WorldsManager_OnClientMove(uint arg1, NetsquareTransformFrame[] arg2)

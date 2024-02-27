@@ -68,7 +68,7 @@
     <Compile Include="Worlds\WorldsManager.cs" />
     <Compile Include="Worlds\NetSquareWorld.cs" />
     <Compile Include="Worlds\Synchronizer.cs" />
-    <Compile Include="NetSquare_Server.cs" />
+    <Compile Include="NetSquareServer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Server\BlackList.cs" />
     <Compile Include="Server\MessageQueue.cs" />

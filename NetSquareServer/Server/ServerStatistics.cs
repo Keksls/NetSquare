@@ -2,7 +2,7 @@
 using System.Text;
 using System.Threading;
 
-namespace NetSquareServer.Server
+namespace NetSquare.Server.Server
 {
     public struct ServerStatistics
     {
@@ -41,7 +41,7 @@ namespace NetSquareServer.Server
 
     public class ServerStatisticsManager
     {
-        private NetSquare_Server server;
+        private NetSquareServer server;
         private bool stopOrder = false;
         public event Action<ServerStatistics> OnGetStatistics;
         public bool Running { get; private set; }
@@ -70,7 +70,7 @@ namespace NetSquareServer.Server
         /// </summary>
         /// <param name="_server">Server instance to get statistics on</param>
         /// <param name="intervalMs">intervals (in ms) for getting statistics</param>
-        public void StartReceivingStatistics(NetSquare_Server _server)
+        public void StartReceivingStatistics(NetSquareServer _server)
         {
             server = _server;
             stopOrder = false;

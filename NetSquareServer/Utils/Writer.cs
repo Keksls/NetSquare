@@ -5,7 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace NetSquareServer.Utils
+namespace NetSquare.Server.Utils
 {
     public static class Writer
     {
