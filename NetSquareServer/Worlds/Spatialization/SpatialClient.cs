@@ -1,6 +1,5 @@
 ﻿using NetSquare.Core;
 using NetSquare.Core.Messages;
-using NetSquareCore;
 using System.Collections.Generic;
 
 namespace NetSquare.Server.Worlds

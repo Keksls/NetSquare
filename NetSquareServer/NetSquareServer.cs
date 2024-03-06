@@ -1,19 +1,19 @@
-﻿using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Reflection;
-using NetSquare.Server.Utils;
-using System.Collections.Generic;
-using System.Net.Sockets;
-using NetSquare.Core;
-using System.Collections.Concurrent;
-using System.Threading;
+﻿using NetSquare.Core;
+using NetSquare.Core.Messages;
 using NetSquare.Server.Server;
+using NetSquare.Server.Utils;
+using NetSquare.Server.Worlds;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
-using System.Linq;
-using NetSquare.Server.Worlds;
-using NetSquare.Core.Messages;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace NetSquare.Server
 {
@@ -380,6 +380,7 @@ namespace NetSquare.Server
             {
                 if (!Clients.ContainsKey(client.ID))
                     return;
+                OnClientDisconnected?.Invoke(client.ID);
                 // remove client from world
                 Worlds.ClientDisconnected(client.ID);
                 // supprime des clients connectés
@@ -396,7 +397,6 @@ namespace NetSquare.Server
                 client.OnMessageSend -= MessageSended;
                 // try clean disconnect if not already
                 try { client.TcpSocket.Disconnect(false); } catch { }
-                OnClientDisconnected?.Invoke(client.ID);
                 Writer.Write("Client " + client.ID + " disconnected", ConsoleColor.Green);
                 //Writer.Write(Environment.StackTrace, ConsoleColor.Gray);
             }

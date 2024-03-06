@@ -1,4 +1,4 @@
-﻿namespace  NetSquare.Core.Compression
+﻿namespace NetSquare.Core.Compression
 {
     public abstract class Compressor
     {

@@ -1,6 +1,5 @@
-﻿using NetSquare.Core;
-using NetSquare.Client;
-using NetSquareCore;
+﻿using NetSquare.Client;
+using NetSquare.Core;
 using System;
 
 namespace Client_Test

@@ -1,5 +1,4 @@
 ﻿using NetSquare.Core;
-using NetSquareCore;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -11,7 +10,7 @@ namespace NetSquare.Server.Worlds
     {
         public NetSquareWorld World { get; private set; }
         public uint StaticEntitiesCount { get; internal set; }
-        public ConcurrentDictionary<uint, List<NetsquareTransformFrame>> ClientsTransformFrames { get; internal set; }
+        public ConcurrentDictionary<uint, List<INetSquareSynchFrame>> ClientsTransformFrames { get; internal set; }
         public int SynchFrequency { get; private set; }
         public int SpatializationFrequency { get; private set; }
         private string synchName;
@@ -30,7 +29,7 @@ namespace NetSquare.Server.Worlds
         public Spatializer(NetSquareWorld world, float spatializationFreq, float synchFreq)
         {
             World = world;
-            ClientsTransformFrames = new ConcurrentDictionary<uint, List<NetsquareTransformFrame>>();
+            ClientsTransformFrames = new ConcurrentDictionary<uint, List<INetSquareSynchFrame>>();
             synchName = "Spatializer_Sync_World_" + World.ID;
             spatializationName = "Spatializer_Spatialization_World_" + World.ID;
             SpatializationFrequency = NetSquareScheduler.GetMsFrequencyFromHz(spatializationFreq);
@@ -161,11 +160,11 @@ namespace NetSquare.Server.Worlds
         public abstract void RemoveClient(uint clientID);
 
         /// <summary>
-        /// Store a list of transform frames for a client
+        /// Store a list of synch frames for a client
         /// </summary>
         /// <param name="clientID"> id of the client to store frames</param>
-        /// <param name="transformFrames"> list of frames to store</param>
-        public virtual void StoreClientTransformFrames(uint clientID, NetsquareTransformFrame[] transformFrames)
+        /// <param name="synchFrames"> list of frames to store</param>
+        public virtual void StoreSynchFrames(uint clientID, INetSquareSynchFrame[] synchFrames)
         {
             // create a new list of frames for the client if it doesn't exist
             if (!ClientsTransformFrames.ContainsKey(clientID))
@@ -173,14 +172,14 @@ namespace NetSquare.Server.Worlds
                 lock (ClientsTransformFrames)
                 {
                     // add the first frame to the client current frames
-                    while (!ClientsTransformFrames.TryAdd(clientID, new List<NetsquareTransformFrame>()))
+                    while (!ClientsTransformFrames.TryAdd(clientID, new List<INetSquareSynchFrame>()))
                     {
                         continue;
                     }
                 }
             }
             // add frames to the client current frames
-            foreach (var frame in transformFrames)
+            foreach (var frame in synchFrames)
             {
                 lock (ClientsTransformFrames)
                 {
@@ -188,31 +187,40 @@ namespace NetSquare.Server.Worlds
                 }
             }
             // set client pos as last frame
-            World.SetClientTransform(clientID, transformFrames[transformFrames.Length - 1]);
+            if (NetSquareSynchFramesUtils.TryGetMostRecentTransformFrame(synchFrames, out NetsquareTransformFrame mostRecentTransformFrame))
+            {
+                World.SetClientTransform(clientID, mostRecentTransformFrame);
+            }
         }
 
         /// <summary>
-        /// Store a transform frame for a client
+        /// Store a synch frame for a client
         /// </summary>
         /// <param name="clientID"> id of the client to store frame</param>
-        /// <param name="transformFrames"> frame to store</param>
-        public virtual void StoreClientTransformFrame(uint clientID, NetsquareTransformFrame transformFrames)
+        /// <param name="synchFrame"> frame to store</param>
+        public virtual void StoreSynchFrame(uint clientID, INetSquareSynchFrame synchFrame)
         {
             lock (ClientsTransformFrames)
             {
                 // create a new list of frames for the client if it doesn't exist
                 if (!ClientsTransformFrames.ContainsKey(clientID))
                 {
-                    while (!ClientsTransformFrames.TryAdd(clientID, new List<NetsquareTransformFrame>()))
+                    while (!ClientsTransformFrames.TryAdd(clientID, new List<INetSquareSynchFrame>()))
                     {
                         continue;
                     }
                 }
                 // add frames to the client current frames
-                ClientsTransformFrames[clientID].Add(transformFrames);
+                ClientsTransformFrames[clientID].Add(synchFrame);
             }
-            // set client pos as last frame
-            World.SetClientTransform(clientID, transformFrames);
+
+            // set client pos as last frame if it's a transform frame
+            switch (synchFrame.SynchFrameType)
+            {
+                case 0:
+                    World.SetClientTransform(clientID, (NetsquareTransformFrame)synchFrame);
+                    break;
+            }
         }
 
         /// <summary>

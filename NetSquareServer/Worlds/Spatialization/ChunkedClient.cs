@@ -1,4 +1,4 @@
-﻿using NetSquareCore;
+﻿using NetSquare.Core;
 using System.Collections.Generic;
 
 namespace NetSquare.Server.Worlds
@@ -23,7 +23,7 @@ namespace NetSquare.Server.Worlds
         public void SetChunk(short chunkX, short chunkY)
         {
             ChunkX = chunkX;
-            ChunkY= chunkY;
+            ChunkY = chunkY;
         }
     }
 }

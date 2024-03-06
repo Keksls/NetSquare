@@ -106,10 +106,10 @@ namespace NetSquare.Core
             if (netSquareMethods == null)
             {
                 netSquareMethods = (from assembly in AppDomain.CurrentDomain.GetAssemblies().AsParallel()
-                                   from type in assembly.GetTypes()
-                                   from method in type.GetMethods()
-                                   where method.IsDefined(typeof(NetSquareActionAttribute), false)
-                                   select method).ToList();
+                                    from type in assembly.GetTypes()
+                                    from method in type.GetMethods()
+                                    where method.IsDefined(typeof(NetSquareActionAttribute), false)
+                                    select method).ToList();
             }
             foreach (MethodInfo method in netSquareMethods)
             {

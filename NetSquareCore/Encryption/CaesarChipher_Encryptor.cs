@@ -12,7 +12,7 @@ namespace NetSquare.Core.Encryption
             bool shiftFlag = false;
             for (int i = 0; i < data.Length; i++)
             {
-                int shift = KeyIV.Key[passwordShiftIndex%31];
+                int shift = KeyIV.Key[passwordShiftIndex % 31];
                 data[i] = shift <= 128
                     ? (byte)(data[i] + (shiftFlag
                         ? (byte)(((shift << 2)) % 255)
@@ -32,7 +32,7 @@ namespace NetSquare.Core.Encryption
             bool shiftFlag = false;
             for (int i = 0; i < data.Length; i++)
             {
-                int shift = KeyIV.Key[passwordShiftIndex%31];
+                int shift = KeyIV.Key[passwordShiftIndex % 31];
                 data[i] = shift <= 128
                     ? (byte)(data[i] - (shiftFlag
                         ? (byte)(((shift << 2)) % 255)

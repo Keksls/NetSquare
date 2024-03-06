@@ -1,15 +1,18 @@
-﻿using NetSquare.Core;
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 
-namespace NetSquareCore
+namespace NetSquare.Core
 {
     /// <summary>
     /// Struct that store a position, rotation, state and time
     /// Represent a transform frame at a given time
     /// </summary>
-    public struct NetsquareTransformFrame
+    public struct NetsquareTransformFrame : INetSquareSynchFrame
     {
+        private float time;
+        public float Time { get { return time; } set { time = value; } }
+        private byte synchFrameType;
+        public byte SynchFrameType { get { return synchFrameType; } set { synchFrameType = value; } }
         public float x;
         public float y;
         public float z;
@@ -17,9 +20,8 @@ namespace NetSquareCore
         public float ry;
         public float rz;
         public float rw;
-        public byte State;
-        public float Time;
         public static NetsquareTransformFrame zero { get { return new NetsquareTransformFrame(); } }
+        int INetSquareSynchFrame.Size => NetsquareTransformFrame.Size;
         public const int Size = 33;
 
         /// <summary>
@@ -34,7 +36,7 @@ namespace NetSquareCore
         /// <param name="_rw"> w rotation</param>
         /// <param name="_state"> state</param>
         /// <param name="_time"> time</param>
-        public NetsquareTransformFrame(float _x = 0, float _y = 0, float _z = 0, float _rx = 0, float _ry = 0, float _rz = 0, float _rw = 1, byte _state = 0, float _time = 0)
+        public NetsquareTransformFrame(float _x = 0, float _y = 0, float _z = 0, float _rx = 0, float _ry = 0, float _rz = 0, float _rw = 1, float _time = 0)
         {
             x = _x;
             y = _y;
@@ -43,9 +45,8 @@ namespace NetSquareCore
             ry = _ry;
             rz = _rz;
             rw = _rw;
-            State = _state;
-            Time = _time;
-            State = _state;
+            time = _time;
+            synchFrameType = 0;
         }
 
         /// <summary>
@@ -69,8 +70,8 @@ namespace NetSquareCore
             ry = _ry;
             rz = _rz;
             rw = _rw;
-            Time = _time;
-            State = Convert.ToByte(_state);
+            time = _time;
+            synchFrameType = 0;
         }
 
         /// <summary>
@@ -86,8 +87,8 @@ namespace NetSquareCore
             ry = transform.ry;
             rz = transform.rz;
             rw = transform.rw;
-            State = transform.State;
-            Time = transform.Time;
+            time = transform.Time;
+            synchFrameType = 0;
         }
 
         /// <summary>
@@ -103,8 +104,8 @@ namespace NetSquareCore
             ry = 0;
             rz = 0;
             rw = 0;
-            State = 0;
-            Time = 0;
+            time = 0f;
+            synchFrameType = 0;
 
             // ensure we have enough data to read
             if (!message.CanReadFor(Size))
@@ -136,8 +137,8 @@ namespace NetSquareCore
             ry = 0;
             rz = 0;
             rw = 0;
-            State = 0;
-            Time = 0;
+            time = 0;
+            synchFrameType = 0;
             Deserialize(ref ptr);
         }
 
@@ -164,8 +165,15 @@ namespace NetSquareCore
         /// <param name="p"> pointer to serialize the position</param>
         public unsafe void Serialize(ref byte* ptr)
         {
+            // write frame type using pointer
+            *ptr = synchFrameType;
+            ptr++;
+
             // write transform values using pointer
             float* f = (float*)ptr;
+            *f = Time;
+            f++;
+
             *f = x;
             f++;
             *f = y;
@@ -182,12 +190,7 @@ namespace NetSquareCore
             *f = rw;
             f++;
 
-            *f = Time;
-            f++;
-
             ptr = (byte*)f;
-            *ptr = State;
-            ptr++;
         }
 
         /// <summary>
@@ -216,15 +219,23 @@ namespace NetSquareCore
         /// <param name="ptr"> pointer to deserialize the transform</param>
         public unsafe void Deserialize(ref byte* b)
         {
-            // read transform values using pointer
+            // write frame type using pointer
+            synchFrameType = *b;
+            b++;
+
+            // write transform values using pointer
             float* f = (float*)b;
+            time = *f;
+            f++;
+
+            // read transform values using pointer
             x = *f;
             f++;
             y = *f;
             f++;
             z = *f;
             f++;
-            
+
             rx = *f;
             f++;
             ry = *f;
@@ -234,22 +245,15 @@ namespace NetSquareCore
             rw = *f;
             f++;
 
-            Time = *f;
-            f++;
-
             b = (byte*)f;
-            State = *b;
-            b++;
         }
 
         /// <summary>
-        /// Set the position to the given position
+        /// Set the time of the frame
         /// </summary>
-        /// <param name="state"> state to set</param>
         /// <param name="time"> time to set</param>
-        public void Set(byte state, float time)
+        public void Set(float time)
         {
-            State = state;
             Time = time;
         }
 
@@ -266,8 +270,8 @@ namespace NetSquareCore
             ry = pos.ry;
             rz = pos.rz;
             rw = pos.rw;
-            State = pos.State;
-            Time = pos.Time;
+            time = pos.Time;
+            synchFrameType = pos.SynchFrameType;
         }
 
         /// <summary>
@@ -327,15 +331,9 @@ namespace NetSquareCore
 
             return new NetsquareTransformFrame(
                                current.x + toVector_x / dist * maxDistanceDelta,
-                                              current.y + toVector_y / dist * maxDistanceDelta,
-                                                             current.z + toVector_z / dist * maxDistanceDelta,
-                                                                            current.rx,
-                                                                                           current.ry,
-                                                                                                          current.rz,
-                                                                                                                         current.rw,
-                                                                                                                                        current.State,
-                                                                                                                                                       current.Time
-                                                                                                                                                                  );
+                               current.y + toVector_y / dist * maxDistanceDelta,
+                               current.z + toVector_z / dist * maxDistanceDelta,
+                               current.rx, current.ry, current.rz, current.rw, current.Time);
         }
 
         /// <summary>
@@ -409,7 +407,7 @@ namespace NetSquareCore
         /// <returns> position, rotation, state and time</returns>
         public override string ToString()
         {
-            return "x : " + x + " y : " + y + " z : " + z + " rx : " + rx + " ry : " + ry + " rz : " + rz + " rw : " + rw + " state : " + State + " time : " + Time;
+            return "x : " + x + " y : " + y + " z : " + z + " rx : " + rx + " ry : " + ry + " rz : " + rz + " rw : " + rw + " time : " + Time;
         }
     }
 }

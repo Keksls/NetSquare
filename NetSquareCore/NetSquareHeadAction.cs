@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace NetSquare.Core
+﻿namespace NetSquare.Core
 {
     public struct NetSquareHeadAction
     {

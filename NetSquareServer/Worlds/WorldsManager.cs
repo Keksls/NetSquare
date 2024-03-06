@@ -1,6 +1,5 @@
 ﻿using NetSquare.Core;
 using NetSquare.Core.Messages;
-using NetSquareCore;
 using NetSquare.Server.Utils;
 using System;
 using System.Collections.Generic;
@@ -27,8 +26,8 @@ namespace NetSquare.Server.Worlds
             server = _server;
             server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinWorld", TryAddClientToWorld);
             server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveWorld", TryRemoveClientFromWorld);
-            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransform, "SetTransform", SetTransform);
-            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetTransformFrames, "SetTransformFrames", SetTransformFrames);
+            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFrame, "SetSynchFrame", SetSynchFrame);
+            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFrames, "SetSynchFrames", SetSynchFrames);
         }
 
         internal void Fire_OnSendWorldClients(ushort worldID, uint clientID, NetworkMessage message)
@@ -279,10 +278,10 @@ namespace NetSquare.Server.Worlds
         }
 
         /// <summary>
-        /// A client just set his possition to the server
+        /// A client just send a synch frame to the server
         /// </summary>
-        /// <param name="message">message that contains a transform frames</param>
-        private void SetTransform(NetworkMessage message)
+        /// <param name="message">message that contains a synch frames</param>
+        private void SetSynchFrame(NetworkMessage message)
         {
             try
             {
@@ -291,11 +290,11 @@ namespace NetSquare.Server.Worlds
                     NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
                     if (world != null)
                     {
-                        NetsquareTransformFrame transform = new NetsquareTransformFrame(message);
                         // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
                         if (world.UseSpatializer)
                         {
-                            world.Spatializer.StoreClientTransformFrame(message.ClientID, transform);
+                            INetSquareSynchFrame frame = NetSquareSynchFramesUtils.GetFrame(message);
+                            world.Spatializer.StoreSynchFrame(message.ClientID, frame);
                         }
                         // if we don't use a spatializer, we send the new position directly to everyone in the world
                         else
@@ -313,10 +312,10 @@ namespace NetSquare.Server.Worlds
         }
 
         /// <summary>
-        /// A client just set his possition to the server
+        /// A client just send some synch frames to the server
         /// </summary>
-        /// <param name="message">message that contains multiple transform frames</param>
-        private unsafe void SetTransformFrames(NetworkMessage message)
+        /// <param name="message">message that contains multiple synch frames</param>
+        private unsafe void SetSynchFrames(NetworkMessage message)
         {
             try
             {
@@ -325,21 +324,10 @@ namespace NetSquare.Server.Worlds
                     NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
                     if (world != null)
                     {
-                        // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
+                        // if we use a spatializer, we store the frames into it so it can be used for spatialization and send to visible clients later as packed message
                         if (world.UseSpatializer)
                         {
-                            fixed (byte* ptr = message.Data)
-                            {
-                                byte* b = ptr + message.currentReadingIndex;
-                                ushort nbFrames = *(ushort*)(b);
-                                b += 2;
-                                NetsquareTransformFrame[] frames = new NetsquareTransformFrame[nbFrames];
-                                for (ushort i = 0; i < nbFrames; i++)
-                                {
-                                    frames[i].Deserialize(ref b);
-                                }
-                                world.Spatializer.StoreClientTransformFrames(message.ClientID, frames);
-                            }
+                            world.Spatializer.StoreSynchFrames(message.ClientID, NetSquareSynchFramesUtils.GetFrames(message));
                         }
                         // if we don't use a spatializer, we send the new position directly to everyone in the world
                         else

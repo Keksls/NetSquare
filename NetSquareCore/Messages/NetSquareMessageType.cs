@@ -11,14 +11,14 @@
         /// <summary>
         ///    Client sends a transform
         /// </summary>
-        SetTransform = 65530,
+        SetSynchFrame = 65530,
         /// <summary>
         ///    Clienty sends some transform frames
         /// </summary>
-        SetTransformFrames = 65529,
+        SetSynchFrames = 65529,
         /// <summary>
         ///    Server sends some transforms frames, for x clients, packed into a single message
         /// </summary>
-        SetTransformsFramesPacked = 65528
+        SetSynchFramesPacked = 65528
     }
 }

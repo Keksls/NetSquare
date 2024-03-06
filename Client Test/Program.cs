@@ -1,13 +1,9 @@
-﻿using NetSquare.Core;
-using NetSquare.Client;
+﻿using NetSquare.Client;
+using NetSquare.Core;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Numerics;
-using System.Reflection;
 using System.Threading;
-using System.Windows.Forms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.TaskbarClock;
 
 namespace Client_Test
 {

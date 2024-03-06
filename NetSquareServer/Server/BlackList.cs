@@ -20,7 +20,7 @@ namespace NetSquare.Server
             if (!File.Exists(NetSquareConfigurationManager.Configuration.BlackListFilePath))
             {
                 IPBlackList = new HashSet<string>();
-                if(!File.Exists(NetSquareConfigurationManager.Configuration.BlackListFilePath))
+                if (!File.Exists(NetSquareConfigurationManager.Configuration.BlackListFilePath))
                     File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, UTF8Encoding.UTF8.GetString(JsonSerializer.Serialize(new HashSet<string>())));
                 File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, UTF8Encoding.UTF8.GetString(JsonSerializer.Serialize(IPBlackList)));
             }
@@ -44,7 +44,7 @@ namespace NetSquare.Server
             string IP = ((IPEndPoint)client.RemoteEndPoint).Address.ToString();
             Writer.Write("[" + IP + "] Checking blacklist... (" + DateTime.Now.ToString() + ")", ConsoleColor.DarkRed);
 
-            if(IsLocalAddress(IP))
+            if (IsLocalAddress(IP))
             {
                 Writer.Write("[" + IP + "] Local IP, it's OK.", ConsoleColor.Green);
                 return false;

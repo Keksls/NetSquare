@@ -1,5 +1,4 @@
-﻿using NetSquare.Core.Messages;
-using System;
+﻿using System;
 
 namespace NetSquare.Core
 {

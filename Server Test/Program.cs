@@ -1,11 +1,9 @@
 ﻿using NetSquare.Core;
-using NetSquareCore;
 using NetSquare.Server;
 using NetSquare.Server.Server;
 using NetSquare.Server.Utils;
 using NetSquare.Server.Worlds;
 using System;
-using System.Diagnostics;
 using System.Windows.Forms;
 
 namespace Server_Test

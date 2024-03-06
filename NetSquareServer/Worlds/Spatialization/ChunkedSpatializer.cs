@@ -1,6 +1,5 @@
 ﻿using NetSquare.Core;
 using NetSquare.Core.Messages;
-using NetSquareCore;
 using NetSquare.Server.Utils;
 using System;
 using System.Collections.Concurrent;
@@ -126,7 +125,7 @@ namespace NetSquare.Server.Worlds
                     if (chunk != null && chunk.Clients.Count > 0)
                     {
                         // create new synch message
-                        NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageType.SetTransformsFramesPacked);
+                        NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageType.SetSynchFramesPacked);
                         // iterate on each clients in the chunk
                         lock (chunk.Clients)
                         {
@@ -135,42 +134,13 @@ namespace NetSquare.Server.Worlds
                                 // if client has transform frames to send
                                 if (ClientsTransformFrames.ContainsKey(client.ClientID) && ClientsTransformFrames[client.ClientID].Count > 0)
                                 {
-                                    // create new byte array to pack transform frames for this client
-                                    UInt24 clientId = new UInt24(client.ClientID);
-                                    ushort nbFrames = (ushort)ClientsTransformFrames[client.ClientID].Count;
-                                    byte[] bytes = new byte[5 + nbFrames * NetsquareTransformFrame.Size];
-                                    // write transform values using pointer
-                                    fixed (byte* ptr = bytes)
+                                    // lock client frames list so we can read it safely
+                                    lock (ClientsTransformFrames)
                                     {
-                                        byte* b = ptr;
-                                        // write client id
-                                        *b = clientId.b0;
-                                        b++;
-                                        *b = clientId.b1;
-                                        b++;
-                                        *b = clientId.b2;
-                                        b++;
-                                        // write frames count
-                                        *b = (byte)nbFrames;
-                                        b++;
-                                        *b = (byte)(nbFrames >> 8);
-                                        b++;
-
-                                        // lock client frames list so we can read it safely
-                                        lock (ClientsTransformFrames)
-                                        {
-                                            // iterate on each frames of the client to pack them
-                                            for (ushort i = 0; i < nbFrames; i++)
-                                            {
-                                                ClientsTransformFrames[client.ClientID][i].Serialize(ref b);
-                                                //b += NetsquareTransformFrame.Size;
-                                            }
-                                            // clear frames
-                                            ClientsTransformFrames[client.ClientID].Clear();
-                                        }
+                                        NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, client.ClientID, ClientsTransformFrames[client.ClientID]);
+                                        // clear frames
+                                        ClientsTransformFrames[client.ClientID].Clear();
                                     }
-                                    // set message bytes
-                                    synchMessage.Set(bytes, false);
                                 }
                             }
                             // send message to clients
@@ -293,8 +263,8 @@ namespace NetSquare.Server.Worlds
 
         private void CreateChunks(float xStart, float yStart, float xEnd, float yEnd)
         {
-            Width = (short)((xEnd - xStart) / ChunkSize);
-            Height = (short)((yEnd - yStart) / ChunkSize);
+            Width = (short)(((xEnd - xStart) / ChunkSize) + 1);
+            Height = (short)(((yEnd - yStart) / ChunkSize) + 1);
             Chunks = new SpatialChunk[Width, Height];
 
             // create empty chunks

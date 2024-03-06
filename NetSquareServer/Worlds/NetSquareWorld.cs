@@ -1,5 +1,4 @@
 ﻿using NetSquare.Core;
-using NetSquareCore;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;

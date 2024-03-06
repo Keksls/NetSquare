@@ -1,4 +1,4 @@
-﻿using NetSquareCore;
+﻿using NetSquare.Core;
 
 namespace NetSquare.Server.Worlds
 {

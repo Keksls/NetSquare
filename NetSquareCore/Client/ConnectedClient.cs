@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
-using System.Threading;
 
 namespace NetSquare.Core
 {
@@ -323,7 +322,7 @@ namespace NetSquare.Core
             try
             {
                 receivingMessageLenght = BitConverter.ToInt32(receivingLenghtMessageBuffer, 0);
-                if (receivingMessageLenght < 12)
+                if (receivingMessageLenght < 10)
                 {
                     // if sync, check if don't receive anything and if socket is disconnected => check if 0 is because if not, don't need to check connection, and check connection is slow
                     if (receivingMessageLenght == 0 && !IsConnected())

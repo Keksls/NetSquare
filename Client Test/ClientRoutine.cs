@@ -1,6 +1,5 @@
-﻿using NetSquare.Core;
-using NetSquare.Client;
-using NetSquareCore;
+﻿using NetSquare.Client;
+using NetSquare.Core;
 using System;
 
 namespace Client_Test
@@ -26,15 +25,20 @@ namespace Client_Test
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
-            //client.WorldsManager.OnClientMove += WorldsManager_OnClientMove;
-            currentPos = new NetsquareTransformFrame(x + xOffset, y, z + zOffset, 0, 0, 0, 1f, 0, 0);
+            client.WorldsManager.OnReceiveSynchFrames += WorldsManager_OnClientMove;
+            currentPos = new NetsquareTransformFrame(x + xOffset, y, z + zOffset, 0, 0, 0, 1f, 0);
             client.Connect("127.0.0.1", 5050, NetSquareProtocoleType.TCP, false);
         }
 
-        private void WorldsManager_OnClientMove(uint arg1, NetsquareTransformFrame[] arg2)
+        private void WorldsManager_OnClientMove(uint clientID, INetSquareSynchFrame[] frames)
         {
             if (client.ClientID == 1)
-                Console.WriteLine("Client " + arg1 + " move to " + arg2[0].x + ", " + arg2[0].y + ", " + arg2[0].z);
+            {
+                if (NetSquareSynchFramesUtils.TryGetMostRecentTransformFrame(frames, out NetsquareTransformFrame transform))
+                {
+                    Console.WriteLine("Client " + clientID + " move to " + transform.x + ", " + transform.y + ", " + transform.z + " at time " + transform.Time);
+                }
+            }
         }
 
         private void Client_Disconected()
@@ -65,7 +69,7 @@ namespace Client_Test
             }
 
             Console.WriteLine("Connected with ID " + ID);
-            currentPos.Set(0, Time);
+            currentPos.Set(Time);
             client.WorldsManager.TryJoinWorld(1, currentPos, (success) =>
             {
                 if (success)
@@ -93,8 +97,8 @@ namespace Client_Test
         {
             if (!readyToSync)
                 return;
-            currentPos = new NetsquareTransformFrame(x + xOffset, 1f, y + zOffset, 0, 0, 0, 1, 0, Time);
-            client.WorldsManager.StoreTransformFrame(currentPos);
+            currentPos = new NetsquareTransformFrame(x + xOffset, 1f, y + zOffset, 0, 0, 0, 1, Time);
+            client.WorldsManager.StoreSynchFrame(currentPos);
             if (send)
             {
                 client.WorldsManager.SendFrames();
