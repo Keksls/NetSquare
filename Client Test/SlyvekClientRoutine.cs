@@ -40,7 +40,7 @@ namespace Client_Test
             client.SendMessage(new NetworkMessage(2).Set("l").Set("l"),
             (response) => // Callback
             {
-                if (response.GetBool())
+                if (response.Serializer.GetBool())
                 {
                     Console.WriteLine("Bot connected");
                     client.WorldsManager.TryJoinWorld(1, NetsquareTransformFrame.zero, (success) =>
@@ -49,7 +49,7 @@ namespace Client_Test
                     });
                 }
                 else // create account fail
-                    Console.WriteLine(response.GetString());
+                    Console.WriteLine(response.Serializer.GetString());
             });
         }
     }

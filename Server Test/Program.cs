@@ -99,7 +99,7 @@ namespace Server_Test
         [NetSquareAction(0)]
         public static void ClientSentTextMessage(NetworkMessage message)
         {
-            Writer.Write("Client " + message.ClientID + " say : " + message.GetString(), ConsoleColor.White);
+            Writer.Write("Client " + message.ClientID + " say : " + message.Serializer.GetString(), ConsoleColor.White);
         }
 
         #region Private Utils

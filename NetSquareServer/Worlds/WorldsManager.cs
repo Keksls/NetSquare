@@ -18,6 +18,10 @@ namespace NetSquare.Server.Worlds
         /// WorldID, ClientID, Message to broadcast. Send connected clients to new client
         /// </summary>
         public event Action<ushort, uint, NetworkMessage> OnSendWorldClients;
+        /// <summary>
+        /// ClientID, Transform of the client. Client just move
+        /// </summary>
+        public event Action<uint, NetsquareTransformFrame> OnClientMove;
         private Dictionary<uint, ushort> ClientsWorlds = new Dictionary<uint, ushort>(); // clientID => worldID
         private NetSquareServer server;
 
@@ -30,6 +34,22 @@ namespace NetSquare.Server.Worlds
             server.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFrames, "SetSynchFrames", SetSynchFrames);
         }
 
+        /// <summary>
+        /// A client just move in the world
+        /// </summary>
+        /// <param name="clientID"> ID of the client</param>
+        /// <param name="transform"> New transform of the client</param>
+        internal void Fire_OnClientMove(uint clientID, NetsquareTransformFrame transform)
+        {
+            OnClientMove?.Invoke(clientID, transform);
+        }
+
+        /// <summary>
+        /// Send new client data to already conneced clients
+        /// </summary>
+        /// <param name="worldID"> Id of the world</param>
+        /// <param name="clientID"> Id of the client</param>
+        /// <param name="message"> Message to broadcast</param>
         internal void Fire_OnSendWorldClients(ushort worldID, uint clientID, NetworkMessage message)
         {
             OnSendWorldClients?.Invoke(worldID, clientID, message);
@@ -143,7 +163,7 @@ namespace NetSquare.Server.Worlds
             try
             {
                 // get world ID
-                ushort worldID = message.GetUShort();
+                ushort worldID = message.Serializer.GetUShort();
                 NetsquareTransformFrame clientTransform = new NetsquareTransformFrame(message);
                 // get world instance
                 NetSquareWorld world = GetWorld(worldID);
@@ -299,7 +319,7 @@ namespace NetSquare.Server.Worlds
                         // if we don't use a spatializer, we send the new position directly to everyone in the world
                         else
                         {
-                            world.Broadcast(message.Data, message.ClientID, true);
+                            world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
                         }
                         message.RestartRead();
                     }
@@ -332,7 +352,7 @@ namespace NetSquare.Server.Worlds
                         // if we don't use a spatializer, we send the new position directly to everyone in the world
                         else
                         {
-                            world.Broadcast(message.Data, message.ClientID, true);
+                            world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
                         }
                         message.RestartRead();
                     }

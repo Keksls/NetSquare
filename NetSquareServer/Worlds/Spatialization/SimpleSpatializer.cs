@@ -139,7 +139,7 @@ namespace NetSquare.Server.Worlds
                         }
                     }
                     // send message to client
-                    if (synchMessage.HasBlock)
+                    if (synchMessage.HasWriteData)
                         World.server.SendToClient(synchMessage, client.Key);
                 }
             }

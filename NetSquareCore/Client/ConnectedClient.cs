@@ -44,6 +44,10 @@ namespace NetSquare.Core
         }
 
         #region Utils
+        /// <summary>
+        /// check if the client is connected
+        /// </summary>
+        /// <returns> true if the client is connected, else false</returns>
         public bool IsConnected()
         {
             if (!TcpSocket.Connected)
@@ -385,9 +389,8 @@ namespace NetSquare.Core
                     receivingMessageReceived = 0;
                     NbMessagesReceived++;
                     receivedBytes += receivingMessageBuffer.Length;
-                    receivingTCPMessage = new NetworkMessage();
+                    receivingTCPMessage = new NetworkMessage(receivingMessageBuffer);
                     receivingTCPMessage.Client = this;
-                    receivingTCPMessage.SetData(receivingMessageBuffer);
                     OnMessageReceived?.Invoke(receivingTCPMessage);
                     receivingTCPMessage = null;
                     StartReceivingMessageLenght();

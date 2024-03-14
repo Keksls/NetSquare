@@ -161,7 +161,10 @@ namespace NetSquare.Server.Worlds
         public void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
         {
             if (Clients.ContainsKey(clientID))
+            {
                 Clients[clientID] = transform;
+                server.Worlds.Fire_OnClientMove(clientID, transform);
+            }
         }
 
         #region Broadcast

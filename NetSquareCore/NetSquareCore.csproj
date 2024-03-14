@@ -89,6 +89,9 @@
     <Compile Include="NetSquareActionAttribute.cs" />
     <Compile Include="NetSquareHeadAction.cs" />
     <Compile Include="NetSquareScheduler.cs" />
+    <Compile Include="Serialization\NetSquareSerializationMode.cs" />
+    <Compile Include="Serialization\NetSquareSerializer.cs" />
+    <Compile Include="Serialization\INetSquareSerializable.cs" />
     <Compile Include="SynchFrames\INetSquareSynchFrame.cs" />
     <Compile Include="SynchFrames\NetSquareStateFrame.cs" />
     <Compile Include="SynchFrames\NetSquareSynchFramesUtils.cs" />

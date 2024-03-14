@@ -1,6 +1,6 @@
-﻿using System;
+﻿using NetSquare.Core;
+using System;
 using System.Collections.Generic;
-using System.IO;
 
 namespace NetSquare.Core
 {
@@ -10,14 +10,102 @@ namespace NetSquare.Core
         public byte MsgType { get; set; }
         public uint ReplyID { get; set; }
         public ushort HeadID { get; set; }
-        public bool HasBlock { get { return blocks?.Count > 0; } }
+        public NetSquareSerializer Serializer { get; set; }
+        public bool HasWriteData { get { return Serializer.HasWriteData; } }
         public ConnectedClient Client { get; set; }
-        public byte[] Data { get; internal set; }
-        public int Length { get; set; }
-        public bool Serialized { get; private set; }
-        public int currentReadingIndex { get; set; } = 10;
-        private List<byte[]> blocks = new List<byte[]>();
-        private int blocksSize = 0;
+        public bool Serialized { get { return Serializer.SerializationMode == NetSquareSerializationMode.Read; } }
+        public int MessageLength { get; private set; }
+
+        #region Constructors
+        /// <summary>
+        /// New empty network message
+        /// </summary>
+        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
+        /// <param name="clientID">ID of the client that send message</param>
+        public NetworkMessage(ushort headID, uint clientID)
+        {
+            HeadID = headID;
+            ClientID = clientID;
+            MessageLength = 0;
+            MsgType = 0;
+            ReplyID = 0;
+            Serializer = new NetSquareSerializer();
+            Serializer.StartWriting();
+        }
+
+        /// <summary>
+        /// New empty network message
+        /// </summary>
+        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
+        /// <param name="clientID">ID of the client that send message</param>
+        public NetworkMessage(Enum headID, uint clientID)
+        {
+            HeadID = Convert.ToUInt16(headID);
+            ClientID = clientID;
+            MessageLength = 0;
+            MsgType = 0;
+            ReplyID = 0;
+            Serializer = new NetSquareSerializer();
+            Serializer.StartWriting();
+        }
+
+        /// <summary>
+        /// New empty network message
+        /// </summary>
+        public NetworkMessage()
+        {
+            HeadID = 0;
+            ClientID = 0;
+            MessageLength = 0;
+            MsgType = 0;
+            ReplyID = 0;
+            Serializer = new NetSquareSerializer();
+            Serializer.StartWriting();
+        }
+
+        /// <summary>
+        /// New empty network message
+        /// </summary>
+        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
+        public NetworkMessage(ushort headID)
+        {
+            HeadID = headID;
+            ClientID = 0;
+            MessageLength = 0;
+            MsgType = 0;
+            ReplyID = 0;
+            Serializer = new NetSquareSerializer();
+            Serializer.StartWriting();
+        }
+
+        /// <summary>
+        /// New empty network message
+        /// </summary>
+        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
+        public NetworkMessage(Enum headEnum)
+        {
+            HeadID = Convert.ToUInt16(headEnum);
+            ClientID = 0;
+            MessageLength = 0;
+            MsgType = 0;
+            ReplyID = 0;
+            Serializer = new NetSquareSerializer();
+            Serializer.StartWriting();
+        }
+
+        /// <summary>
+        /// New network message from data
+        /// </summary>
+        /// <param name="data"> data to set</param>
+        public NetworkMessage(byte[] data)
+        {
+            Serializer = new NetSquareSerializer();
+            DecryptDecompressData(ref data);
+            ReadHead(data);
+            Serializer.StartReading(data);
+            RestartRead();
+        }
+        #endregion
 
         #region Type and Reply
         /// <summary>
@@ -54,75 +142,54 @@ namespace NetSquare.Core
         }
         #endregion
 
-        #region Constructors
+        #region Head and Data 
         /// <summary>
-        /// New empty network message
+        /// Check if we can read the next block but don't move the reading index
         /// </summary>
-        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
-        /// <param name="clientID">ID of the client that send message</param>
-        public NetworkMessage(ushort headID, uint clientID)
+        /// <returns> if we can read the next block</returns>
+        public bool CanGetNextBlock()
         {
-            HeadID = headID;
-            ClientID = clientID;
-            Length = 0;
-            MsgType = 0;
-            ReplyID = 0;
+            if (Serializer.CanGetUInt24())
+            {
+                UInt24 blockSize = new UInt24(Serializer.Buffer, Serializer.Position);
+                return Serializer.CanReadFor(blockSize.UInt32);
+            }
+            return false;
         }
 
         /// <summary>
-        /// New empty network message
+        /// get the next block but don't read it
         /// </summary>
-        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
-        /// <param name="clientID">ID of the client that send message</param>
-        public NetworkMessage(Enum headID, uint clientID)
+        /// <returns></returns>
+        public bool NextBlock()
         {
-            HeadID = Convert.ToUInt16(headID);
-            ClientID = clientID;
-            Length = 0;
-            MsgType = 0;
-            ReplyID = 0;
+            if (Serializer.CanGetUInt24())
+            {
+                UInt24 blockSize = new UInt24(Serializer.Buffer, Serializer.Position);
+                bool canGetNextBlock = Serializer.CanReadFor(blockSize.UInt32);
+                if (canGetNextBlock)
+                    Serializer.Position += 3;
+                return canGetNextBlock;
+            }
+            return false;
         }
 
         /// <summary>
-        /// New empty network message
+        /// reset the reading index. use it if you already have read this message and you want to read it again.
         /// </summary>
-        public NetworkMessage()
+        public void RestartRead()
         {
-            HeadID = 0;
-            ClientID = 0;
-            Length = 0;
-            MsgType = 0;
-            ReplyID = 0;
+            Serializer.Position = GetHeadSize();
         }
 
         /// <summary>
-        /// New empty network message
+        /// Set the reading index. use it if you want to go a specific index of the data array.
         /// </summary>
-        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
-        public NetworkMessage(ushort headID)
+        public void SetReadingIndex(int readIndex)
         {
-            HeadID = headID;
-            ClientID = 0;
-            Length = 0;
-            MsgType = 0;
-            ReplyID = 0;
+            Serializer.Position = readIndex;
         }
 
-        /// <summary>
-        /// New empty network message
-        /// </summary>
-        /// <param name="headID">HeadID of the message (used by dispatcher to invoke related callback)</param>
-        public NetworkMessage(Enum headEnum)
-        {
-            HeadID = Convert.ToUInt16(headEnum);
-            ClientID = 0;
-            Length = 0;
-            MsgType = 0;
-            ReplyID = 0;
-        }
-        #endregion
-
-        #region Head and Data
         /// <summary>
         /// Get the size of the head of the message
         /// </summary>
@@ -133,118 +200,93 @@ namespace NetSquare.Core
         }
 
         /// <summary>
-        /// Set data, decrypt and decompress it, read head, message is ready for reading
-        /// </summary>
-        /// <param name="data">data to set</param>
-        public void SetData(byte[] data)
-        {
-            Data = data;
-            DecryptDecompressData();
-            ReadHead();
-            RestartRead();
-        }
-
-        /// <summary>
-        /// Set data, encrypt and compress it, write head, message is ready to send
-        /// </summary>
-        /// <param name="data">data to set</param>
-        public void SetSerializedData(byte[] data)
-        {
-            Data = data;
-            WriteHead();
-            EncryptCompressData();
-            RestartRead();
-        }
-
-        /// <summary>
         /// Just set Data, no decryption / decompression, no head reading
         /// </summary>
         /// <param name="data">data to set</param>
         public void SetDataUnsafe(byte[] data)
         {
-            Data = data;
+            Serializer.StartReading(data);
             RestartRead();
         }
 
         /// <summary>
-        /// Get the mesage data without head
+        /// Encrypt and compress data
         /// </summary>
-        /// <returns></returns>
-        public byte[] GetBody()
-        {
-            int headSize = GetHeadSize();
-            byte[] body = new byte[Data.Length - headSize];
-            Buffer.BlockCopy(Data, headSize, body, 0, body.Length);
-            return body;
-        }
-
-        internal void EncryptCompressData()
+        /// <param name="data"> data to encrypt and compress</param>
+        internal void EncryptCompressData(ref byte[] data)
         {
             if (ProtocoleManager.NoCompressorOrEncryptor)
                 return;
-            byte[] encrypted = ProtocoleManager.Encrypt(Data);
+            byte[] encrypted = ProtocoleManager.Encrypt(data);
             encrypted = ProtocoleManager.Compress(encrypted);
-            Data = new byte[encrypted.Length + 4];
+            byte[] Data = new byte[encrypted.Length + 4];
             // write lenght
-            Length = Data.Length;
-            Data[0] = (byte)((Length) & 0xFF);
-            Data[1] = (byte)((Length >> 8) & 0xFF);
-            Data[2] = (byte)((Length >> 16) & 0xFF);
-            Data[3] = (byte)((Length >> 24) & 0xFF);
+            MessageLength = Data.Length;
+            Data[0] = (byte)((MessageLength) & 0xFF);
+            Data[1] = (byte)((MessageLength >> 8) & 0xFF);
+            Data[2] = (byte)((MessageLength >> 16) & 0xFF);
+            Data[3] = (byte)((MessageLength >> 24) & 0xFF);
             Buffer.BlockCopy(encrypted, 0, Data, 4, encrypted.Length);
+            data = Data;
         }
 
-        internal void DecryptDecompressData()
+        /// <summary>
+        /// Decrypt and decompress data
+        /// </summary>
+        /// <param name="data"> data to decrypt and decompress</param>
+        internal void DecryptDecompressData(ref byte[] data)
         {
             if (ProtocoleManager.NoCompressorOrEncryptor)
                 return;
-            byte[] encrypted = new byte[Data.Length - 4];
-            Buffer.BlockCopy(Data, 4, encrypted, 0, encrypted.Length);
+            byte[] encrypted = new byte[data.Length - 4];
+            Buffer.BlockCopy(data, 4, encrypted, 0, encrypted.Length);
             encrypted = ProtocoleManager.Decompress(encrypted);
-            Data = ProtocoleManager.Decrypt(encrypted);
+            data = ProtocoleManager.Decrypt(encrypted);
         }
 
-        internal void ReadHead()
+        /// <summary>
+        /// Read the head of the message
+        /// </summary>
+        /// <param name="data"> data to read</param>
+        internal void ReadHead(byte[] data)
         {
-            Length = BitConverter.ToInt32(Data, 0);
-            ClientID = UInt24.GetUInt(Data, 4);
-            HeadID = BitConverter.ToUInt16(Data, 7);
-            MsgType = Data[9];
+            MessageLength = BitConverter.ToInt32(data, 0);
+            ClientID = UInt24.GetUInt(data, 4);
+            HeadID = BitConverter.ToUInt16(data, 7);
+            MsgType = data[9];
             if (MsgType == (byte)MessageType.Reply)
-                ReplyID = UInt24.GetUInt(Data, 10);
+                ReplyID = UInt24.GetUInt(data, 10);
             else
                 ReplyID = 0;
         }
 
-        internal void WriteHead()
+        /// <summary>
+        /// Write the head of the message
+        /// </summary>
+        /// <param name="data"> data to write the head</param>
+        internal void WriteHead(ref byte[] data)
         {
             // write message Size
-            Data[0] = (byte)((Data.Length) & 0xFF);
-            Data[1] = (byte)((Data.Length >> 8) & 0xFF);
-            Data[2] = (byte)((Data.Length >> 16) & 0xFF);
-            Data[3] = (byte)((Data.Length >> 24) & 0xFF);
+            data[0] = (byte)((MessageLength) & 0xFF);
+            data[1] = (byte)((MessageLength >> 8) & 0xFF);
+            data[2] = (byte)((MessageLength >> 16) & 0xFF);
+            data[3] = (byte)((MessageLength >> 24) & 0xFF);
             // write Client ID
-            Data[4] = (byte)((ClientID) & 0xFF);
-            Data[5] = (byte)((ClientID >> 8) & 0xFF);
-            Data[6] = (byte)((ClientID >> 16) & 0xFF);
+            data[4] = (byte)((ClientID) & 0xFF);
+            data[5] = (byte)((ClientID >> 8) & 0xFF);
+            data[6] = (byte)((ClientID >> 16) & 0xFF);
             // write Head Action
-            Data[7] = (byte)HeadID;
-            Data[8] = (byte)(HeadID >> 8);
+            data[7] = (byte)((HeadID) & 0xFF);
+            data[8] = (byte)((HeadID >> 8) & 0xFF);
             // write Type ID
-            Data[9] = MsgType;
+            data[9] = MsgType;
+            // write Reply ID if needed
             if (MsgType == (byte)MessageType.Reply)
             {
-                Data[10] = (byte)((ReplyID) & 0xFF);
-                Data[11] = (byte)((ReplyID >> 8) & 0xFF);
-                Data[12] = (byte)((ReplyID >> 16) & 0xFF);
+                data[10] = (byte)((ReplyID) & 0xFF);
+                data[11] = (byte)((ReplyID >> 8) & 0xFF);
+                data[12] = (byte)((ReplyID >> 16) & 0xFF);
             }
-        }
-
-        public void SetHeadIDIntoData(ushort headID)
-        {
-            // write Head Action
-            Data[7] = (byte)headID;
-            Data[8] = (byte)(headID >> 8);
         }
         #endregion
 
@@ -257,12 +299,12 @@ namespace NetSquare.Core
                 if (data.Length < GetHeadSize())
                     return false;
                 SetDataUnsafe(data);
-                DecryptDecompressData();
+                DecryptDecompressData(ref data);
                 // read head
-                ReadHead();
-                RestartRead();
+                ReadHead(data);
+                Serializer.Reset();
                 // check if lenght == to datagram lenght
-                if ((int)Length != Data.Length)
+                if ((int)MessageLength != data.Length)
                     return false;
                 // set data from datagram
                 //SetData(data);
@@ -272,601 +314,130 @@ namespace NetSquare.Core
         }
         #endregion
 
-        #region Reading
-        /// <summary>
-        /// reset the reading index. use it if you already have read this message and you want to read it again.
-        /// </summary>
-        public void RestartRead()
-        {
-            currentReadingIndex = GetHeadSize();
-        }
-
-        /// <summary>
-        /// Set the reading index. use it if you want to go a specific index of the data array.
-        /// </summary>
-        public void SetReadingIndex(int readIndex)
-        {
-            currentReadingIndex = readIndex;
-        }
-
-        /// <summary>
-        /// Move data cursor to the right by readingSize
-        /// </summary>
-        /// <param name="readingSize">number of byte we will 'jump' before next reading</param>
-        public void DummyRead(int readingSize)
-        {
-            currentReadingIndex += readingSize;
-        }
-
-        /// <summary>
-        /// Move data cursor to the left by readingSize
-        /// </summary>
-        /// <param name="readingSize">number of byte we will 'jump back' before next reading</param>
-        public void DummyUnRead(int readingSize)
-        {
-            currentReadingIndex -= readingSize;
-        }
-
-        public bool CanReadFor(int size)
-        {
-            return currentReadingIndex + size <= Data.Length;
-        }
-
-        public bool CanGetByte()
-        {
-            return currentReadingIndex + 1 <= Data.Length;
-        }
-
-        public byte GetByte()
-        {
-            currentReadingIndex++;
-            return Data[currentReadingIndex - 1];
-        }
-
-        public void Get(ref byte val)
-        {
-            val = Data[currentReadingIndex];
-            currentReadingIndex++;
-        }
-
-        public bool CanGetShort()
-        {
-            return currentReadingIndex + 2 <= Data.Length;
-        }
-
-        public short GetShort()
-        {
-            currentReadingIndex += 2;
-            return BitConverter.ToInt16(Data, currentReadingIndex - 2);
-        }
-
-        public void Get(ref short val)
-        {
-            val = BitConverter.ToInt16(Data, currentReadingIndex);
-            currentReadingIndex += 2;
-        }
-
-        public bool CanGetint()
-        {
-            return currentReadingIndex + 4 <= Data.Length;
-        }
-
-        public int GetInt()
-        {
-            currentReadingIndex += 4;
-            return BitConverter.ToInt32(Data, currentReadingIndex - 4);
-        }
-
-        public void Get(ref int val)
-        {
-            val = BitConverter.ToInt32(Data, currentReadingIndex);
-            currentReadingIndex += 4;
-        }
-
-        public bool CanGetLong()
-        {
-            return currentReadingIndex + 8 <= Data.Length;
-        }
-
-        public long GetLong()
-        {
-            currentReadingIndex += 8;
-            return BitConverter.ToInt64(Data, currentReadingIndex - 8);
-        }
-
-        public void Get(ref long val)
-        {
-            val = BitConverter.ToInt64(Data, currentReadingIndex);
-            currentReadingIndex += 8;
-        }
-
-        public bool CanGetUShort()
-        {
-            return currentReadingIndex + 2 <= Data.Length;
-        }
-
-        public ushort GetUShort()
-        {
-            currentReadingIndex += 2;
-            return BitConverter.ToUInt16(Data, currentReadingIndex - 2);
-        }
-
-        public void Get(ref ushort val)
-        {
-            val = BitConverter.ToUInt16(Data, currentReadingIndex);
-            currentReadingIndex += 2;
-        }
-
-        public bool CanGetUInt()
-        {
-            return currentReadingIndex + 4 <= Data.Length;
-        }
-
-        public uint GetUInt()
-        {
-            currentReadingIndex += 4;
-            return BitConverter.ToUInt32(Data, currentReadingIndex - 4);
-        }
-
-        public void Get(ref uint val)
-        {
-            val = BitConverter.ToUInt32(Data, currentReadingIndex);
-            currentReadingIndex += 4;
-        }
-
-        public bool CanGetUInt24()
-        {
-            return currentReadingIndex + 3 <= Data.Length;
-        }
-
-        public bool CanGetNextBlock()
-        {
-            if (CanGetUInt24())
-            {
-                UInt24 blockSize = new UInt24(Data, currentReadingIndex);
-                return Data.Length - currentReadingIndex >= blockSize.UInt32;
-            }
-            return false;
-        }
-
-        public bool NextBlock()
-        {
-            if (CanGetUInt24())
-            {
-                UInt24 blockSize = new UInt24(Data, currentReadingIndex);
-                bool canGetNextBlock = Data.Length - currentReadingIndex > blockSize.UInt32;
-                if (canGetNextBlock)
-                    currentReadingIndex += 3;
-                return canGetNextBlock;
-            }
-            return false;
-        }
-
-        public void Get(ref UInt24 val)
-        {
-            val.b0 = Data[++currentReadingIndex];
-            val.b1 = Data[++currentReadingIndex];
-            val.b2 = Data[++currentReadingIndex];
-        }
-
-        public UInt24 GetUInt24()
-        {
-            currentReadingIndex += 3;
-            return new UInt24(Data, currentReadingIndex - 3);
-        }
-
-        public bool CanGetULong()
-        {
-            return currentReadingIndex + 8 <= Data.Length;
-        }
-
-        public ulong GetULong()
-        {
-            currentReadingIndex += 8;
-            return BitConverter.ToUInt64(Data, currentReadingIndex - 8);
-        }
-
-        public void Get(ref ulong val)
-        {
-            val = BitConverter.ToUInt64(Data, currentReadingIndex);
-            currentReadingIndex += 8;
-        }
-
-        public bool CanGetFloat()
-        {
-            return currentReadingIndex + 4 <= Data.Length;
-        }
-
-        public float GetFloat()
-        {
-            currentReadingIndex += 4;
-            return BitConverter.ToSingle(Data, currentReadingIndex - 4);
-        }
-
-        public void Get(ref float val)
-        {
-            val = BitConverter.ToSingle(Data, currentReadingIndex);
-            currentReadingIndex += 4;
-        }
-
-        public bool CanGetBool()
-        {
-            return currentReadingIndex + 1 <= Data.Length;
-        }
-
-        public bool GetBool()
-        {
-            currentReadingIndex++;
-            return BitConverter.ToBoolean(Data, currentReadingIndex - 1);
-        }
-
-        public void Get(ref bool val)
-        {
-            val = BitConverter.ToBoolean(Data, currentReadingIndex);
-            currentReadingIndex += 1;
-        }
-
-        public bool CanGetChar()
-        {
-            return currentReadingIndex + 1 <= Data.Length;
-        }
-
-        public char GetChar()
-        {
-            currentReadingIndex += 2;
-            return BitConverter.ToChar(Data, currentReadingIndex - 2);
-        }
-
-        public void Get(ref char val)
-        {
-            val = BitConverter.ToChar(Data, currentReadingIndex);
-            currentReadingIndex += 2;
-        }
-
-        public bool CanGetString()
-        {
-            return currentReadingIndex + BitConverter.ToUInt16(Data, currentReadingIndex) + 2 <= Data.Length;
-        }
-
-        public string GetString()
-        {
-            ushort size = GetUShort();
-            string val = System.Text.Encoding.UTF8.GetString(Data, currentReadingIndex, size);
-            currentReadingIndex += size;
-            return val;
-        }
-
-        public string GetStringUTF32()
-        {
-            ushort size = GetUShort();
-            string val = System.Text.Encoding.UTF32.GetString(Data, currentReadingIndex, size);
-            currentReadingIndex += size;
-            return val;
-        }
-
-        public void Get(ref string val)
-        {
-            ushort size = GetUShort();
-            val = System.Text.Encoding.UTF8.GetString(Data, currentReadingIndex, size);
-            currentReadingIndex += size;
-        }
-
-        public bool CanGetObject()
-        {
-            return currentReadingIndex + BitConverter.ToUInt16(Data, currentReadingIndex) + 2 <= Data.Length;
-        }
-
-        /// <summary>
-        /// Get a complex or custom object. Will be Json serialized
-        /// </summary>
-        public T GetObject<T>()
-        {
-            ushort size = 0;
-            Get(ref size);
-            using (var stream = new MemoryStream(Data, currentReadingIndex, size))
-            {
-                currentReadingIndex += size;
-                return Utf8Json.JsonSerializer.Deserialize<T>(stream, Utf8Json.Resolvers.StandardResolver.AllowPrivateCamelCase);
-            }
-        }
-        public bool CanGetArray()
-        {
-            ushort lenght = GetUShort();
-            currentReadingIndex -= 2;
-            return currentReadingIndex + lenght <= Data.Length;
-        }
-
-        public int[] GetIntArray()
-        {
-            ushort lenght = GetUShort();
-            int[] data = new int[lenght / 4];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public byte[] GetByteArray()
-        {
-            ushort lenght = GetUShort();
-            byte[] data = new byte[lenght];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public uint[] GetUIntArray()
-        {
-            ushort lenght = GetUShort();
-            uint[] data = new uint[lenght / 4];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public long[] GetLongArray()
-        {
-            ushort lenght = GetUShort();
-            long[] data = new long[lenght / 8];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public ulong[] GetULongArray()
-        {
-            ushort lenght = GetUShort();
-            ulong[] data = new ulong[lenght / 8];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public short[] GetShortArray()
-        {
-            ushort lenght = GetUShort();
-            short[] data = new short[lenght / 2];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public ushort[] GetUShortArray()
-        {
-            ushort lenght = GetUShort();
-            ushort[] data = new ushort[lenght / 2];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public float[] GetFloatArray()
-        {
-            ushort lenght = GetUShort();
-            float[] data = new float[lenght / 4];
-            Buffer.BlockCopy(Data, currentReadingIndex, data, 0, lenght);
-            currentReadingIndex += lenght;
-            return data;
-        }
-
-        public bool[] GetBoolArray()
-        {
-            int lenght = (int)GetUShort();
-            bool[] data = new bool[lenght];
-            for (int i = 0; i < data.Length; i++, currentReadingIndex++)
-                data[i] = Data[currentReadingIndex] == 1;
-            return data;
-        }
-        #endregion
-
         #region Set Data
-        /// <summary>
-        /// Add a byte array to the message
-        /// You can choose to write the lenght of the array or not
-        /// </summary>
-        /// <param name="val">byte array to add</param>
-        /// <param name="writeLenght">write the lenght of the array or not</param>
-        /// <returns></returns>
-        public NetworkMessage Set(byte[] val, bool writeLenght = true)
-        {
-            if (writeLenght)
-            {
-                blocks.Add(BitConverter.GetBytes((ushort)val.Length));
-                blocks.Add(val);
-                blocksSize += val.Length + 2;
-            }
-            else
-            {
-                blocks.Add(val);
-                blocksSize += val.Length;
-            }
-            return this;
-        }
-
-        public NetworkMessage Set(UInt24 val)
-        {
-            blocksSize += 3;
-            blocks.Add(new byte[] { val.b0, val.b1, val.b2 });
-            return this;
-        }
-
         public NetworkMessage Set(byte val)
         {
-            blocks.Add(new byte[] { val });
-            blocksSize++;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(short val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize += 2;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(int val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize += 4;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(long val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize += 8;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(ushort val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize += 2;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(uint val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize += 4;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(ulong val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(float val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize += 4;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(bool val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize++;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(char val)
         {
-            blocks.Add(BitConverter.GetBytes(val));
-            blocksSize += 4;
+            Serializer.Set(val);
             return this;
         }
 
         public NetworkMessage Set(string val)
         {
-            byte[] data = System.Text.Encoding.UTF8.GetBytes(val);
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val);
             return this;
         }
 
-        public NetworkMessage SetUTF32(string val)
+        public NetworkMessage Set(UInt24 val)
         {
-            byte[] data = System.Text.Encoding.UTF32.GetBytes(val);
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val);
             return this;
         }
 
-        public NetworkMessage Set(int[] val)
+        public NetworkMessage Set(byte[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length * 4];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            Buffer.BlockCopy(val, 0, data, 0, data.Length);
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        public NetworkMessage Set(uint[] val)
+        public NetworkMessage Set(int[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length * 4];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            Buffer.BlockCopy(val, 0, data, 0, data.Length);
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        public NetworkMessage Set(long[] val)
+        public NetworkMessage Set(uint[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length * 8];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            Buffer.BlockCopy(val, 0, data, 0, data.Length);
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        public NetworkMessage Set(ulong[] val)
+        public NetworkMessage Set(long[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length * 8];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            Buffer.BlockCopy(val, 0, data, 0, data.Length);
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        public NetworkMessage Set(short[] val)
+        public NetworkMessage Set(ulong[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length * 2];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            Buffer.BlockCopy(val, 0, data, 0, data.Length);
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        public NetworkMessage Set(ushort[] val)
+        public NetworkMessage Set(short[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length * 2];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            Buffer.BlockCopy(val, 0, data, 0, data.Length);
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        public NetworkMessage Set(float[] val)
+        public NetworkMessage Set(ushort[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length * 4];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            Buffer.BlockCopy(val, 0, data, 0, data.Length);
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        public NetworkMessage Set(bool[] val)
+        public NetworkMessage Set(float[] val, bool writeLength = true)
         {
-            byte[] data = new byte[val.Length];
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            for (int i = 0; i < val.Length; i++)
-                data[i] = val[i] ? (byte)1 : (byte)0;
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
 
-        /// <summary>
-        /// Must be called only once by message and alwayse at the end
-        /// </summary>
-        /// <param name="val">serializable object (will be json and byte[] by Default))</param>
-        public NetworkMessage SetObject<T>(T val)
+        public NetworkMessage Set(bool[] val, bool writeLength = true)
         {
-            byte[] data = Utf8Json.JsonSerializer.Serialize<T>(val, Utf8Json.Resolvers.StandardResolver.AllowPrivateCamelCase);
-            blocks.Add(BitConverter.GetBytes((ushort)data.Length));
-            blocks.Add(data);
-            blocksSize += data.Length + 2;
+            Serializer.Set(val, writeLength);
             return this;
         }
         #endregion
@@ -888,26 +459,30 @@ namespace NetSquare.Core
         public byte[] Serialize(bool ignoreCompression = false)
         {
             if (Serialized)
-                return Data;
+                return Serializer.ToArray();
 
-            int headSize = GetHeadSize();
+            int currentIndex = GetHeadSize();
+            MessageLength = currentIndex + Serializer.Length;
             // create full empty array
-            Data = new byte[blocksSize + headSize];
-            // Write Blocks
-            int currentIndex = headSize;
-            for (int i = 0; i < blocks.Count; i++)
-            {
-                Buffer.BlockCopy(blocks[i], 0, Data, currentIndex, blocks[i].Length);
-                currentIndex += blocks[i].Length;
-            }
-            Length = Data.Length;
-            WriteHead();
+            byte[] data = new byte[MessageLength];
+            // Write head
+            WriteHead(ref data);
+            // Write body
+            Buffer.BlockCopy(Serializer.ToArray(), 0, data, currentIndex, MessageLength - currentIndex);
+            // Encrypt and compress data
             if (!ProtocoleManager.NoCompressorOrEncryptor && !ignoreCompression)
-                EncryptCompressData();
-            Serialized = true;
-            return Data;
+                EncryptCompressData(ref data);
+            // set data ready to read
+            Serializer.StartReading(data);
+            return data;
         }
 
+        /// <summary>
+        /// Pack multiple messages into one
+        /// </summary>
+        /// <param name="messages"> messages to pack</param>
+        /// <param name="alreadySerialized"> if messages are already serialized</param>
+        /// <returns> packed message</returns>
         public NetworkMessage Pack(IEnumerable<NetworkMessage> messages, bool alreadySerialized = false)
         {
             // Packed message will be as follow
@@ -930,7 +505,7 @@ namespace NetSquare.Core
             {
                 if (!alreadySerialized)
                     message.Serialize(true);
-                lenght += message.Data.Length + (6 - headSize); // blockSize (3 bits) + clientID (3 bits) - headSize (10 or 13 bits) <= we remove head (10 or 13 bits) and we add blockSize (3 bits) and clientID (3 bits)
+                lenght += message.Serializer.Length + (6 - headSize); // blockSize (3 bits) + clientID (3 bits) - headSize (10 or 13 bits) <= we remove head (10 or 13 bits) and we add blockSize (3 bits) and clientID (3 bits)
                 nb++;
             }
 
@@ -938,57 +513,67 @@ namespace NetSquare.Core
                 return this;
 
             // create full empty array
-            Data = new byte[lenght];
+            byte[] data = new byte[lenght];
             // index start at headSize, because the head will be written at the end
             int index = headSize;
             // Write Blocks
             foreach (NetworkMessage message in messages)
             {
                 // Write block Lenght
-                UInt24 blockSize = new UInt24((uint)(message.Data.Length - headSize));
-                Data[index++] = blockSize.b0;
-                Data[index++] = blockSize.b1;
-                Data[index++] = blockSize.b2;
+                UInt24 blockSize = new UInt24((uint)(message.Serializer.Length - headSize));
+                data[index++] = blockSize.b0;
+                data[index++] = blockSize.b1;
+                data[index++] = blockSize.b2;
 
                 // Write client ID
-                Data[index++] = (byte)((message.ClientID) & 0xFF);
-                Data[index++] = (byte)((message.ClientID >> 8) & 0xFF);
-                Data[index++] = (byte)((message.ClientID >> 16) & 0xFF);
+                data[index++] = (byte)((message.ClientID) & 0xFF);
+                data[index++] = (byte)((message.ClientID >> 8) & 0xFF);
+                data[index++] = (byte)((message.ClientID >> 16) & 0xFF);
 
-                Buffer.BlockCopy(message.Data, headSize, Data, index, message.Data.Length - headSize);
-                index += message.Data.Length - headSize;
+                Buffer.BlockCopy(message.Serializer.ToArray(), headSize, data, index, message.Serializer.Length - headSize);
+                index += message.Serializer.Length - headSize;
             }
 
-            WriteHead();
+            // Write head
+            WriteHead(ref data);
+            // Encrypt and compress data
             if (!ProtocoleManager.NoCompressorOrEncryptor)
-                EncryptCompressData();
+                EncryptCompressData(ref data);
 
-            Serialized = true;
+            // set data ready to read
+            Serializer.StartReading(data);
             return this;
         }
 
+        /// <summary>
+        /// Unpack packed messages
+        /// </summary>
+        /// <returns> unpacked messages</returns>
         public List<NetworkMessage> Unpack()
         {
             List<NetworkMessage> messages = new List<NetworkMessage>();
 
             int headSize = GetHeadSize();
+            int currentReadingIndex = headSize;
             // reading each packed blocks
             while (CanGetNextBlock())
             {
                 // get block size
-                int size = (int)GetUInt24().UInt32;
+                int size = (int)Serializer.GetUInt24().UInt32;
                 if (size == 0)
                     break;
                 // create message
-                NetworkMessage message = new NetworkMessage(HeadID, GetUInt24().UInt32);
+                NetworkMessage message = new NetworkMessage(HeadID, Serializer.GetUInt24().UInt32);
                 message.MsgType = MsgType;
                 message.ReplyID = ReplyID;
                 size -= 3;
                 // copy block data into message
-                message.Data = new byte[size + headSize];
-                Buffer.BlockCopy(Data, currentReadingIndex, message.Data, headSize, size);
+                byte[] data = new byte[size + headSize];
+                Buffer.BlockCopy(Serializer.Buffer, currentReadingIndex, data, headSize, size);
                 currentReadingIndex += size;
                 // add message to list
+                message.Serializer = new NetSquareSerializer();
+                message.Serializer.StartReading(data);
                 message.RestartRead();
                 messages.Add(message);
             }
@@ -996,6 +581,10 @@ namespace NetSquare.Core
             return messages;
         }
 
+        /// <summary>
+        /// Unpack packed messages without head
+        /// </summary>
+        /// <returns> unpacked messages</returns>
         public List<NetworkMessage> UnpackWithoutHead()
         {
             // ======== DATA =========  <= For each message
@@ -1003,21 +592,21 @@ namespace NetSquare.Core
             //  - ClientID :        Int24   3 bytes
             //  - Data :            var     BlockSize bytes
             List<NetworkMessage> messages = new List<NetworkMessage>();
-
+            int currentReadingIndex = GetHeadSize();
             // reading each packed blocks
             while (CanGetNextBlock())
             {
                 // get block size
-                int size = (int)GetUInt24().UInt32;
+                int size = (int)Serializer.GetUInt24().UInt32;
                 // get clientID
-                uint clientID = GetUInt24().UInt32;
+                uint clientID = Serializer.GetUInt24().UInt32;
                 // create message
                 NetworkMessage message = new NetworkMessage(HeadID, clientID);
                 message.MsgType = MsgType;
                 message.ReplyID = ReplyID;
                 // copy block data into message
-                message.Data = new byte[size];
-                Buffer.BlockCopy(Data, currentReadingIndex, message.Data, 0, size);
+                byte[] data = new byte[size];
+                Buffer.BlockCopy(Serializer.Buffer, currentReadingIndex, data, 0, size);
                 currentReadingIndex += size;
                 // add message to list
                 message.SetReadingIndex(0);

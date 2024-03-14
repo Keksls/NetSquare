@@ -144,7 +144,7 @@ namespace NetSquare.Server.Worlds
                                 }
                             }
                             // send message to clients
-                            if (synchMessage.HasBlock)
+                            if (synchMessage.HasWriteData)
                                 World.server.SendToClients(synchMessage, chunk.Clients.Keys);
                         }
                     }
@@ -193,7 +193,7 @@ namespace NetSquare.Server.Worlds
                 if (!chunk.Clients.ContainsKey(oldVisible)) // client just leave FOV
                     leavingMessage.Set(new UInt24(oldVisible));
             // send packed message to client
-            if (leavingMessage.HasBlock)
+            if (leavingMessage.HasWriteData)
                 World.server.SendToClient(leavingMessage, client.ClientID);
 
             // joining clients

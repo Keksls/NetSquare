@@ -1,8 +1,8 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.IO;
 using System.Reflection;
 using System.Text;
-using Utf8Json;
 
 namespace NetSquare.Server
 {
@@ -76,7 +76,7 @@ namespace NetSquare.Server
             configurationPath = Environment.CurrentDirectory + @"\config.json";
             if (File.Exists(configurationPath))
             {
-                Configuration = JsonSerializer.Deserialize<NetSquareConfiguration>(File.ReadAllText(configurationPath));
+                Configuration = JsonConvert.DeserializeObject<NetSquareConfiguration>(File.ReadAllText(configurationPath));
                 Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
             }
             else
@@ -165,7 +165,7 @@ namespace NetSquare.Server
         {
             Configuration = configuration;
             Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
-            File.WriteAllText(configurationPath, UTF8Encoding.UTF8.GetString(JsonSerializer.Serialize(configuration)));
+            File.WriteAllText(configurationPath, JsonConvert.SerializeObject(configuration));
         }
     }
 }

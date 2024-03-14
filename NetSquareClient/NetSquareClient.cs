@@ -320,7 +320,7 @@ namespace NetSquare.Client
                 if (typesDic.ContainsKey(itemType))
                     typesDic[itemType].Invoke(message, item);
                 else
-                    message.SetObject(item);
+                    throw new Exception("Item type not handled by NetSquare");
             }
             SendMessage(message);
         }
@@ -373,7 +373,7 @@ namespace NetSquare.Client
                 if (typesDic.ContainsKey(itemType))
                     typesDic[itemType].Invoke(message, item);
                 else
-                    message.SetObject(item);
+                    throw new Exception("Item type not handled by NetSquare");
             }
             SendMessageUDP(message);
         }
@@ -424,7 +424,7 @@ namespace NetSquare.Client
                         float localServerReceiveTime = (receiveTime - sendTime) / 2;
 
                         // get server time
-                        float serverMsSinceStart = reply.GetFloat();
+                        float serverMsSinceStart = reply.Serializer.GetFloat();
 
                         // get server client time offset
                         float timeOffset = serverMsSinceStart - (stopwatch.ElapsedMilliseconds / 1000f) + localServerReceiveTime;

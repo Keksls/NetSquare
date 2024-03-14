@@ -59,7 +59,7 @@ namespace NetSquare.Client
             client.SendMessage(message, (reply) =>
             {
                 // if the server reply true, the client is in the world
-                if (reply.GetBool())
+                if (reply.Serializer.GetBool())
                 {
                     IsInWorld = true;
                     CurrentWorldID = worldID;
@@ -88,7 +88,7 @@ namespace NetSquare.Client
 
             client.SendMessage(new NetworkMessage(NetSquareMessageType.ClientLeaveWorld), (response) =>
             {
-                if (response.GetBool())
+                if (response.Serializer.GetBool())
                 {
                     IsInWorld = false;
                     CurrentWorldID = 0;
@@ -220,7 +220,7 @@ namespace NetSquare.Client
         /// <param name="message"> message to read</param>
         private void ClientLeaveCurrentWorld(NetworkMessage message)
         {
-            OnClientLeaveWorld?.Invoke(message.GetUInt24().UInt32);
+            OnClientLeaveWorld?.Invoke(message.Serializer.GetUInt24().UInt32);
         }
 
         /// <summary>
@@ -232,15 +232,15 @@ namespace NetSquare.Client
             if (OnClientLeaveWorld == null)
                 return;
 
-            while (message.CanGetUInt24())
-                OnClientLeaveWorld(message.GetUInt24().UInt32);
+            while (message.Serializer.CanGetUInt24())
+                OnClientLeaveWorld(message.Serializer.GetUInt24().UInt32);
         }
 
         private void SetSynchFrame(NetworkMessage message)
         {
             if (OnReceiveSynchFrames == null)
                 return;
-            message.DummyRead(1);
+            message.Serializer.DummyRead(1);
             OnReceiveSynchFrames(message.ClientID, new INetSquareSynchFrame[] { NetSquareSynchFramesUtils.GetFrame(message) });
         }
 

@@ -18,6 +18,13 @@ namespace NetSquare.Server
         internal int Port { get; private set; }
         internal TcpListenerEx Listener { get { return _listener; } }
 
+        /// <summary>
+        /// Create a new TcpListener
+        /// </summary>
+        /// <param name="_server"> The server </param>
+        /// <param name="ipAddress"> The ip address </param>
+        /// <param name="port"> The port </param>
+        /// <param name="checkBlackList"> Check if the client is blacklisted </param>
         public TcpListener(NetSquareServer _server, IPAddress ipAddress, int port, bool checkBlackList)
         {
             CheckBlackList = checkBlackList;
@@ -31,11 +38,17 @@ namespace NetSquare.Server
             ThreadPool.QueueUserWorkItem((sender) => { HandleDisconnection(); });
         }
 
+        /// <summary>
+        /// Stop the listener
+        /// </summary>
         public void Stop()
         {
             Started = false;
         }
 
+        /// <summary>
+        /// Loop to handle new clients Connection
+        /// </summary>
         private void HandleConnection()
         {
             while (Started)
@@ -49,6 +62,10 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Accept a new connection
+        /// </summary>
+        /// <param name="sender"> The sender </param>
         private void AcceptConnection(object sender)
         {
             Socket newClient = _listener.AcceptTcpClient().Client;
@@ -58,6 +75,9 @@ namespace NetSquare.Server
                 ValidateClient(newClient);
         }
 
+        /// <summary>
+        /// Loop to handle clients Disconnection
+        /// </summary>
         private void HandleDisconnection()
         {
             while (Started)
@@ -82,6 +102,10 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Validate a new client that want to connect
+        /// </summary>
+        /// <param name="client"> The client </param>
         private void ValidateClient(Socket client)
         {
             try

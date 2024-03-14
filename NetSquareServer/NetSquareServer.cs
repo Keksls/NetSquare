@@ -19,6 +19,7 @@ namespace NetSquare.Server
 {
     public class NetSquareServer
     {
+        #region DllImport
         [DllImport("kernel32.dll")]
         static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
         [DllImport("kernel32.dll")]
@@ -27,7 +28,9 @@ namespace NetSquare.Server
         static extern IntPtr GetConsoleWindow();
         [DllImport("kernel32.dll")]
         static extern IntPtr GetStdHandle(int nStdHandle);
+        #endregion
 
+        #region Events
         public uint ClientIDCounter { get; private set; }
         public event Action BeforeLoadConfiguration_StepOne;
         public event Action AfterLoadConfiguration_StepTwo;
@@ -37,6 +40,7 @@ namespace NetSquare.Server
         public event Action<byte[]> OnMessageSend;
         public event Action<float> OnTimeLoop;
         public Action<string> DrawHeaderOverrideCallback = null;
+        #endregion
 
         #region Variables
         public float Time { get; private set; }
@@ -50,8 +54,13 @@ namespace NetSquare.Server
         public WorldsManager Worlds;
         public ServerStatisticsManager Statistics;
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
+        public Func<uint> GetNewClientID;
         #endregion
 
+        /// <summary>
+        /// Create a new NetSquareServer
+        /// </summary>
+        /// <param name="protocoleType"> The protocole type to use (TCP, UDP, Both) </param>
         public NetSquareServer(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP)
         {
             ProtocoleType = protocoleType;
@@ -64,8 +73,17 @@ namespace NetSquare.Server
             {
                 message.Reply(new NetworkMessage().Set(Time));
             });
+            // set default client ID generator, can be override later by user
+            GetNewClientID = () => { return ++ClientIDCounter; };
         }
 
+        /// <summary>
+        /// Start the server
+        /// </summary>
+        /// <param name="port"> The port to use </param>
+        /// <param name="allowLocalIP"> Allow local IP </param>
+        /// <param name="bindDispatcher"> Bind dispatcher </param>
+        /// <param name="CheckBlackList"> Check black list </param>
         private void ServerRoutine(int port, bool allowLocalIP, bool bindDispatcher, bool CheckBlackList)
         {
             Writer.StartDisplayLog();
@@ -108,7 +126,7 @@ namespace NetSquare.Server
                 }
 
                 port = port > 0 ? port : NetSquareConfigurationManager.Configuration.Port;
-                GetServerIP(allowLocalIP);
+                BindServerIP(allowLocalIP);
 
                 // Start TCP server
                 if (!StartTCPServer(port, CheckBlackList))
@@ -163,6 +181,13 @@ namespace NetSquare.Server
         #endregion
 
         #region Start/Stop Server
+        /// <summary>
+        /// Start the server
+        /// </summary>
+        /// <param name="port"> The port to use </param>
+        /// <param name="allowLocalIP"> Allow local IP </param>
+        /// <param name="bindDispatcher"> Bind dispatcher </param>
+        /// <param name="CheckBlackList"> Check black list </param>
         public void Start(int port = -1, bool allowLocalIP = true, bool bindDispatcher = true, bool CheckBlackList = true)
         {
             if (Debugger.IsAttached)
@@ -182,7 +207,11 @@ namespace NetSquare.Server
             }
         }
 
-        private void GetServerIP(bool allowLocalIP)
+        /// <summary>
+        /// Bind the server IP addresses
+        /// </summary>
+        /// <param name="allowLocalIP"> Allow local IP </param>
+        private void BindServerIP(bool allowLocalIP)
         {
             Writer.Write("Getting server IPs : ", ConsoleColor.Gray);
             ServerIPs = new HashSet<string>(); var ipSorted = GetIPAddresses();
@@ -198,6 +227,12 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Start the TCP server
+        /// </summary>
+        /// <param name="port"> The port to use </param>
+        /// <param name="CheckBlackList"> Check black list </param>
+        /// <returns> True if the server started successfully, false otherwise </returns>
         private bool StartTCPServer(int port, bool CheckBlackList)
         {
             Writer.Write_Server("Starting TCP server on port " + port.ToString() + "...", ConsoleColor.DarkYellow);
@@ -237,6 +272,9 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Stop the server
+        /// </summary>
         public void Stop()
         {
             Listeners.ForEach(l => l.Stop());
@@ -249,6 +287,11 @@ namespace NetSquare.Server
         #endregion
 
         #region Sending and Rep
+        /// <summary>
+        /// Prepare a reply
+        /// </summary>
+        /// <param name="messageFrom"> The message from </param>
+        /// <param name="message"> The message </param>
         public void PrepareReply(NetworkMessage messageFrom, NetworkMessage message)
         {
             message.HeadID = messageFrom.HeadID;
@@ -256,34 +299,65 @@ namespace NetSquare.Server
             message.MsgType = (byte)MessageType.Reply;
             message.ReplyID = messageFrom.ReplyID;
         }
+
+        /// <summary>
+        /// Reply to a message
+        /// </summary>
+        /// <param name="messageFrom"> The message from </param>
+        /// <param name="message"> The message </param>
         public void Reply(NetworkMessage messageFrom, NetworkMessage message)
         {
             PrepareReply(messageFrom, message);
             messageFrom.Client.AddTCPMessage(message);
         }
 
+        /// <summary>
+        /// Send a message to a client
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="client"> The client </param>
         public void SendToClient(NetworkMessage message, ConnectedClient client)
         {
             client.AddTCPMessage(message);
         }
 
+        /// <summary>
+        /// Send a message to a client
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clientID"> The client ID </param>
         public void SendToClient(byte[] message, uint clientID)
         {
             if (Clients.ContainsKey(clientID))
                 Clients[clientID].AddTCPMessage(message);
         }
 
+        /// <summary>
+        /// Send a message to a client
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clientID"> The client ID </param>
         public void SendToClient(NetworkMessage message, uint clientID)
         {
             if (Clients.ContainsKey(clientID))
                 Clients[clientID].AddTCPMessage(message);
         }
 
+        /// <summary>
+        /// Send a message to a client
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clientID"> The client ID </param>
         public void SendToClient(NetworkMessage message, UInt24 clientID)
         {
             SendToClient(message, clientID.UInt32);
         }
 
+        /// <summary>
+        /// Send a message to some clients
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clients"> The clients </param>
         public void SendToClients(NetworkMessage message, List<ConnectedClient> clients)
         {
             lock (clients)
@@ -293,6 +367,11 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Send a message to some clients
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clients"> The clients </param>
         public void SendToClients(NetworkMessage message, IEnumerable<uint> clients)
         {
             lock (clients)
@@ -303,6 +382,11 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Send a message to some clients
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clients"> The clients </param>
         public void SendToClients(byte[] message, IEnumerable<uint> clients)
         {
             lock (clients)
@@ -313,6 +397,10 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Broadcast a message to all clients
+        /// </summary>
+        /// <param name="message"> The message </param>
         public void Broadcast(NetworkMessage message)
         {
             lock (Clients)
@@ -323,6 +411,11 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Send a message to some clients using UDP protocol
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clients"> The clients </param>
         public void SendToClientsUDP(NetworkMessage message, IEnumerable<uint> clients)
         {
             lock (clients)
@@ -333,18 +426,34 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Send a message to some clients using UDP protocol
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="client"> The client </param>
         public void SendToClientUDP(NetworkMessage message, ConnectedClient client)
         {
             message.Client = client;
             client.AddUDPMessage(message);
         }
 
+        /// <summary>
+        /// Send a message to some clients using UDP protocol
+        /// </summary>
+        /// <param name="headID"> The head ID </param>
+        /// <param name="message"> The message </param>
+        /// <param name="clientID"> The client ID </param>
         public void SendToClientUDP(ushort headID, byte[] message, uint clientID)
         {
             if (Clients.ContainsKey(clientID))
                 GetClient(clientID).AddUDPMessage(headID, message);
         }
 
+        /// <summary>
+        /// Send a message to some clients using UDP protocol
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clientID"> The client ID </param>
         public void SendToClientUDP(NetworkMessage message, uint clientID)
         {
             message.Client = GetClient(clientID);
@@ -352,11 +461,22 @@ namespace NetSquare.Server
                 message.Client.AddUDPMessage(message);
         }
 
+        /// <summary>
+        /// Send a message to some clients using UDP protocol
+        /// </summary>
+        /// <param name="message"> The message </param>
+        /// <param name="clientID"> The client ID </param>
         public void SendToClientUDP(NetworkMessage message, UInt24 clientID)
         {
             SendToClientUDP(message, clientID.UInt32);
         }
 
+        /// <summary>
+        /// Send a message to some clients using UDP protocol
+        /// </summary>
+        /// <param name="headID"> The head ID </param>
+        /// <param name="message"> The message </param>
+        /// <param name="clients"> The clients </param>
         public void SendToClientsUDP(ushort headID, byte[] message, IEnumerable<uint> clients)
         {
             lock (clients)
@@ -367,6 +487,12 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Send a message to some clients using UDP protocol
+        /// </summary>
+        /// <param name="headID"> The head ID </param>
+        /// <param name="message"> The message </param>
+        /// <param name="client"> The client </param>
         public void SendToClientUDP(ushort headID, byte[] message, ConnectedClient client)
         {
             client.AddUDPMessage(headID, message);
@@ -374,7 +500,11 @@ namespace NetSquare.Server
         #endregion
 
         #region ServerEvent
-        public void Server_ClientDisconnected(ConnectedClient client)
+        /// <summary>
+        /// Event when a client is disconnected
+        /// </summary>
+        /// <param name="client"> The client </param>
+        internal void Server_ClientDisconnected(ConnectedClient client)
         {
             lock (Clients)
             {
@@ -402,12 +532,21 @@ namespace NetSquare.Server
             }
         }
 
-        public void Server_ClientConnected(ConnectedClient client, uint id)
+        /// <summary>
+        /// Event when a client is connected
+        /// </summary>
+        /// <param name="client"> The client </param>
+        /// <param name="id"> The ID </param>
+        internal void Server_ClientConnected(ConnectedClient client, uint id)
         {
             Writer.Write("New client connected !", ConsoleColor.Green);
             OnClientConnected?.Invoke(id);
         }
 
+        /// <summary>
+        /// Event when a client is connected
+        /// </summary>
+        /// <param name="clientID"> The client ID </param>
         private void Client_OnDisconected(uint clientID)
         {
             var client = SafeGetClient(clientID);
@@ -415,12 +554,20 @@ namespace NetSquare.Server
                 Server_ClientDisconnected(client);
         }
 
-        public void MessageReceived(NetworkMessage message)
+        /// <summary>
+        /// Event when a message is received
+        /// </summary>
+        /// <param name="message"> The message </param>
+        internal void MessageReceived(NetworkMessage message)
         {
             MessageQueueManager.MessageReceived(message);
             OnMessageReceived?.Invoke(message);
         }
 
+        /// <summary>
+        /// Event when a message is sended
+        /// </summary>
+        /// <param name="data"> The data </param>
         private void MessageSended(byte[] data)
         {
             OnMessageSend?.Invoke(data);
@@ -428,16 +575,55 @@ namespace NetSquare.Server
         #endregion
 
         #region Utils
+        /// <summary>
+        /// Replace a client ID
+        /// </summary>
+        /// <param name="oldID"> The old ID </param>
+        /// <param name="newID"> The new ID </param>
+        /// <returns> True if the client ID was replaced, false otherwise </returns>
+        public bool ReplaceClientID(uint oldID, uint newID)
+        {
+            lock (Clients)
+            {
+                if (Clients.ContainsKey(oldID) && !Clients.ContainsKey(newID))
+                {
+                    ConnectedClient client = null;
+                    if (Clients.TryRemove(oldID, out client))
+                    {
+                        client.ID = newID;
+                        Clients.TryAdd(newID, client);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Check if a client is connected
+        /// </summary>
+        /// <param name="clientID"> The client ID </param>
+        /// <returns> True if the client is connected, false otherwise </returns>
         public bool IsClientConnected(uint clientID)
         {
             return Clients.ContainsKey(clientID);
         }
 
+        /// <summary>
+        /// Get a client
+        /// </summary>
+        /// <param name="clientID"> The client ID </param>
+        /// <returns> The client </returns>
         public ConnectedClient GetClient(uint clientID)
         {
             return Clients[clientID];
         }
 
+        /// <summary>
+        /// Get a client safely
+        /// </summary>
+        /// <param name="clientID"> The client ID </param>
+        /// <returns> The client </returns>
         public ConnectedClient SafeGetClient(uint clientID)
         {
             ConnectedClient client = null;
@@ -445,18 +631,26 @@ namespace NetSquare.Server
             return client;
         }
 
+        /// <summary>
+        /// Add a client
+        /// </summary>
+        /// <param name="client"> The client </param>
+        /// <returns> The client ID </returns>
         public uint AddClient(ConnectedClient client)
         {
-            ClientIDCounter++;
-            client.ID = ClientIDCounter;
+            client.ID = GetNewClientID();
             while (!Clients.TryAdd(client.ID, client))
                 Thread.Sleep(1);
             client.OnMessageReceived += MessageReceived;
             client.OnMessageSend += MessageSended;
             client.OnDisconected += Client_OnDisconected;
-            return ClientIDCounter;
+            return client.ID;
         }
 
+        /// <summary>
+        /// Get the number of clients that are verifying
+        /// </summary>
+        /// <returns> The number of clients that are verifying </returns>
         public int GetNbVerifyingClients()
         {
             int nb = 0;
@@ -465,6 +659,11 @@ namespace NetSquare.Server
             return nb;
         }
 
+        /// <summary>
+        /// Get some connected clients from their IDs
+        /// </summary>
+        /// <param name="clientsIDs"> The clients IDs </param>
+        /// <returns> The connected clients </returns>
         public List<ConnectedClient> GetTcpClientsFromIDs(IEnumerable<uint> clientsIDs)
         {
             List<ConnectedClient> clients = new List<ConnectedClient>();
@@ -476,6 +675,10 @@ namespace NetSquare.Server
             return clients;
         }
 
+        /// <summary>
+        /// Get all connected clients
+        /// </summary>
+        /// <returns> The connected clients </returns>
         public List<ConnectedClient> GetAllClients()
         {
             List<ConnectedClient> clients = new List<ConnectedClient>();
@@ -484,6 +687,10 @@ namespace NetSquare.Server
             return clients;
         }
 
+        /// <summary>
+        /// Get all IP addresses of the server
+        /// </summary>
+        /// <returns> The IP addresses </returns>
         public IEnumerable<IPAddress> GetIPAddresses()
         {
             List<IPAddress> ipAddresses = new List<IPAddress>();
@@ -500,6 +707,10 @@ namespace NetSquare.Server
             return ipSorted;
         }
 
+        /// <summary>
+        /// Get all listening IPs of the server
+        /// </summary>
+        /// <returns> The listening IPs </returns>
         public List<IPAddress> GetListeningIPs()
         {
             List<IPAddress> listenIps = new List<IPAddress>();
@@ -511,6 +722,10 @@ namespace NetSquare.Server
         #endregion
 
         #region private Utils
+        /// <summary>
+        /// Draw the header of the server in the console
+        /// </summary>
+        /// <param name="version"> The version </param>
         private void DrawHeader(string version)
         {
             if (DrawHeaderOverrideCallback != null)
@@ -532,6 +747,11 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Rank an IP address
+        /// </summary>
+        /// <param name="addr"> The IP address </param>
+        /// <returns> The rank score </returns>
         private int RankIpAddress(IPAddress addr)
         {
             int rankScore = 1000;
@@ -557,6 +777,10 @@ namespace NetSquare.Server
             return rankScore;
         }
 
+        /// <summary>
+        /// Try to get the current network interfaces
+        /// </summary>
+        /// <returns> The network interfaces </returns>
         private static IEnumerable<NetworkInterface> TryGetCurrentNetworkInterfaces()
         {
             try

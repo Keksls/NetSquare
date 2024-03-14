@@ -1,11 +1,11 @@
 ﻿using NetSquare.Server.Utils;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using Utf8Json;
 
 namespace NetSquare.Server
 {
@@ -21,10 +21,10 @@ namespace NetSquare.Server
             {
                 IPBlackList = new HashSet<string>();
                 if (!File.Exists(NetSquareConfigurationManager.Configuration.BlackListFilePath))
-                    File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, UTF8Encoding.UTF8.GetString(JsonSerializer.Serialize(new HashSet<string>())));
-                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, UTF8Encoding.UTF8.GetString(JsonSerializer.Serialize(IPBlackList)));
+                    File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, JsonConvert.SerializeObject(new HashSet<string>()));
+                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, JsonConvert.SerializeObject(IPBlackList));
             }
-            IPBlackList = JsonSerializer.Deserialize<HashSet<string>>(File.ReadAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath));
+            IPBlackList = JsonConvert.DeserializeObject<HashSet<string>>(File.ReadAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath));
             Writer.Write(IPBlackList.Count.ToString(), ConsoleColor.Green);
         }
 
@@ -32,7 +32,7 @@ namespace NetSquare.Server
         {
             if (IPBlackList.Add(IP))
             {
-                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, UTF8Encoding.UTF8.GetString(JsonSerializer.Serialize(IPBlackList)));
+                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, JsonConvert.SerializeObject(IPBlackList));
                 Writer.Write("BlackList ID : " + IP, ConsoleColor.Red);
             }
             else

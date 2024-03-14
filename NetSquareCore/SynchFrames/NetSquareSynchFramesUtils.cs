@@ -28,13 +28,13 @@ namespace NetSquare.Core
         /// <exception cref="Exception"> if the frame type is unknown</exception>
         public unsafe static INetSquareSynchFrame[] GetFrames(NetworkMessage message)
         {
-            ushort nbFrames = message.GetUShort();
+            ushort nbFrames = message.Serializer.GetUShort();
             INetSquareSynchFrame[] frames = new INetSquareSynchFrame[nbFrames];
 
-            fixed (byte* ptr = message.Data)
+            fixed (byte* ptr = message.Serializer.Buffer)
             {
                 byte* b = ptr;
-                b += message.currentReadingIndex;
+                b += message.Serializer.Position;
                 int readingIndex = 0;
 
                 for (int i = 0; i < nbFrames; i++)
@@ -70,7 +70,7 @@ namespace NetSquare.Core
                             }
                             break;
                     }
-                    message.DummyRead(readingIndex);
+                    message.Serializer.DummyRead(readingIndex);
                 }
             }
 
@@ -85,26 +85,26 @@ namespace NetSquare.Core
         /// <exception cref="Exception"> if the frame type is unknown</exception>
         public unsafe static INetSquareSynchFrame GetFrame(NetworkMessage message)
         {
-            fixed (byte* ptr = message.Data)
+            fixed (byte* ptr = message.Serializer.Buffer)
             {
                 byte* b = ptr;
-                b += message.currentReadingIndex;
+                b += message.Serializer.Position;
                 byte frameType = *b; // do NOT increment b here because we need to read the frame type again in Deserialize
                 switch (frameType)
                 {
                     // trasform frame
                     case 0:
-                        message.DummyRead(NetsquareTransformFrame.Size);
+                        message.Serializer.DummyRead(NetsquareTransformFrame.Size);
                         return new NetsquareTransformFrame(ref b);
                     // states frame
                     case 1:
-                        message.DummyRead(NetSquareStateFrame.Size);
+                        message.Serializer.DummyRead(NetSquareStateFrame.Size);
                         return new NetSquareStateFrame(ref b);
                     // custom frame
                     default:
                         if (customDeserializers.ContainsKey(frameType))
                         {
-                            message.DummyRead(customSized[frameType]);
+                            message.Serializer.DummyRead(customSized[frameType]);
                             return customDeserializers[frameType](message);
                         }
                         else
@@ -124,10 +124,10 @@ namespace NetSquare.Core
         public unsafe static void GetPackedFrames(NetworkMessage message, Action<uint, INetSquareSynchFrame[]> onGetFrames)
         {
             message.RestartRead();
-            fixed (byte* ptr = message.Data)
+            fixed (byte* ptr = message.Serializer.Buffer)
             {
-                byte* b = ptr + message.currentReadingIndex;
-                while (message.CanGetUInt24())
+                byte* b = ptr + message.Serializer.Position;
+                while (message.Serializer.CanGetUInt24())
                 {
                     uint clientID = (uint)(*b | (*(b + 1) << 8) | (*(b + 2) << 16));
                     b += 3;
@@ -167,7 +167,7 @@ namespace NetSquare.Core
                         }
                     }
                     onGetFrames(clientID, frames);
-                    message.DummyRead(readingIndex);
+                    message.Serializer.DummyRead(readingIndex);
                 }
             }
         }

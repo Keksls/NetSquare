@@ -88,8 +88,7 @@ namespace Client_Test
         [NetSquareAction((ushort)MessagesTypes.WelcomeMessage)]
         public static void ReceivingDebugMessageFromServer(NetworkMessage message)
         {
-            string text = "";
-            message.Get(ref text);
+            string text = message.Serializer.GetString();
             Console.WriteLine("from Server : " + text);
         }
 

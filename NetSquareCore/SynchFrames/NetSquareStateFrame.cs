@@ -45,20 +45,20 @@
             synchFrameType = 0;
 
             // ensure we have enough data to read
-            if (!message.CanReadFor(Size))
+            if (!message.Serializer.CanReadFor(Size))
             {
                 return;
             }
 
             // get a pointer to the message data
-            fixed (byte* ptr = message.Data)
+            fixed (byte* ptr = message.Serializer.Buffer)
             {
                 byte* b = ptr;
-                b += message.currentReadingIndex;
+                b += message.Serializer.Position;
                 Deserialize(ref b);
             }
             // move the reading index of the message
-            message.DummyRead(Size);
+            message.Serializer.DummyRead(Size);
         }
 
         /// <summary>
@@ -84,16 +84,16 @@
         /// <param name="message"> message to deserialize the state frame</param>
         public unsafe void Deserialize(NetworkMessage message)
         {
-            if (message.CanReadFor(Size))
+            if (message.Serializer.CanReadFor(Size))
             {
                 // write transform values using pointer
-                fixed (byte* ptr = message.Data)
+                fixed (byte* ptr = message.Serializer.Buffer)
                 {
                     byte* b = ptr;
-                    b += message.currentReadingIndex;
+                    b += message.Serializer.Position;
                     Deserialize(ref b);
                 }
-                message.DummyRead(Size);
+                message.Serializer.DummyRead(Size);
             }
         }
 
