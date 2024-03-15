@@ -5,7 +5,7 @@ namespace NetSquare.Server.Worlds
 {
     public class ChunkedClient
     {
-        public uint ClientID { get; private set; }
+        public uint ClientID { get; internal set; }
         public short ChunkX { get; private set; }
         public short ChunkY { get; private set; }
         public NetsquareTransformFrame LastPosition { get; set; }

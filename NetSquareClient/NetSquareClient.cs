@@ -184,17 +184,17 @@ namespace NetSquare.Client
                 {
                     while (messagesQueue.TryDequeue(out message))
                     {
-                        switch ((MessageType)message.MsgType)
+                        switch ((NetSquareMessageType)message.MsgType)
                         {
                             // It's a default message, we need to dispatch it to the right action
                             default:
-                            case MessageType.Default:
+                            case NetSquareMessageType.Default:
                                 if (!Dispatcher.DispatchMessage(message))
                                     OnUnregisteredMessageReceived?.Invoke(message);
                                 break;
 
                             // It's a reply message, we need to invoke the callback
-                            case MessageType.Reply:
+                            case NetSquareMessageType.Reply:
                                 if (replyCallBack.ContainsKey(message.ReplyID))
                                 {
                                     Dispatcher.ExecuteinMainThread(replyCallBack[message.ReplyID], message);
@@ -203,7 +203,7 @@ namespace NetSquare.Client
                                 break;
 
                             // It's a Synchronize message, let's invoke WorldsManager Syncronizer to handle it
-                            case MessageType.SynchronizeMessageCurrentWorld:
+                            case NetSquareMessageType.SynchronizeMessageCurrentWorld:
                                 Dispatcher.ExecuteinMainThread((msg) =>
                                 {
                                     WorldsManager.Fire_OnSyncronize(msg);
@@ -418,7 +418,7 @@ namespace NetSquare.Client
                 {
                     float sendTime = timeStopWatch.ElapsedMilliseconds / 1000f;
                     // send sync message
-                    SendMessage(new NetworkMessage(NetSquareMessageType.ClientSynchronizeTime, ClientID), (reply) =>
+                    SendMessage(new NetworkMessage(NetSquareMessageID.ClientSynchronizeTime, ClientID), (reply) =>
                     {
                         // get receive time
                         float receiveTime = timeStopWatch.ElapsedMilliseconds / 1000f;

@@ -12,7 +12,7 @@ namespace NetSquare.Server.Utils
         public static void Reply(this NetworkMessage messageFrom, NetworkMessage message)
         {
             message.HeadID = messageFrom.HeadID;
-            message.MsgType = (byte)MessageType.Reply;
+            message.MsgType = (byte)NetSquareMessageType.Reply;
             message.ReplyID = messageFrom.ReplyID;
             messageFrom.Client?.AddTCPMessage(message);
         }

@@ -125,7 +125,7 @@ namespace NetSquare.Server.Worlds
                     if (chunk != null && chunk.Clients.Count > 0)
                     {
                         // create new synch message
-                        NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageType.SetSynchFramesPacked);
+                        NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
                         // iterate on each clients in the chunk
                         lock (chunk.Clients)
                         {
@@ -187,7 +187,7 @@ namespace NetSquare.Server.Worlds
             var chunk = GetChunk(client.ChunkX, client.ChunkY);
 
             // leaving clients
-            NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageType.ClientsLeaveWorld);
+            NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
             // pack message
             foreach (uint oldVisible in client.VisibleIDs)
                 if (!chunk.Clients.ContainsKey(oldVisible)) // client just leave FOV
@@ -197,7 +197,7 @@ namespace NetSquare.Server.Worlds
                 World.server.SendToClient(leavingMessage, client.ClientID);
 
             // joining clients
-            NetworkMessage JoiningPacked = new NetworkMessage(NetSquareMessageType.ClientsJoinWorld);
+            NetworkMessage JoiningPacked = new NetworkMessage(NetSquareMessageID.ClientsJoinWorld);
             List<NetworkMessage> JoiningClientMessages = new List<NetworkMessage>();
 
             // iterate on each clients in my spatializer

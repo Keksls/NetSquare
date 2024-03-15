@@ -69,7 +69,7 @@ namespace NetSquare.Server
             MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
             Statistics = new ServerStatisticsManager();
             // register client sync time
-            Dispatcher.AddHeadAction(NetSquareMessageType.ClientSynchronizeTime, "ClientSyncTime", (message) =>
+            Dispatcher.AddHeadAction(NetSquareMessageID.ClientSynchronizeTime, "ClientSyncTime", (message) =>
             {
                 message.Reply(new NetworkMessage().Set(Time));
             });
@@ -296,7 +296,7 @@ namespace NetSquare.Server
         {
             message.HeadID = messageFrom.HeadID;
             message.ClientID = messageFrom.ClientID;
-            message.MsgType = (byte)MessageType.Reply;
+            message.MsgType = (byte)NetSquareMessageType.Reply;
             message.ReplyID = messageFrom.ReplyID;
         }
 
@@ -575,30 +575,6 @@ namespace NetSquare.Server
         #endregion
 
         #region Public Utils
-        /// <summary>
-        /// Replace a client ID
-        /// </summary>
-        /// <param name="oldID"> The old ID </param>
-        /// <param name="newID"> The new ID </param>
-        /// <returns> True if the client ID was replaced, false otherwise </returns>
-        public bool ReplaceClientID(uint oldID, uint newID)
-        {
-            lock (Clients)
-            {
-                if (Clients.ContainsKey(oldID) && !Clients.ContainsKey(newID))
-                {
-                    ConnectedClient client = null;
-                    if (Clients.TryRemove(oldID, out client))
-                    {
-                        client.ID = newID;
-                        Clients.TryAdd(newID, client);
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
         /// <summary>
         /// Check if a client is connected
         /// </summary>

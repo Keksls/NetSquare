@@ -1,6 +1,6 @@
 ﻿namespace NetSquare.Core.Messages
 {
-    public enum NetSquareMessageType : ushort
+    public enum NetSquareMessageID : ushort
     {
         ClientJoinWorld = 65535,
         ClientLeaveWorld = 65534,

@@ -63,11 +63,11 @@ namespace NetSquare.Server.Server
                                 continue;
                             }
 
-                            switch ((MessageType)currentMessage.MsgType)
+                            switch ((NetSquareMessageType)currentMessage.MsgType)
                             {
                                 // It's a default message (may be a Reply, we don't want to handle this on server side, it will be handled on client side), we need to dispatch it to the right action
                                 default:
-                                case MessageType.Default:
+                                case NetSquareMessageType.Default:
                                     if (!server.Dispatcher.DispatchMessage(currentMessage))
                                     {
                                         Writer.Write("Trying to Process message with head '" + currentMessage.HeadID.ToString() + "' but no action related... Message skipped.", ConsoleColor.DarkMagenta);
@@ -76,12 +76,12 @@ namespace NetSquare.Server.Server
                                     break;
 
                                 // It's a broadcast message, we need to broadcast it to all clients in the current world
-                                case MessageType.BroadcastCurrentWorld:
+                                case NetSquareMessageType.BroadcastCurrentWorld:
                                     server.Worlds.BroadcastToWorld(currentMessage);
                                     break;
 
                                 // It's a synchronization message, we need to synchronize it to all clients in the current world
-                                case MessageType.SynchronizeMessageCurrentWorld:
+                                case NetSquareMessageType.SynchronizeMessageCurrentWorld:
                                     server.Worlds.ReceiveSyncronizationMessage(currentMessage);
                                     break;
                             }

@@ -25,14 +25,14 @@ namespace NetSquare.Client
         public WorldsManager(NetSquareClient _client)
         {
             client = _client;
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsLeaveWorld, "ClientsLeaveCurrentWorld", ClientsLeaveCurrentWorld);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.ClientsJoinWorld, "ClientsJoinCurrentWorld", ClientsJoinCurrentWorld);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientsLeaveWorld, "ClientsLeaveCurrentWorld", ClientsLeaveCurrentWorld);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientsJoinWorld, "ClientsJoinCurrentWorld", ClientsJoinCurrentWorld);
 
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFrame, "SetSynchFrame", SetSynchFrame);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFrames, "SetSynchFrames", SetSynchFrames);
-            client.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFramesPacked, "SetSynchFramesPacked", SetSynchFramesPacked);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.SetSynchFrame, "SetSynchFrame", SetSynchFrame);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.SetSynchFrames, "SetSynchFrames", SetSynchFrames);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.SetSynchFramesPacked, "SetSynchFramesPacked", SetSynchFramesPacked);
         }
 
         #region Public Network Methods
@@ -53,7 +53,7 @@ namespace NetSquare.Client
             }
 
             // send a message to the server to join the world
-            NetworkMessage message = new NetworkMessage(NetSquareMessageType.ClientJoinWorld).Set(worldID);
+            NetworkMessage message = new NetworkMessage(NetSquareMessageID.ClientJoinWorld).Set(worldID);
             clientTransform.Serialize(message);
             // send the message to the server
             client.SendMessage(message, (reply) =>
@@ -86,7 +86,7 @@ namespace NetSquare.Client
                 return;
             }
 
-            client.SendMessage(new NetworkMessage(NetSquareMessageType.ClientLeaveWorld), (response) =>
+            client.SendMessage(new NetworkMessage(NetSquareMessageID.ClientLeaveWorld), (response) =>
             {
                 if (response.Serializer.GetBool())
                 {
@@ -108,7 +108,7 @@ namespace NetSquare.Client
             if (!IsInWorld)
                 return;
             // set TypeID as broadcast
-            message.SetType(MessageType.BroadcastCurrentWorld);
+            message.SetType(NetSquareMessageType.BroadcastCurrentWorld);
             client.SendMessage(message);
         }
 
@@ -123,7 +123,7 @@ namespace NetSquare.Client
             if (!IsInWorld)
                 return;
             // set TypeID as synchronize
-            message.SetType(MessageType.SynchronizeMessageCurrentWorld);
+            message.SetType(NetSquareMessageType.SynchronizeMessageCurrentWorld);
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
             else
@@ -142,7 +142,7 @@ namespace NetSquare.Client
         {
             if (!IsInWorld)
                 return;
-            NetworkMessage message = new NetworkMessage(NetSquareMessageType.SetSynchFrame, client.ClientID);
+            NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrame, client.ClientID);
             synchFrame.Serialize(message);
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
@@ -169,7 +169,7 @@ namespace NetSquare.Client
             if (currentClientFrames.Count == 0)
                 return;
 
-            NetworkMessage message = new NetworkMessage(NetSquareMessageType.SetSynchFrames, client.ClientID);
+            NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrames, client.ClientID);
             NetSquareSynchFramesUtils.SerializeFrames(message, currentClientFrames);
             currentClientFrames.Clear();
 

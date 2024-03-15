@@ -1,6 +1,6 @@
 ﻿namespace NetSquare.Core
 {
-    public enum MessageType : byte
+    public enum NetSquareMessageType : byte
     {
         Default = 0,
         Reply = 1,

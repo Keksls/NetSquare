@@ -79,7 +79,7 @@
     <Compile Include="Encryption\XOR_Encryptor.cs" />
     <Compile Include="NetSquareProtocoleType.cs" />
     <Compile Include="HandShake.cs" />
-    <Compile Include="Messages\NetSquareMessageType.cs" />
+    <Compile Include="Messages\NetSquareMessageID.cs" />
     <Compile Include="Messages\Half.cs" />
     <Compile Include="Messages\HalfHelper.cs" />
     <Compile Include="Messages\NetSquareMessageTypes.cs" />

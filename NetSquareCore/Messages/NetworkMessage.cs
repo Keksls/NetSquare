@@ -13,7 +13,7 @@ namespace NetSquare.Core
         public NetSquareSerializer Serializer { get; set; }
         public bool HasWriteData { get { return Serializer.HasWriteData; } }
         public ConnectedClient Client { get; set; }
-        public bool Serialized { get { return Serializer.SerializationMode == NetSquareSerializationMode.Read; } }
+        public bool IsSerialized { get { return Serializer.SerializationMode == NetSquareSerializationMode.Read; } }
         public int MessageLength { get; private set; }
 
         #region Constructors
@@ -115,7 +115,7 @@ namespace NetSquare.Core
         public void ReplyTo(uint replyID)
         {
             ReplyID = replyID;
-            MsgType = (byte)MessageType.Reply;
+            MsgType = (byte)NetSquareMessageType.Reply;
         }
 
         /// <summary>
@@ -125,7 +125,7 @@ namespace NetSquare.Core
         /// <param name="typeID">ID of the type</param>
         public void SetType(byte typeID)
         {
-            MsgType = (byte)(MessageType.MAX + typeID);
+            MsgType = (byte)(NetSquareMessageType.MAX + typeID);
         }
 
         /// <summary>
@@ -136,9 +136,9 @@ namespace NetSquare.Core
         /// 10 or + => message send to server, client wait for response. Response ID will be that ID
         /// </summary>
         /// <param name="typeID"></param>
-        public void SetType(MessageType type)
+        public void SetType(NetSquareMessageType type)
         {
-            MsgType = (byte)MessageType.Reply;
+            MsgType = (byte)NetSquareMessageType.Reply;
         }
         #endregion
 
@@ -196,7 +196,7 @@ namespace NetSquare.Core
         /// <returns>size of the head of the message</returns>
         public int GetHeadSize()
         {
-            return MsgType == (byte)MessageType.Reply ? 13 : 10;
+            return MsgType == (byte)NetSquareMessageType.Reply ? 13 : 10;
         }
 
         /// <summary>
@@ -254,7 +254,7 @@ namespace NetSquare.Core
             ClientID = UInt24.GetUInt(data, 4);
             HeadID = BitConverter.ToUInt16(data, 7);
             MsgType = data[9];
-            if (MsgType == (byte)MessageType.Reply)
+            if (MsgType == (byte)NetSquareMessageType.Reply)
                 ReplyID = UInt24.GetUInt(data, 10);
             else
                 ReplyID = 0;
@@ -281,7 +281,7 @@ namespace NetSquare.Core
             // write Type ID
             data[9] = MsgType;
             // write Reply ID if needed
-            if (MsgType == (byte)MessageType.Reply)
+            if (MsgType == (byte)NetSquareMessageType.Reply)
             {
                 data[10] = (byte)((ReplyID) & 0xFF);
                 data[11] = (byte)((ReplyID >> 8) & 0xFF);
@@ -458,7 +458,7 @@ namespace NetSquare.Core
         /// <returns></returns>
         public byte[] Serialize(bool ignoreCompression = false)
         {
-            if (Serialized)
+            if (IsSerialized)
                 return Serializer.ToArray();
 
             int currentIndex = GetHeadSize();

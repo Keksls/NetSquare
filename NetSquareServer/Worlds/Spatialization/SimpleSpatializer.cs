@@ -92,7 +92,7 @@ namespace NetSquare.Server.Worlds
                     // get visible clients
                     HashSet<uint> visibleClients = GetVisibleClients(client.Key);
                     // create new synch message
-                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageType.SetSynchFramesPacked);
+                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
 
                     // add visible clients to the message
                     foreach (var visibleClient in visibleClients)

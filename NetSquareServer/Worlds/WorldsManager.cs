@@ -28,10 +28,10 @@ namespace NetSquare.Server.Worlds
         public WorldsManager(NetSquareServer _server)
         {
             server = _server;
-            server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientJoinWorld, "ClientJoinWorld", TryAddClientToWorld);
-            server.Dispatcher.AddHeadAction(NetSquareMessageType.ClientLeaveWorld, "ClientLeaveWorld", TryRemoveClientFromWorld);
-            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFrame, "SetSynchFrame", SetSynchFrame);
-            server.Dispatcher.AddHeadAction(NetSquareMessageType.SetSynchFrames, "SetSynchFrames", SetSynchFrames);
+            server.Dispatcher.AddHeadAction(NetSquareMessageID.ClientJoinWorld, "ClientJoinWorld", TryAddClientToWorld);
+            server.Dispatcher.AddHeadAction(NetSquareMessageID.ClientLeaveWorld, "ClientLeaveWorld", TryRemoveClientFromWorld);
+            server.Dispatcher.AddHeadAction(NetSquareMessageID.SetSynchFrame, "SetSynchFrame", SetSynchFrame);
+            server.Dispatcher.AddHeadAction(NetSquareMessageID.SetSynchFrames, "SetSynchFrames", SetSynchFrames);
         }
 
         /// <summary>
@@ -104,7 +104,7 @@ namespace NetSquare.Server.Worlds
             {
                 NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
                 // tell anyone in this world that a client just leave the world
-                world.Broadcast(new NetworkMessage(NetSquareMessageType.ClientLeaveWorld, clientID).Set(clientID));
+                world.Broadcast(new NetworkMessage(NetSquareMessageID.ClientLeaveWorld, clientID).Set(clientID));
                 world.Synchronizer?.RemoveMessagesFromClient(clientID);
                 world.TryLeaveWorld(clientID);
                 ClientsWorlds.Remove(clientID);
@@ -187,7 +187,7 @@ namespace NetSquare.Server.Worlds
                     if (!world.UseSpatializer) // if spatializer is used, it will handle this event, so let's do nothing here
                     {
                         // send new client to connected clients but the new
-                        NetworkMessage joinMessage = new NetworkMessage(NetSquareMessageType.ClientJoinWorld, message.ClientID);
+                        NetworkMessage joinMessage = new NetworkMessage(NetSquareMessageID.ClientJoinWorld, message.ClientID);
                         clientTransform.Serialize(joinMessage);
                         OnClientJoinWorld?.Invoke(worldID, message.ClientID, clientTransform, joinMessage);
                         world.Broadcast(joinMessage, message.ClientID, true);
@@ -201,7 +201,7 @@ namespace NetSquare.Server.Worlds
                                 if (client.Key == message.ClientID)
                                     continue;
                                 // create new message
-                                NetworkMessage connectedClientMessage = new NetworkMessage(NetSquareMessageType.ClientJoinWorld, client.Key);
+                                NetworkMessage connectedClientMessage = new NetworkMessage(NetSquareMessageID.ClientJoinWorld, client.Key);
                                 // set Transform frame
                                 client.Value.Serialize(connectedClientMessage);
                                 // send message so server event for being custom binded
@@ -280,7 +280,7 @@ namespace NetSquare.Server.Worlds
                             if (!world.UseSpatializer) // if spatializer is used, it will handle this event, so let's do nothing here
                             {
                                 // tell anyone in this world that a client just leave the world
-                                world.Broadcast(new NetworkMessage(NetSquareMessageType.ClientLeaveWorld).Set(message.ClientID));
+                                world.Broadcast(new NetworkMessage(NetSquareMessageID.ClientLeaveWorld).Set(message.ClientID));
                             }
                         }
                     }

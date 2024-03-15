@@ -28,7 +28,7 @@ namespace NetSquare.Server.Worlds
             lock (Visibles)
             {
                 // leaving clients
-                NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageType.ClientsLeaveWorld);
+                NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
                 bool clientLeaveFOV = false;
                 // pack message
                 foreach (SpatialClient oldVisible in Visibles)
@@ -43,7 +43,7 @@ namespace NetSquare.Server.Worlds
                     Client.AddTCPMessage(leavingMessage);
 
                 // joining clients
-                NetworkMessage JoiningPacked = new NetworkMessage(NetSquareMessageType.ClientsJoinWorld);
+                NetworkMessage JoiningPacked = new NetworkMessage(NetSquareMessageID.ClientsJoinWorld);
                 List<NetworkMessage> JoiningClientMessages = new List<NetworkMessage>();
                 HashSet<SpatialClient> newVisibles = new HashSet<SpatialClient>();
                 VisibleIDs.Clear();
