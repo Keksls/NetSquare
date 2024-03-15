@@ -119,8 +119,7 @@ namespace NetSquare.Server
                 byte[] handShake = HandShake.GetRandomHandShake(out rnd1, out rnd2, out key);
                 client.Send(handShake, 0, handShake.Length, SocketFlags.None);
                 bool isClientOK = false;
-                uint desiredClientID = uint.MaxValue;
-                Writer.Write("HandShake client " + rnd1 + " " + rnd2 + " " + key, ConsoleColor.Cyan);
+                //Writer.Write("HandShake client " + rnd1 + " " + rnd2 + " " + key, ConsoleColor.Cyan);
 
                 // wait for client renspond correct hash
                 while (client.Connected && DateTime.Now.Ticks < timeEnd)
@@ -133,16 +132,14 @@ namespace NetSquare.Server
                     }
 
                     // get awnser
-                    if (client.Available >= 7)
+                    if (client.Available >= 4)
                     {
-                        byte[] array = new byte[7];
-                        client.Receive(array, 0, 7, SocketFlags.None);
+                        byte[] array = new byte[4];
+                        client.Receive(array, 0, 4, SocketFlags.None);
                         int clientKey = BitConverter.ToInt32(array, 0);
                         if (clientKey == key)
                         {
                             isClientOK = true;
-                            // get clientID
-                            desiredClientID = new UInt24(array[3], array[4], array[5]).UInt32;
                         }
                         else
                             Writer.Write("Client awnser wrong handshake key.", ConsoleColor.Red);
@@ -153,7 +150,7 @@ namespace NetSquare.Server
                 // client awnser good
                 if (isClientOK)
                 {
-                    Writer.Write("Client awnser good handshake key. Accept it.", ConsoleColor.Green);
+                    //Writer.Write("Client awnser good handshake key. Accept it.", ConsoleColor.Green);
 
                     ConnectedClient cClient = new ConnectedClient();
                     cClient.SetClient(client, false, server.ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP);

@@ -576,6 +576,25 @@ namespace NetSquare.Server
 
         #region Public Utils
         /// <summary>
+        /// Replace a client ID
+        /// </summary>
+        /// <param name="oldID"> The old ID </param>
+        /// <param name="newID"> The new ID </param>
+        /// <returns> True if the client ID was replaced, false otherwise </returns>
+        public bool ReplaceClientID(uint oldID, uint newID)
+        {
+            if (Clients.ContainsKey(oldID) && !Clients.ContainsKey(newID))
+            {
+                ConnectedClient client = Clients[oldID];
+                client.ID = newID;
+                Clients.TryAdd(newID, client);
+                Clients.TryRemove(oldID, out ConnectedClient oldClient);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Check if a client is connected
         /// </summary>
         /// <param name="clientID"> The client ID </param>
