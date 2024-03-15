@@ -42,11 +42,11 @@ namespace NetSquare.Server
         public static bool IsBlackListed(Socket client)
         {
             string IP = ((IPEndPoint)client.RemoteEndPoint).Address.ToString();
-            Writer.Write("[" + IP + "] Checking blacklist... (" + DateTime.Now.ToString() + ")", ConsoleColor.DarkRed);
+            //Writer.Write("[" + IP + "] Checking blacklist... (" + DateTime.Now.ToString() + ")", ConsoleColor.DarkRed);
 
             if (IsLocalAddress(IP))
             {
-                Writer.Write("[" + IP + "] Local IP, it's OK.", ConsoleColor.Green);
+                //Writer.Write("[" + IP + "] Local IP, it's OK.", ConsoleColor.Green);
                 return false;
             }
 
@@ -62,7 +62,7 @@ namespace NetSquare.Server
                 return true;
             }
 
-            Writer.Write("[" + IP + "] Not blacklisted.", ConsoleColor.Green);
+            //Writer.Write("[" + IP + "] Not blacklisted.", ConsoleColor.Green);
             return false;
         }
 
