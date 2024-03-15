@@ -574,7 +574,7 @@ namespace NetSquare.Server
         }
         #endregion
 
-        #region Utils
+        #region Public Utils
         /// <summary>
         /// Replace a client ID
         /// </summary>
