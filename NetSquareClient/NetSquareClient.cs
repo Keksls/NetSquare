@@ -45,10 +45,11 @@ namespace NetSquare.Client
         /// <summary>
         /// Instantiate a new NetSquare client
         /// </summary>
-        public NetSquareClient()
+        public NetSquareClient(bool autoBindNetsquareActions = true)
         {
             Dispatcher = new NetSquareDispatcher();
-            Dispatcher.AutoBindHeadActionsFromAttributes();
+            if (autoBindNetsquareActions)
+                Dispatcher.AutoBindHeadActionsFromAttributes();
             WorldsManager = new WorldsManager(this);
 
             // initiate Type Dictionnary
@@ -468,6 +469,17 @@ namespace NetSquare.Client
             // start sync thread
             syncThread.IsBackground = true;
             syncThread.Start();
+        }
+        #endregion
+
+        #region Public Utils
+        /// <summary>
+        /// Replace the client ID with a new one
+        /// </summary>
+        /// <param name="newID"> New ID to set</param>
+        public void ReplaceClientID(uint newID)
+        {
+            Client.ID = newID;
         }
         #endregion
     }
