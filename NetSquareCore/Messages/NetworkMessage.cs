@@ -631,6 +631,7 @@ namespace NetSquare.Core
                 currentReadingIndex += size;
                 // add message to list
                 message.Serializer = new NetSquareSerializer();
+                message.Serializer.StartReading(data);
                 message.Serializer.Position = 0;
                 messages.Add(message);
             }
