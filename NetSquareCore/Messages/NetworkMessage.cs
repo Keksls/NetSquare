@@ -210,6 +210,27 @@ namespace NetSquare.Core
         }
 
         /// <summary>
+        /// Get the body of the message
+        /// </summary>
+        /// <returns> body of the message </returns>
+        public byte[] GetBody()
+        {
+            byte[] data = new byte[Serializer.Length - GetHeadSize()];
+            Buffer.BlockCopy(Serializer.Buffer, GetHeadSize(), data, 0, data.Length);
+            return data;
+        }
+
+        /// <summary>
+        /// Set the body of the message
+        /// </summary>
+        /// <param name="data"> data to set</param>
+        public void SetBody(byte[] data)
+        {
+            Serializer.StartWriting();
+            Serializer.Set(data);
+        }
+
+        /// <summary>
         /// Encrypt and compress data
         /// </summary>
         /// <param name="data"> data to encrypt and compress</param>
@@ -267,10 +288,10 @@ namespace NetSquare.Core
         internal void WriteHead(ref byte[] data)
         {
             // write message Size
-            data[0] = (byte)((MessageLength) & 0xFF);
-            data[1] = (byte)((MessageLength >> 8) & 0xFF);
-            data[2] = (byte)((MessageLength >> 16) & 0xFF);
-            data[3] = (byte)((MessageLength >> 24) & 0xFF);
+            data[0] = (byte)((data.Length) & 0xFF);
+            data[1] = (byte)((data.Length >> 8) & 0xFF);
+            data[2] = (byte)((data.Length >> 16) & 0xFF);
+            data[3] = (byte)((data.Length >> 24) & 0xFF);
             // write Client ID
             data[4] = (byte)((ClientID) & 0xFF);
             data[5] = (byte)((ClientID >> 8) & 0xFF);
@@ -609,7 +630,8 @@ namespace NetSquare.Core
                 Buffer.BlockCopy(Serializer.Buffer, currentReadingIndex, data, 0, size);
                 currentReadingIndex += size;
                 // add message to list
-                message.SetReadingIndex(0);
+                message.Serializer = new NetSquareSerializer();
+                message.Serializer.Position = 0;
                 messages.Add(message);
             }
 
