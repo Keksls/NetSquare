@@ -209,9 +209,11 @@ namespace NetSquare.Client
             if (OnClientJoinWorld == null)
                 return;
 
-            List<NetworkMessage> messages = packedMessage.UnpackWithoutHead();
+            List<NetworkMessage> messages = packedMessage.Unpack();
             foreach (var message in messages)
+            {
                 ClientJoinCurrentWorld(message);
+            }
         }
 
         /// <summary>

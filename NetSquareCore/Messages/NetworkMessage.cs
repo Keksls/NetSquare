@@ -524,9 +524,7 @@ namespace NetSquare.Core
             int nb = 0;
             foreach (NetworkMessage message in messages)
             {
-                if (!alreadySerialized)
-                    message.Serialize(true);
-                lenght += message.Serializer.Length + (6 - headSize); // blockSize (3 bits) + clientID (3 bits) - headSize (10 or 13 bits) <= we remove head (10 or 13 bits) and we add blockSize (3 bits) and clientID (3 bits)
+                lenght += message.Serializer.Length + 6; // blockSize (3 bits) + clientID (3 bits)
                 nb++;
             }
 
@@ -541,7 +539,7 @@ namespace NetSquare.Core
             foreach (NetworkMessage message in messages)
             {
                 // Write block Lenght
-                UInt24 blockSize = new UInt24((uint)(message.Serializer.Length - headSize));
+                UInt24 blockSize = new UInt24((uint)(message.Serializer.Length));
                 data[index++] = blockSize.b0;
                 data[index++] = blockSize.b1;
                 data[index++] = blockSize.b2;
@@ -551,8 +549,8 @@ namespace NetSquare.Core
                 data[index++] = (byte)((message.ClientID >> 8) & 0xFF);
                 data[index++] = (byte)((message.ClientID >> 16) & 0xFF);
 
-                Buffer.BlockCopy(message.Serializer.ToArray(), headSize, data, index, message.Serializer.Length - headSize);
-                index += message.Serializer.Length - headSize;
+                Buffer.BlockCopy(message.Serializer.ToArray(), 0, data, index, message.Serializer.Length);
+                index += message.Serializer.Length;
             }
 
             // Write head
@@ -572,48 +570,11 @@ namespace NetSquare.Core
         /// <returns> unpacked messages</returns>
         public List<NetworkMessage> Unpack()
         {
-            List<NetworkMessage> messages = new List<NetworkMessage>();
-
-            int headSize = GetHeadSize();
-            int currentReadingIndex = headSize;
-            // reading each packed blocks
-            while (CanGetNextBlock())
-            {
-                // get block size
-                int size = (int)Serializer.GetUInt24().UInt32;
-                if (size == 0)
-                    break;
-                // create message
-                NetworkMessage message = new NetworkMessage(HeadID, Serializer.GetUInt24().UInt32);
-                message.MsgType = MsgType;
-                message.ReplyID = ReplyID;
-                size -= 3;
-                // copy block data into message
-                byte[] data = new byte[size + headSize];
-                Buffer.BlockCopy(Serializer.Buffer, currentReadingIndex, data, headSize, size);
-                currentReadingIndex += size;
-                // add message to list
-                message.Serializer = new NetSquareSerializer();
-                message.Serializer.StartReading(data);
-                message.RestartRead();
-                messages.Add(message);
-            }
-
-            return messages;
-        }
-
-        /// <summary>
-        /// Unpack packed messages without head
-        /// </summary>
-        /// <returns> unpacked messages</returns>
-        public List<NetworkMessage> UnpackWithoutHead()
-        {
             // ======== DATA =========  <= For each message
             //  - BlockSize :       Int24   3 bytes
             //  - ClientID :        Int24   3 bytes
             //  - Data :            var     BlockSize bytes
             List<NetworkMessage> messages = new List<NetworkMessage>();
-            int currentReadingIndex = GetHeadSize();
             // reading each packed blocks
             while (CanGetNextBlock())
             {
@@ -627,8 +588,7 @@ namespace NetSquare.Core
                 message.ReplyID = ReplyID;
                 // copy block data into message
                 byte[] data = new byte[size];
-                Buffer.BlockCopy(Serializer.Buffer, currentReadingIndex, data, 0, size);
-                currentReadingIndex += size;
+                Buffer.BlockCopy(Serializer.Buffer, Serializer.Position, data, 0, size);
                 // add message to list
                 message.Serializer = new NetSquareSerializer();
                 message.Serializer.StartReading(data);

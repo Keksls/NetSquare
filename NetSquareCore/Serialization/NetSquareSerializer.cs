@@ -1959,7 +1959,8 @@ namespace NetSquare.Core
         {
             if (_position + length > _buffer.Length)
             {
-                byte[] newBuffer = new byte[_growMin == 0 ? _buffer.Length * 2 : _buffer.Length + length + _growMin];
+                int toGrow = _growMin == 0 ? _buffer.Length > length ? _buffer.Length : length : length + _growMin;
+                byte[] newBuffer = new byte[_buffer.Length + toGrow];
                 Array.Copy(_buffer, newBuffer, _position);
                 _buffer = newBuffer;
             }

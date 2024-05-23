@@ -70,12 +70,26 @@ namespace NetSquare.Server
             return IPBlackList.Contains(IP);
         }
 
+        /// <summary>
+        /// Check if the IP is blacklisted on AbuseIPDB
+        /// TODO : Fix captcha issue
+        /// </summary>
+        /// <param name="IP"> IP to check </param>
+        /// <returns> True if the IP is blacklisted, false otherwise </returns>
         public static bool IsBlackListed_AbuseIPDB(string IP)
         {
-            WebClient client = new WebClient();
-            string findedString = IP + "</span></b> was found in our database!";
-            string rep = client.DownloadString("https://www.abuseipdb.com/check/" + IP);
-            return rep.Contains(findedString);
+            try
+            {
+                WebClient client = new WebClient();
+                string findedString = IP + "</span></b> was found in our database!";
+                string rep = client.DownloadString("https://www.abuseipdb.com/check/" + IP);
+                return rep.Contains(findedString);
+            }
+            catch (Exception ex)
+            {
+                Writer.Write("Error while checking AbuseIPDB : " + ex.Message, ConsoleColor.DarkRed);
+                return false;
+            }
         }
 
         public static void BlackList(TcpClient client)
