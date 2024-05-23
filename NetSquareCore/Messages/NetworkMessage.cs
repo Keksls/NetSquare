@@ -589,6 +589,7 @@ namespace NetSquare.Core
                 // copy block data into message
                 byte[] data = new byte[size];
                 Buffer.BlockCopy(Serializer.Buffer, Serializer.Position, data, 0, size);
+                Serializer.DummyRead(size);
                 // add message to list
                 message.Serializer = new NetSquareSerializer();
                 message.Serializer.StartReading(data);
