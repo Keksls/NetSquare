@@ -30,11 +30,10 @@ namespace NetSquare.Client
         public int NbSendingMessages { get { return Client != null ? Client.NbMessagesToSend : 0; } }
         public int NbProcessingMessages { get { return messagesQueue.Count; } }
         public NetSquareProtocoleType ProtocoleType;
-        public float Time { get { return serverTimeOffset + (stopwatch.ElapsedMilliseconds / 1000f); } }
+        public float Time { get { return (float)(DateTime.Now.Ticks - serverTimeOffset) / (float)TimeSpan.TicksPerSecond; } }
         public bool IsTimeSynchonized { get { return serverTimeOffset != 0f; } }
         private bool isSynchronizingTime = false;
-        public float serverTimeOffset;
-        public Stopwatch stopwatch = new Stopwatch();
+        public long serverTimeOffset;
         private uint nbReplyAsked = 1;
         private bool isStarted;
         private ConcurrentQueue<NetworkMessage> messagesQueue = new ConcurrentQueue<NetworkMessage>();
@@ -386,7 +385,7 @@ namespace NetSquare.Client
         /// </summary>
         /// <param name="precision">1 to 10, 1 is the less precise, 10 is the most precise</param>
         /// <param name="timeBetweenSyncs">Time between each sync in milliseconds</param>
-        /// <param name="onServerTimeGet">Callback when server time is get, parameter is server time</param>
+        /// <param name="onServerTimeGet">Callback</param>
         public void SyncTime(int precision, int timeBetweenSyncs = 1000, Action<float> onServerTimeGet = null)
         {
             // clamp precision between 1 and 10
@@ -401,41 +400,37 @@ namespace NetSquare.Client
             isSynchronizingTime = true;
 
             // create array to store received times
-            float[] clientTimeOffsets = new float[precision];
+            long[] clientTimeOffsets = new long[precision];
 
-            // reset stopwatch and server time offset
-            stopwatch.Reset();
-            stopwatch.Stop();
+            // reset server time offset
             serverTimeOffset = 0;
 
             // start sync thread
             Thread syncThread = new Thread(() =>
             {
-                Stopwatch timeStopWatch = new Stopwatch();
-                timeStopWatch.Start();
                 // iterate precision times
                 for (int i = 0; i < precision; i++)
                 {
-                    float sendTime = timeStopWatch.ElapsedMilliseconds / 1000f;
+                    DateTime sendTime = DateTime.Now;
                     // send sync message
                     SendMessage(new NetworkMessage(NetSquareMessageID.ClientSynchronizeTime, ClientID), (reply) =>
                     {
                         // get receive time
-                        float receiveTime = timeStopWatch.ElapsedMilliseconds / 1000f;
-                        float localServerReceiveTime = (receiveTime - sendTime) / 2;
+                        DateTime receiveTime = DateTime.Now;
+                        TimeSpan timeDifference = receiveTime - sendTime;
+                        float pingDuration = (float)timeDifference.TotalSeconds / 2;
 
                         // get server time
-                        float serverMsSinceStart = reply.Serializer.GetFloat();
+                        float serverTime = reply.Serializer.GetFloat();
 
                         // get server client time offset
-                        float timeOffset = serverMsSinceStart - (stopwatch.ElapsedMilliseconds / 1000f) + localServerReceiveTime;
+                        long timeOffset = receiveTime.Ticks - (long)(serverTime * TimeSpan.TicksPerSecond) + (long)(pingDuration * TimeSpan.TicksPerSecond);
                         clientTimeOffsets[i] = timeOffset;
 
                         // set time if first time
                         if (i == 0)
                         {
-                            serverTimeOffset = clientTimeOffsets[0] + stopwatch.ElapsedMilliseconds;
-                            stopwatch.Start();
+                            serverTimeOffset = clientTimeOffsets[0];
                             // invoke callback
                             onServerTimeGet?.Invoke(Time);
                         }
@@ -452,7 +447,7 @@ namespace NetSquare.Client
                 }
 
                 // calculate average time
-                float avgTime = 0;
+                long avgTime = 0;
                 for (int j = 0; j < precision; j++)
                     avgTime += clientTimeOffsets[j];
                 avgTime /= precision;
@@ -463,7 +458,6 @@ namespace NetSquare.Client
 
                 // stop synchronizing
                 isSynchronizingTime = false;
-                timeStopWatch.Stop();
             });
 
             // start sync thread
