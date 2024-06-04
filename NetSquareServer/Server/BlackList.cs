@@ -81,6 +81,12 @@ namespace NetSquare.Server
             try
             {
                 WebClient client = new WebClient();
+                // set client user agent
+                client.Headers.Add("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3");
+                // set client referer
+                client.Headers.Add("Referer", "https://www.abuseipdb.com/");
+                // set client accept
+                client.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
                 string findedString = IP + "</span></b> was found in our database!";
                 string rep = client.DownloadString("https://www.abuseipdb.com/check/" + IP);
                 return rep.Contains(findedString);
