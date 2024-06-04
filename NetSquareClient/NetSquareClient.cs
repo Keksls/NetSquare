@@ -3,6 +3,7 @@ using NetSquare.Core.Messages;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -395,7 +396,7 @@ namespace NetSquare.Client
         /// <param name="precision">1 to 10, 1 is the less precise, 10 is the most precise</param>
         /// <param name="timeBetweenSyncs">Time between each sync in milliseconds</param>
         /// <param name="onServerTimeGet">Callback</param>
-        public void SyncTime(Func<float> getClientTime, int precision = 5, int timeBetweenSyncs = 1000, Action<float> onServerTimeGet = null)
+        public void SyncTime(Func<float> getClientTime, int precision = 5, int timeBetweenSyncs = 1000, Action<float> onServerTimeGet = null, Action<string> onLog = null)
         {
             // clamp precision between 1 and 10
             precision = Math.Max(1, Math.Min(10, precision));
@@ -421,6 +422,7 @@ namespace NetSquare.Client
                 for (int i = 0; i < precision; i++)
                 {
                     DateTime sendTime = DateTime.Now;
+                    int index = i;
                     // send sync message
                     SendMessage(new NetworkMessage(NetSquareMessageID.ClientSynchronizeTime, ClientID), (reply) =>
                     {
@@ -438,10 +440,13 @@ namespace NetSquare.Client
                         float timeOffset = serverTime - clientTime;
 
                         // store time offset
-                        clientTimeOffsets[i] = timeOffset;
+                        clientTimeOffsets[index] = timeOffset;
+
+                        // log everything
+                        onLog?.Invoke($"Client time : {clientTime} | Server time : {serverTime} | Time offset : {timeOffset} | Ping : {pingDuration}");
 
                         // set time if first time
-                        if (i == 0)
+                        if (index == 0)
                         {
                             ServerTimeOffset = clientTimeOffsets[0];
                             // invoke callback
@@ -454,7 +459,7 @@ namespace NetSquare.Client
                 }
 
                 // wait for all time to be received
-                while (clientTimeOffsets[precision - 1] == 0)
+                while (clientTimeOffsets.Any(e => e == 0f))
                 {
                     Thread.Sleep(10);
                 }
@@ -463,8 +468,17 @@ namespace NetSquare.Client
                 float avgTime = 0;
                 for (int j = 0; j < precision; j++)
                     avgTime += clientTimeOffsets[j];
+                onLog?.Invoke($"Cumul time offset : {avgTime}");
                 avgTime /= precision;
                 ServerTimeOffset = avgTime;
+
+                // log all clientTimeOffsets
+                onLog?.Invoke($"Time offsets : {string.Join(" | ", clientTimeOffsets)}");
+
+                // log average time
+                onLog?.Invoke($"Average time offset : {avgTime}");
+                // log client time
+                onLog?.Invoke($"Client time : {getClientTime()} | Server time : {GetServerTime(getClientTime())}");
 
                 // invoke callback
                 onServerTimeGet?.Invoke(GetServerTime(getClientTime.Invoke()));
