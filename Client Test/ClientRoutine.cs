@@ -1,6 +1,7 @@
 ﻿using NetSquare.Client;
 using NetSquare.Core;
 using System;
+using System.Diagnostics;
 
 namespace Client_Test
 {
@@ -18,9 +19,11 @@ namespace Client_Test
         private float zOffset = 100;
         private static bool timeSynced => nbTimeSynced > 1;
         private static int nbTimeSynced = 0;
+        private Stopwatch sw;
 
         public void Start(float x, float y, float z)
         {
+            sw = Stopwatch.StartNew();
             client = new NetSquareClient();
             client.OnConnected += Client_Connected;
             client.OnConnectionFail += Client_ConnectionFail;
@@ -56,7 +59,7 @@ namespace Client_Test
             if (!timeSynced)
             {
                 startTime = DateTime.Now;
-                client.SyncTime(5, 200, (serverTime) =>
+                client.SyncTime(() => { return sw.ElapsedMilliseconds / 1000f; }, 5, 1000, (serverTime) =>
                 {
                     nbTimeSynced++;
                     serverOffset = serverTime - EnlapsedTime;
