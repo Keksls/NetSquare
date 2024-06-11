@@ -411,6 +411,7 @@ namespace NetSquare.Client
 
             // create array to store received times
             float[] clientTimeOffsets = new float[precision];
+            DateTime[] sendTimes = new DateTime[precision];
 
             // reset server time offset
             ServerTimeOffset = 0;
@@ -421,17 +422,17 @@ namespace NetSquare.Client
                 // iterate precision times
                 for (int i = 0; i < precision; i++)
                 {
-                    DateTime sendTime = DateTime.Now;
                     int index = i;
+                    sendTimes[index] = DateTime.Now;
                     // send sync message
                     SendMessage(new NetworkMessage(NetSquareMessageID.ClientSynchronizeTime, ClientID), (reply) =>
                     {
                         // get receive time
                         DateTime receiveTime = DateTime.Now;
-                        float pingDuration = (float)(receiveTime - sendTime).TotalSeconds / 2f;
+                        float pingDuration = (float)(receiveTime - sendTimes[index]).TotalSeconds / 2f;
 
                         // get server time
-                        float serverTime = reply.Serializer.GetFloat() - pingDuration;
+                        float serverTime = reply.Serializer.GetFloat() + pingDuration;
 
                         // get client time
                         float clientTime = getClientTime();
