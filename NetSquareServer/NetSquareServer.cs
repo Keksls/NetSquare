@@ -61,11 +61,12 @@ namespace NetSquare.Server
         /// Create a new NetSquareServer
         /// </summary>
         /// <param name="protocoleType"> The protocole type to use (TCP, UDP, Both) </param>
-        public NetSquareServer(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP)
+        public NetSquareServer(NetSquareProtocoleType protocoleType = NetSquareProtocoleType.TCP_AND_UDP, bool useWorldManager = true)
         {
             ProtocoleType = protocoleType;
             Dispatcher = new NetSquareDispatcher();
-            Worlds = new WorldsManager(this);
+            if (useWorldManager)
+                Worlds = new WorldsManager(this);
             MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
             Statistics = new ServerStatisticsManager();
             // register client sync time
