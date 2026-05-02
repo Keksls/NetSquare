@@ -204,6 +204,22 @@ namespace NetSquare.Server.Worlds
             return ClientsWorlds.TryGetValue(clientID, out worldID) ? worldID : (ushort)0;
         }
 
+        #region Debug Snapshots
+        /// <summary>
+        /// Creates debug snapshots for all known worlds.
+        /// </summary>
+        /// <returns>World debug snapshots.</returns>
+        public List<NetSquareWorldSnapshot> CreateSnapshots()
+        {
+            List<NetSquareWorldSnapshot> snapshots = new List<NetSquareWorldSnapshot>();
+            foreach (NetSquareWorld world in Worlds.Values)
+                if (world != null)
+                    snapshots.Add(world.CreateSnapshot());
+
+            return snapshots;
+        }
+        #endregion
+
         #region Network Messages
         /// <summary>
         /// server juste receive a synchronization message from a client, we have to dispatch it into the right world synchronizer

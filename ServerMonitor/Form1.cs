@@ -1,8 +1,11 @@
+using NetSquare.Core;
+using NetSquare.Server;
 using NetSquare.Server.Server;
 using NetSquare.Server.Worlds;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -53,6 +56,26 @@ namespace ServerMonitor
         /// Stores the world health value.
         /// </summary>
         private readonly TextBlock worldHealth;
+        /// <summary>
+        /// Stores the world tree value.
+        /// </summary>
+        private readonly TreeView worldTree;
+        /// <summary>
+        /// Stores the generated config path text value.
+        /// </summary>
+        private readonly TextBlock generatedConfigPathText;
+        /// <summary>
+        /// Stores the current world displayed by the monitor.
+        /// </summary>
+        private NetSquareWorld currentWorld;
+        /// <summary>
+        /// Stores the active trace recorder.
+        /// </summary>
+        private readonly NetSquareTraceRecorder traceRecorder = new NetSquareTraceRecorder();
+        /// <summary>
+        /// Stores the world currently traced.
+        /// </summary>
+        private NetSquareWorld tracedWorld;
         /// <summary>
         /// Stores the log list value.
         /// </summary>
@@ -205,6 +228,59 @@ namespace ServerMonitor
             };
             worldStack.Children.Add(worldDetails);
 
+            Button generateConfigButton = new Button
+            {
+                Content = "Generate server config JSON",
+                Margin = new Thickness(0, 14, 0, 8),
+                Padding = new Thickness(10, 6, 10, 6),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            generateConfigButton.Click += GenerateConfigButton_Click;
+            worldStack.Children.Add(generateConfigButton);
+
+            generatedConfigPathText = new TextBlock
+            {
+                Text = string.Empty,
+                FontSize = 12,
+                Foreground = BrushFromHex("#718096"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            worldStack.Children.Add(generatedConfigPathText);
+
+            StackPanel traceButtons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            worldStack.Children.Add(traceButtons);
+
+            Button startTraceButton = new Button
+            {
+                Content = "Start trace",
+                Padding = new Thickness(10, 6, 10, 6),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            startTraceButton.Click += StartTraceButton_Click;
+            traceButtons.Children.Add(startTraceButton);
+
+            Button stopTraceButton = new Button
+            {
+                Content = "Stop / export trace",
+                Padding = new Thickness(10, 6, 10, 6)
+            };
+            stopTraceButton.Click += StopTraceButton_Click;
+            traceButtons.Children.Add(stopTraceButton);
+
+            worldTree = new TreeView
+            {
+                BorderBrush = BrushFromHex("#D8DEE9"),
+                BorderThickness = new Thickness(1),
+                Background = Brushes.White,
+                MinHeight = 260
+            };
+            worldStack.Children.Add(worldTree);
+
             Border logPanel = CreatePanel();
             logPanel.Margin = new Thickness(0, 14, 0, 0);
             Grid.SetRow(logPanel, 3);
@@ -323,36 +399,199 @@ namespace ServerMonitor
             {
                 if (world == null)
                 {
+                    currentWorld = null;
                     worldTitle.Text = "World";
                     worldHealth.Text = "No world data";
                     worldHealth.Foreground = BrushFromHex("#8F5D46");
                     worldDetails.Text = "Waiting for updates.";
+                    worldTree.Items.Clear();
                     return;
                 }
 
-                worldTitle.Text = "World " + world.ID + " - " + world.Name;
-                worldHealth.Text = GetWorldHealth(world);
-                worldHealth.Foreground = world.UseSpatializer ? BrushFromHex("#287271") : BrushFromHex("#9C6644");
+                currentWorld = world;
+                NetSquareWorldSnapshot snapshot = world.CreateSnapshot();
+                worldTitle.Text = "World " + snapshot.ID + " - " + snapshot.Name;
+                worldHealth.Text = GetWorldHealth(snapshot);
+                worldHealth.Foreground = snapshot.UseSpatializer ? BrushFromHex("#287271") : BrushFromHex("#9C6644");
                 worldDetails.Text =
-                    "Clients: " + world.Clients.Count + " / " + world.MaxClientsInWorld + Environment.NewLine +
-                    "Synchronizer: " + (world.UseSynchronizer ? "enabled" : "disabled") + Environment.NewLine +
-                    "Spatializer: " + (world.UseSpatializer ? world.Spatializer.GetType().Name : "none") + Environment.NewLine +
-                    "Spatial sync: " + (world.UseSpatializer ? world.Spatializer.SynchFrequency + " ms" : "-") + Environment.NewLine +
-                    "Spatialization: " + (world.UseSpatializer ? world.Spatializer.SpatializationFrequency + " ms" : "-") + Environment.NewLine +
-                    "Static entities: " + (world.UseSpatializer ? world.Spatializer.StaticEntitiesCount.ToString(CultureInfo.InvariantCulture) : "-");
+                    "Clients: " + snapshot.ClientCount + " / " + snapshot.MaxClientsInWorld + Environment.NewLine +
+                    "Synchronizer: " + (snapshot.UseSynchronizer ? "enabled" : "disabled") + Environment.NewLine +
+                    "Spatializer: " + (snapshot.Spatializer != null ? snapshot.Spatializer.Type : "none") + Environment.NewLine +
+                    "Spatial sync: " + (snapshot.Spatializer != null ? snapshot.Spatializer.SynchFrequency + " ms" : "-") + Environment.NewLine +
+                    "Spatialization: " + (snapshot.Spatializer != null ? snapshot.Spatializer.SpatializationFrequency + " ms" : "-") + Environment.NewLine +
+                    "Static entities: " + (snapshot.Spatializer != null ? snapshot.Spatializer.StaticEntitiesCount.ToString(CultureInfo.InvariantCulture) : "-") + Environment.NewLine +
+                    "Pending frames: " + (snapshot.Spatializer != null ? snapshot.Spatializer.PendingFrameCount.ToString(CultureInfo.InvariantCulture) : "0");
+                UpdateWorldTree(snapshot);
             });
         }
 
         /// <summary>
         /// Executes the get world health operation.
         /// </summary>
-        private string GetWorldHealth(NetSquareWorld world)
+        private string GetWorldHealth(NetSquareWorldSnapshot world)
         {
-            if (!world.UseSpatializer)
+            if (!world.UseSpatializer || world.Spatializer == null)
                 return "Spatializer disabled";
             if (world.Spatializer.SynchFrequency > 1000)
                 return "Sync slowed down";
             return "Spatializer active";
+        }
+
+        /// <summary>
+        /// Executes the generate config button click operation.
+        /// </summary>
+        private void GenerateConfigButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string path = Path.Combine(Environment.CurrentDirectory, "netsquare.generated.config.json");
+                NetSquareServerConfigGenerator.WriteDefault(path);
+                generatedConfigPathText.Text = path;
+                Write("Generated server config JSON: " + path);
+            }
+            catch (Exception ex)
+            {
+                generatedConfigPathText.Text = ex.Message;
+                Write("Failed to generate server config JSON: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Executes the start trace button click operation.
+        /// </summary>
+        private void StartTraceButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (currentWorld == null || currentWorld.Spatializer == null)
+            {
+                Write("Cannot start trace: no spatialized world is selected.");
+                return;
+            }
+
+            tracedWorld = currentWorld;
+            traceRecorder.MaxEntries = 12000;
+            traceRecorder.Start();
+            tracedWorld.Spatializer.TraceRecorder = traceRecorder;
+            Write("Trace recording started for world " + tracedWorld.ID);
+        }
+
+        /// <summary>
+        /// Executes the stop trace button click operation.
+        /// </summary>
+        private void StopTraceButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!traceRecorder.IsRecording)
+            {
+                Write("No trace recording is active.");
+                return;
+            }
+
+            traceRecorder.Stop();
+            if (tracedWorld != null && tracedWorld.Spatializer != null && tracedWorld.Spatializer.TraceRecorder == traceRecorder)
+                tracedWorld.Spatializer.TraceRecorder = null;
+
+            string path = Path.Combine(Environment.CurrentDirectory, "netsquare-trace-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".json");
+            File.WriteAllText(path, traceRecorder.ToJson());
+            Write("Trace exported: " + path);
+        }
+
+        /// <summary>
+        /// Updates the world inspector tree.
+        /// </summary>
+        /// <param name="snapshot">World snapshot to display.</param>
+        private void UpdateWorldTree(NetSquareWorldSnapshot snapshot)
+        {
+            worldTree.Items.Clear();
+            if (snapshot == null)
+                return;
+
+            TreeViewItem root = CreateTreeItem("World " + snapshot.ID + " (" + snapshot.ClientCount + " clients)", true);
+            worldTree.Items.Add(root);
+
+            if (snapshot.Spatializer != null)
+            {
+                NetSquareSpatializerSnapshot spatializer = snapshot.Spatializer;
+                TreeViewItem spatializerItem = CreateTreeItem("Spatializer: " + spatializer.Type, true);
+                spatializerItem.Items.Add(CreateTreeItem("Sync " + spatializer.SynchFrequency + " ms / spatialization " + spatializer.SpatializationFrequency + " ms", false));
+                spatializerItem.Items.Add(CreateTreeItem("Pending frames " + spatializer.PendingFrameCount + " / static entities " + spatializer.StaticEntitiesCount, false));
+                if (spatializer.ChunkSize > 0)
+                    spatializerItem.Items.Add(CreateTreeItem("Chunks " + spatializer.ChunkWidth + "x" + spatializer.ChunkHeight + " size " + spatializer.ChunkSize.ToString("0.##", CultureInfo.InvariantCulture), false));
+                if (spatializer.MaxViewDistance > 0)
+                    spatializerItem.Items.Add(CreateTreeItem("View distance " + spatializer.MaxViewDistance.ToString("0.##", CultureInfo.InvariantCulture), false));
+                root.Items.Add(spatializerItem);
+
+                AddChunkNodes(spatializerItem, spatializer);
+            }
+
+            TreeViewItem clientsItem = CreateTreeItem("Clients", true);
+            root.Items.Add(clientsItem);
+            for (int i = 0; i < snapshot.Clients.Count; i++)
+            {
+                NetSquareWorldClientSnapshot client = snapshot.Clients[i];
+                string position = client.X.ToString("0.##", CultureInfo.InvariantCulture) + ", " + client.Y.ToString("0.##", CultureInfo.InvariantCulture) + ", " + client.Z.ToString("0.##", CultureInfo.InvariantCulture);
+                TreeViewItem clientItem = CreateTreeItem("Client " + client.ClientID + "  pos " + position, false);
+                clientItem.Items.Add(CreateTreeItem("Visible: " + FormatClientList(client.VisibleClientIDs), false));
+                clientItem.Items.Add(CreateTreeItem("Pending frames: " + client.PendingFrameCount, false));
+                clientsItem.Items.Add(clientItem);
+            }
+        }
+
+        /// <summary>
+        /// Adds chunk nodes to the spatializer tree item.
+        /// </summary>
+        /// <param name="parent">Parent tree item.</param>
+        /// <param name="spatializer">Spatializer snapshot.</param>
+        private static void AddChunkNodes(TreeViewItem parent, NetSquareSpatializerSnapshot spatializer)
+        {
+            if (spatializer.Chunks == null || spatializer.Chunks.Count == 0)
+                return;
+
+            TreeViewItem chunksItem = CreateTreeItem("Non-empty chunks", false);
+            int displayed = 0;
+            for (int i = 0; i < spatializer.Chunks.Count; i++)
+            {
+                NetSquareSpatialChunkSnapshot chunk = spatializer.Chunks[i];
+                if (chunk.ClientCount == 0 && chunk.StaticEntityCount == 0)
+                    continue;
+
+                chunksItem.Items.Add(CreateTreeItem("[" + chunk.X + "," + chunk.Y + "] clients " + chunk.ClientCount + " static " + chunk.StaticEntityCount, false));
+                displayed++;
+                if (displayed >= 96)
+                {
+                    chunksItem.Items.Add(CreateTreeItem("... truncated", false));
+                    break;
+                }
+            }
+
+            if (displayed > 0)
+                parent.Items.Add(chunksItem);
+        }
+
+        /// <summary>
+        /// Formats client ids for display.
+        /// </summary>
+        /// <param name="clientIDs">Client ids to format.</param>
+        /// <returns>Formatted client id list.</returns>
+        private static string FormatClientList(List<uint> clientIDs)
+        {
+            if (clientIDs == null || clientIDs.Count == 0)
+                return "-";
+
+            return string.Join(", ", clientIDs.Select(id => id.ToString(CultureInfo.InvariantCulture)).ToArray());
+        }
+
+        /// <summary>
+        /// Creates a tree item.
+        /// </summary>
+        /// <param name="header">Item header.</param>
+        /// <param name="isExpanded">Whether the item is expanded.</param>
+        /// <returns>Tree item.</returns>
+        private static TreeViewItem CreateTreeItem(string header, bool isExpanded)
+        {
+            return new TreeViewItem
+            {
+                Header = header,
+                IsExpanded = isExpanded
+            };
         }
 
         /// <summary>

@@ -58,6 +58,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Utils\Extentions.cs" />
+    <Compile Include="Utils\NetSquareServerConfigGenerator.cs" />
     <Compile Include="Worlds\Spatialization\Bounds.cs" />
     <Compile Include="Worlds\Spatialization\ChunkedClient.cs" />
     <Compile Include="Worlds\Spatialization\ChunkedSpatializer.cs" />
@@ -67,6 +68,7 @@
     <Compile Include="Worlds\Spatialization\Spatializer.cs" />
     <Compile Include="Worlds\StaticEntity.cs" />
     <Compile Include="Worlds\SynchronizedMessage.cs" />
+    <Compile Include="Worlds\NetSquareWorldDebugSnapshot.cs" />
     <Compile Include="Worlds\WorldsManager.cs" />
     <Compile Include="Worlds\NetSquareWorld.cs" />
     <Compile Include="Worlds\Synchronizer.cs" />

@@ -92,6 +92,17 @@ namespace NetSquareDiagnostics
 
             try
             {
+                if (HasArg(args, "--generate-server-config"))
+                {
+                    string configPath = GetArgValue(args, "--generate-server-config") ?? Path.Combine(Environment.CurrentDirectory, "netsquare.generated.config.json");
+                    NetSquare.Server.NetSquareServerConfigGenerator.WriteDefault(configPath);
+                    Console.WriteLine("Generated server config JSON: " + configPath);
+                    return 0;
+                }
+
+                if (HasArg(args, "--load-scenario"))
+                    return LoadScenarioRunner.Run(args);
+
                 if (!benchOnly)
                     RunReliabilityTests();
 
@@ -172,6 +183,9 @@ namespace NetSquareDiagnostics
             RunTest("SetType uses argument", TestSetType);
             RunTest("TCP fragmented receive", TestTcpFragmentedReceive);
             RunTest("TCP oversized frame disconnects", TestTcpOversizedFrameDisconnects);
+            RunTest("TCP reset probe disconnects cleanly", TestTcpResetProbeDisconnectsCleanly);
+            RunTest("manual client disconnect notice", TestManualClientDisconnectSendsNotice);
+            RunTest("server stop notifies clients", TestServerStopNotifiesClients);
             RunTest("TCP concurrent sends stay framed", TestTcpConcurrentSends);
             RunTest("NetworkMessage packing", TestPackingRoundtrip);
             RunTest("server/client settings", TestServerClientSettings);
@@ -330,6 +344,62 @@ namespace NetSquareDiagnostics
                 pair.Client.GetStream().Write(length, 0, length.Length);
 
                 Assert(disconnected.Wait(3000), "oversized frame did not disconnect");
+            }
+        }
+
+        /// <summary>
+        /// Executes the test tcp reset probe disconnects cleanly operation.
+        /// </summary>
+        private static void TestTcpResetProbeDisconnectsCleanly()
+        {
+            using (SocketPair pair = SocketPair.Create())
+            {
+                pair.Client.Client.LingerState = new LingerOption(true, 0);
+                pair.Client.Close();
+
+                WaitUntil(delegate { return !pair.Connected.IsConnected(); }, 3000, "reset socket was not reported disconnected");
+            }
+        }
+
+        /// <summary>
+        /// Executes the test manual client disconnect sends notice operation.
+        /// </summary>
+        private static void TestManualClientDisconnectSendsNotice()
+        {
+            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP, false))
+            {
+                ManualResetEventSlim noticeReceived = new ManualResetEventSlim(false);
+                ManualResetEventSlim disconnected = new ManualResetEventSlim(false);
+                server.Server.OnMessageReceived += delegate (NetworkMessage message)
+                {
+                    if (message.HeadID == (ushort)NetSquareMessageID.Disconnecting)
+                        noticeReceived.Set();
+                };
+                server.Server.OnClientDisconnected += delegate (uint id) { disconnected.Set(); };
+
+                NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP, false);
+                client.Disconnect();
+
+                Assert(noticeReceived.Wait(1000), "server did not receive disconnect notice");
+                Assert(disconnected.Wait(3000), "server did not disconnect client");
+            }
+        }
+
+        /// <summary>
+        /// Executes the test server stop notifies clients operation.
+        /// </summary>
+        private static void TestServerStopNotifiesClients()
+        {
+            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP, false))
+            {
+                NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP, false);
+                ManualResetEventSlim disconnected = new ManualResetEventSlim(false);
+                client.OnDisconected += delegate () { disconnected.Set(); };
+
+                server.Server.Stop();
+
+                Assert(disconnected.Wait(3000), "client did not observe server disconnection");
+                WaitUntil(delegate { return server.Server.Clients.Count == 0; }, 3000, "server still tracks clients after stop");
             }
         }
 

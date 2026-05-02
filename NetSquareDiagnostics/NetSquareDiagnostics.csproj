@@ -57,6 +57,7 @@
     <Compile Include="DiagnosticsWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="LoadScenarioRunner.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

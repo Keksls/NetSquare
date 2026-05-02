@@ -118,6 +118,10 @@ namespace NetSquare.Server
         /// </summary>
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
         /// <summary>
+        /// Stores the disconnect notice timeout ms value.
+        /// </summary>
+        public static int DisconnectNoticeTimeoutMs = 500;
+        /// <summary>
         /// Stores the get new client id value.
         /// </summary>
         public Func<uint> GetNewClientID;
@@ -140,6 +144,7 @@ namespace NetSquare.Server
             {
                 message.Reply(new NetworkMessage().Set(Time));
             });
+            Dispatcher.AddHeadAction(NetSquareMessageID.Disconnecting, "ClientDisconnecting", ClientDisconnecting);
             // set default client ID generator, can be override later by user
             GetNewClientID = () => { return ++ClientIDCounter; };
         }
@@ -345,13 +350,107 @@ namespace NetSquare.Server
         public void Stop()
         {
             try { Statistics?.Stop(); } catch { }
-            try { MessageQueueManager?.StopQueues(); } catch { }
             Listeners.ForEach(l => l.Stop());
             while (Listeners.Any(l => l.Listener.Active))
             {
                 Thread.Sleep(100);
             };
+            NotifyClientsDisconnecting();
+            try { MessageQueueManager?.StopQueues(); } catch { }
+            DisconnectAllClientsWithoutNotice();
             Listeners.Clear();
+        }
+
+        /// <summary>
+        /// Disconnect a client from the server.
+        /// </summary>
+        /// <param name="clientID">The client ID.</param>
+        public void DisconnectClient(uint clientID)
+        {
+            ConnectedClient client;
+            if (Clients.TryGetValue(clientID, out client))
+                DisconnectClient(client);
+        }
+
+        /// <summary>
+        /// Disconnect a client from the server.
+        /// </summary>
+        /// <param name="client">The client.</param>
+        public void DisconnectClient(ConnectedClient client)
+        {
+            DisconnectClientInternal(client, true);
+        }
+        #endregion
+
+        #region Disconnection Notices
+        /// <summary>
+        /// Disconnect a client.
+        /// </summary>
+        /// <param name="client">The client.</param>
+        /// <param name="notifyRemote">If true, send a disconnect notice before closing.</param>
+        private void DisconnectClientInternal(ConnectedClient client, bool notifyRemote)
+        {
+            if (client == null)
+                return;
+
+            if (notifyRemote && EnqueueDisconnectingNotice(client))
+                client.WaitForPendingTCPMessages(DisconnectNoticeTimeoutMs);
+
+            Server_ClientDisconnected(client);
+        }
+
+        /// <summary>
+        /// Notify all clients that the server is disconnecting.
+        /// </summary>
+        private void NotifyClientsDisconnecting()
+        {
+            List<ConnectedClient> notifiedClients = new List<ConnectedClient>();
+            foreach (ConnectedClient client in Clients.Values.ToList())
+            {
+                if (EnqueueDisconnectingNotice(client))
+                    notifiedClients.Add(client);
+            }
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            foreach (ConnectedClient client in notifiedClients)
+            {
+                int remainingMs = DisconnectNoticeTimeoutMs - (int)stopwatch.ElapsedMilliseconds;
+                if (remainingMs <= 0)
+                    return;
+
+                client.WaitForPendingTCPMessages(remainingMs);
+            }
+        }
+
+        /// <summary>
+        /// Enqueue the disconnecting notice to a client.
+        /// </summary>
+        /// <param name="client">The client.</param>
+        /// <returns>true if the notice was enqueued</returns>
+        private bool EnqueueDisconnectingNotice(ConnectedClient client)
+        {
+            if (client == null || client.TcpSocket == null || !client.TcpSocket.Connected)
+                return false;
+
+            try
+            {
+                client.AddTCPMessage(new NetworkMessage(NetSquareMessageID.Disconnecting));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Writer.Write("Fail to notify client " + client.ID + " disconnection : " + ex.ToString(), ConsoleColor.Red);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Disconnect all clients without sending another notice.
+        /// </summary>
+        private void DisconnectAllClientsWithoutNotice()
+        {
+            foreach (ConnectedClient client in Clients.Values.ToList())
+                DisconnectClientInternal(client, false);
         }
         #endregion
 
@@ -634,6 +733,17 @@ namespace NetSquare.Server
         private void Client_OnDisconected(uint clientID)
         {
             var client = SafeGetClient(clientID);
+            if (client != null)
+                Server_ClientDisconnected(client);
+        }
+
+        /// <summary>
+        /// Event when a client announces it is disconnecting.
+        /// </summary>
+        /// <param name="message">The message.</param>
+        private void ClientDisconnecting(NetworkMessage message)
+        {
+            ConnectedClient client = message.Client ?? SafeGetClient(message.ClientID);
             if (client != null)
                 Server_ClientDisconnected(client);
         }

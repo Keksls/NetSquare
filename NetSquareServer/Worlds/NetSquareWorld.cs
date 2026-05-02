@@ -243,6 +243,67 @@ namespace NetSquare.Server.Worlds
             }
         }
 
+        #region Debug Snapshot
+        /// <summary>
+        /// Creates a thread-safe debug snapshot of this world.
+        /// </summary>
+        /// <returns>World debug snapshot.</returns>
+        public NetSquareWorldSnapshot CreateSnapshot()
+        {
+            NetSquareWorldSnapshot snapshot = new NetSquareWorldSnapshot
+            {
+                ID = ID,
+                Name = Name,
+                ClientCount = Clients.Count,
+                MaxClientsInWorld = MaxClientsInWorld,
+                UseSynchronizer = UseSynchronizer,
+                UseSpatializer = UseSpatializer
+            };
+
+            foreach (var pair in Clients)
+            {
+                NetsquareTransformFrame transform = pair.Value;
+                snapshot.Clients.Add(new NetSquareWorldClientSnapshot
+                {
+                    ClientID = pair.Key,
+                    X = transform.x,
+                    Y = transform.y,
+                    Z = transform.z
+                });
+            }
+
+            if (UseSpatializer && Spatializer != null)
+            {
+                snapshot.Spatializer = Spatializer.CreateSnapshot();
+                ApplySpatializerClientData(snapshot);
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Applies spatializer visibility and pending-frame data to client snapshots.
+        /// </summary>
+        /// <param name="snapshot">World snapshot to enrich.</param>
+        private static void ApplySpatializerClientData(NetSquareWorldSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.Spatializer == null)
+                return;
+
+            for (int i = 0; i < snapshot.Clients.Count; i++)
+            {
+                NetSquareWorldClientSnapshot client = snapshot.Clients[i];
+                List<uint> visible;
+                if (snapshot.Spatializer.VisibleClientsByClientID.TryGetValue(client.ClientID, out visible))
+                    client.VisibleClientIDs = visible;
+
+                int pendingFrames;
+                if (snapshot.Spatializer.PendingFramesByClientID.TryGetValue(client.ClientID, out pendingFrames))
+                    client.PendingFrameCount = pendingFrames;
+            }
+        }
+        #endregion
+
         #region Broadcast
         /// <summary>
         /// Executes the get broadcast targets operation.

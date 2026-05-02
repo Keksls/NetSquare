@@ -97,6 +97,7 @@
     <Compile Include="SynchFrames\NetSquareStateFrame.cs" />
     <Compile Include="SynchFrames\NetSquareSynchFramesUtils.cs" />
     <Compile Include="SynchFrames\NetsquareTransformFrame.cs" />
+    <Compile Include="SynchFrames\NetSquareTraceRecorder.cs" />
     <Compile Include="ProtocoleManager.cs" />
     <Compile Include="Client\UDPClient.cs" />
   </ItemGroup>

@@ -144,6 +144,18 @@ namespace NetSquare.Server.Worlds
         }
 
         /// <summary>
+        /// Creates a debug snapshot of this simple spatializer.
+        /// </summary>
+        /// <returns>Spatializer debug snapshot.</returns>
+        public override NetSquareSpatializerSnapshot CreateSnapshot()
+        {
+            NetSquareSpatializerSnapshot snapshot = base.CreateSnapshot();
+            snapshot.MaxViewDistance = MaxViewDistance;
+            snapshot.VisibilityHysteresis = VisibilityHysteresis;
+            return snapshot;
+        }
+
+        /// <summary>
         /// Executes the add static entity operation.
         /// </summary>
         public override void AddStaticEntity(short type, uint id, NetsquareTransformFrame pos)

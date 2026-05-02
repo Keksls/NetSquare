@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -49,6 +50,10 @@ namespace NetSquare.Core
         /// Gets or sets the nb messages to send value.
         /// </summary>
         public int NbMessagesToSend { get { return queuedTcpMessages + (currentSendingTCPMessage != null ? 1 : 0) + (UDP?.NbSendingMessages ?? 0); } }
+        /// <summary>
+        /// Gets or sets the nb tcp messages to send value.
+        /// </summary>
+        public int NbTCPMessagesToSend { get { return Volatile.Read(ref queuedTcpMessages) + (currentSendingTCPMessage != null ? 1 : 0); } }
         /// <summary>
         /// Stores the nb messages sended value.
         /// </summary>
@@ -172,14 +177,31 @@ namespace NetSquare.Core
         /// <returns> true if the client is connected, else false</returns>
         public bool IsConnected()
         {
-            if (!TcpSocket.Connected)
+            Socket socket = TcpSocket;
+            if (socket == null)
                 return false;
-            if (TcpSocket.Poll(0, SelectMode.SelectRead))
+
+            try
             {
-                if (TcpSocket.Receive(connectionProbeBuffer, SocketFlags.Peek) == 0)
+                if (!socket.Connected)
                     return false;
+
+                if (socket.Poll(0, SelectMode.SelectRead))
+                {
+                    if (socket.Receive(connectionProbeBuffer, SocketFlags.Peek) == 0)
+                        return false;
+                }
+
+                return true;
             }
-            return true;
+            catch (SocketException)
+            {
+                return false;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
             //return !((TcpSocket.Poll(1000, SelectMode.SelectRead) && TcpSocket.Available == 0)/* || !TcpSocket.Connected*/);
         }
 
@@ -190,6 +212,45 @@ namespace NetSquare.Core
         public void AddTCPMessage(NetworkMessage msg)
         {
             AddTCPMessage(msg.SerializePooled());
+        }
+
+        /// <summary>
+        /// Enqueue a TCP message and wait until pending TCP messages are sent.
+        /// </summary>
+        /// <param name="msg">message to send</param>
+        /// <param name="timeoutMs">maximum wait time in milliseconds</param>
+        /// <returns>true if the TCP queue was drained before the timeout</returns>
+        public bool AddTCPMessageAndWait(NetworkMessage msg, int timeoutMs)
+        {
+            AddTCPMessage(msg);
+            return WaitForPendingTCPMessages(timeoutMs);
+        }
+
+        /// <summary>
+        /// Wait until pending TCP messages are sent.
+        /// </summary>
+        /// <param name="timeoutMs">maximum wait time in milliseconds</param>
+        /// <returns>true if the TCP queue was drained before the timeout</returns>
+        public bool WaitForPendingTCPMessages(int timeoutMs)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            while (HasPendingTCPMessages())
+            {
+                if (timeoutMs >= 0 && stopwatch.ElapsedMilliseconds >= timeoutMs)
+                    return false;
+
+                Thread.Sleep(1);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Check if the TCP send pump still has work to finish.
+        /// </summary>
+        /// <returns>true if TCP messages are pending</returns>
+        private bool HasPendingTCPMessages()
+        {
+            return NbTCPMessagesToSend > 0 || Volatile.Read(ref isSendingTCPMessage) != 0;
         }
 
         /// <summary>

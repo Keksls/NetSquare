@@ -36,6 +36,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public int MaxStoredFramesPerClient { get; set; }
         /// <summary>
+        /// Gets or sets the optional trace recorder used to capture synchronization frames.
+        /// </summary>
+        public NetSquareTraceRecorder TraceRecorder { get; set; }
+        /// <summary>
         /// Stores the synch name value.
         /// </summary>
         private string synchName;
@@ -219,6 +223,9 @@ namespace NetSquare.Server.Worlds
             if (synchFrames == null || synchFrames.Length == 0)
                 return;
 
+            if (TraceRecorder != null)
+                TraceRecorder.Record(clientID, synchFrames);
+
             List<INetSquareSynchFrame> frames = ClientsTransformFrames.GetOrAdd(clientID, _ => new List<INetSquareSynchFrame>());
             lock (frames)
             {
@@ -242,6 +249,9 @@ namespace NetSquare.Server.Worlds
         {
             if (synchFrame == null)
                 return;
+
+            if (TraceRecorder != null)
+                TraceRecorder.Record(clientID, new INetSquareSynchFrame[] { synchFrame });
 
             List<INetSquareSynchFrame> frames = ClientsTransformFrames.GetOrAdd(clientID, _ => new List<INetSquareSynchFrame>());
             lock (frames)
@@ -315,6 +325,39 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="callback"></param>
         public abstract void ForEach(Action<uint, IEnumerable<uint>> callback);
+
+        /// <summary>
+        /// Creates a debug snapshot of this spatializer.
+        /// </summary>
+        /// <returns>Spatializer debug snapshot.</returns>
+        public virtual NetSquareSpatializerSnapshot CreateSnapshot()
+        {
+            NetSquareSpatializerSnapshot snapshot = new NetSquareSpatializerSnapshot
+            {
+                Type = GetType().Name,
+                SynchFrequency = SynchFrequency,
+                SpatializationFrequency = SpatializationFrequency,
+                StaticEntitiesCount = StaticEntitiesCount,
+                MaxStoredFramesPerClient = MaxStoredFramesPerClient
+            };
+
+            foreach (var pair in ClientsTransformFrames)
+            {
+                int pendingFrames;
+                lock (pair.Value)
+                    pendingFrames = pair.Value.Count;
+
+                snapshot.PendingFramesByClientID[pair.Key] = pendingFrames;
+                snapshot.PendingFrameCount += pendingFrames;
+            }
+
+            ForEach(delegate (uint clientID, IEnumerable<uint> visibleClients)
+            {
+                snapshot.VisibleClientsByClientID[clientID] = visibleClients != null ? new List<uint>(visibleClients) : new List<uint>();
+            });
+
+            return snapshot;
+        }
 
         /// <summary>
         /// Add a static entity to the spatializer

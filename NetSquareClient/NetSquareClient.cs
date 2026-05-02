@@ -139,6 +139,14 @@ namespace NetSquare.Client
         /// </summary>
         private ConcurrentDictionary<uint, NetSquareAction> replyCallBack = new ConcurrentDictionary<uint, NetSquareAction>();
         /// <summary>
+        /// Stores the disconnect started value.
+        /// </summary>
+        private int disconnectStarted = 1;
+        /// <summary>
+        /// Stores the disconnect notice timeout ms value.
+        /// </summary>
+        public static int DisconnectNoticeTimeoutMs = 500;
+        /// <summary>
         /// Stores the types dic value.
         /// </summary>
         private static Dictionary<Type, Action<NetworkMessage, object>> typesDic;
@@ -156,6 +164,7 @@ namespace NetSquare.Client
             lastServerTimeOffsetUpdateUtc = DateTime.UtcNow;
             if (autoBindNetsquareActions)
                 Dispatcher.AutoBindHeadActionsFromAttributes();
+            Dispatcher.AddHeadAction(NetSquareMessageID.Disconnecting, "ServerDisconnecting", ServerDisconnecting);
             WorldsManager = new WorldsManager(this);
 
             // initiate Type Dictionnary
@@ -225,14 +234,7 @@ namespace NetSquare.Client
         /// </summary>
         public void Disconnect()
         {
-            isStarted = false;
-            messagesAvailable.Release();
-            OnDisconected?.Invoke();
-            if (Client == null)
-                return;
-            Client.TcpSocket.Close();
-            Client.TcpSocket.Dispose();
-            Client = null;
+            DisconnectInternal(true);
         }
         #endregion
 
@@ -270,6 +272,9 @@ namespace NetSquare.Client
                     };
                     Client.SetClient(tcpClient.Client, true, ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP);
                     Client.OnMessageReceived += Client_OnMessageReceived;
+                    Client.OnDisconected += Client_OnDisconected;
+                    Interlocked.Exchange(ref disconnectStarted, 0);
+                    isStarted = true;
                     // start processing message loop
                     Thread processingThread = new Thread(ProcessMessagesLoop);
                     processingThread.IsBackground = true;
@@ -294,12 +299,76 @@ namespace NetSquare.Client
         }
 
         /// <summary>
+        /// Invoked when the connected client socket is disconnected.
+        /// </summary>
+        /// <param name="clientID">The client ID.</param>
+        private void Client_OnDisconected(uint clientID)
+        {
+            DisconnectInternal(false);
+        }
+
+        /// <summary>
+        /// Invoked when the server announces it is disconnecting.
+        /// </summary>
+        /// <param name="message">The message.</param>
+        private void ServerDisconnecting(NetworkMessage message)
+        {
+            DisconnectInternal(false);
+        }
+
+        /// <summary>
+        /// Disconnect this client.
+        /// </summary>
+        /// <param name="notifyRemote">If true, send a disconnect notice before closing.</param>
+        private void DisconnectInternal(bool notifyRemote)
+        {
+            if (Interlocked.Exchange(ref disconnectStarted, 1) != 0)
+                return;
+
+            ConnectedClient client = Client;
+            if (notifyRemote)
+                TryNotifyServerDisconnecting(client);
+
+            isStarted = false;
+            messagesAvailable.Release();
+            Client = null;
+
+            if (client != null)
+            {
+                client.OnMessageReceived -= Client_OnMessageReceived;
+                client.OnDisconected -= Client_OnDisconected;
+                try { client.TcpSocket.Close(); } catch { }
+                try { client.TcpSocket.Dispose(); } catch { }
+            }
+
+            OnDisconected?.Invoke();
+        }
+
+        /// <summary>
+        /// Try to tell the server this client is disconnecting before closing the socket.
+        /// </summary>
+        /// <param name="client">The connected client.</param>
+        private void TryNotifyServerDisconnecting(ConnectedClient client)
+        {
+            if (client == null || client.TcpSocket == null || !client.TcpSocket.Connected)
+                return;
+
+            try
+            {
+                client.AddTCPMessageAndWait(new NetworkMessage(NetSquareMessageID.Disconnecting, client.ID), DisconnectNoticeTimeoutMs);
+            }
+            catch (Exception ex)
+            {
+                OnException?.Invoke(ex);
+            }
+        }
+
+        /// <summary>
         /// Loop that process the received messages
         /// </summary>
         private void ProcessMessagesLoop()
         {
             NetworkMessage message = null;
-            isStarted = true;
             while (isStarted)
             {
                 try

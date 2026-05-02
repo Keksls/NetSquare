@@ -463,6 +463,38 @@ namespace NetSquare.Server.Worlds
         }
 
         /// <summary>
+        /// Creates a debug snapshot of this chunked spatializer.
+        /// </summary>
+        /// <returns>Spatializer debug snapshot.</returns>
+        public override NetSquareSpatializerSnapshot CreateSnapshot()
+        {
+            NetSquareSpatializerSnapshot snapshot = base.CreateSnapshot();
+            snapshot.ChunkSize = ChunkSize;
+            snapshot.ChunkHysteresis = ChunkHysteresis;
+            snapshot.MinX = Bounds.MinX;
+            snapshot.MinY = Bounds.MinY;
+            snapshot.MaxX = Bounds.MaxX;
+            snapshot.MaxY = Bounds.MaxY;
+            snapshot.ChunkWidth = Width;
+            snapshot.ChunkHeight = Height;
+
+            for (short x = 0; x < Width; x++)
+                for (short y = 0; y < Height; y++)
+                {
+                    SpatialChunk chunk = Chunks[x, y];
+                    snapshot.Chunks.Add(new NetSquareSpatialChunkSnapshot
+                    {
+                        X = x,
+                        Y = y,
+                        ClientCount = chunk.Clients.Count,
+                        StaticEntityCount = chunk.GetStaticEntitiesSnapshot().Count
+                    });
+                }
+
+            return snapshot;
+        }
+
+        /// <summary>
         /// Executes the add static entity operation.
         /// </summary>
         public override void AddStaticEntity(short type, uint id, NetsquareTransformFrame transform)

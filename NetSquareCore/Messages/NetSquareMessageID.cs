@@ -23,7 +23,11 @@ namespace NetSquare.Core.Messages
         /// <summary>
         ///    Server sends some transforms frames, for x clients, packed into a single message
         /// </summary>
-        SetSynchFramesPacked = 65528
+        SetSynchFramesPacked = 65528,
+        /// <summary>
+        ///    A peer is about to close the connection.
+        /// </summary>
+        Disconnecting = 65527
     }
 }
 #endregion
