@@ -166,6 +166,7 @@ namespace NetSquareDiagnostics
         {
             Console.WriteLine("Reliability tests");
             RunTest("serializer roundtrip", TestSerializerRoundtrip);
+            RunTest("synch frame sequence roundtrip", TestSynchFrameSequenceRoundtrip);
             RunTest("invalid frame rejected", TestInvalidFrameRejected);
             RunTest("datagram length mismatch rejected", TestDatagramMismatchRejected);
             RunTest("SetType uses argument", TestSetType);
@@ -177,6 +178,7 @@ namespace NetSquareDiagnostics
             RunTest("TCP client/server message", TestTcpClientServerMessage);
             RunTest("UDP client/server message", TestUdpClientServerMessage);
             RunTest("world join broadcast sync leave", TestWorldJoinBroadcastSyncLeave);
+            RunTest("world transform cache updates from frames", TestWorldTransformCacheUpdatesFromFrames);
             RunTest("simple spatializer visibility", TestSimpleSpatializerVisibility);
             RunTest("chunked spatializer visibility", TestChunkedSpatializerVisibility);
             Console.WriteLine("Tests: " + passedTests + " passed, " + failedTests + " failed");
@@ -227,6 +229,27 @@ namespace NetSquareDiagnostics
             Assert(ints.Length == 3 && ints[0] == 10 && ints[2] == 30, "int array mismatch");
             float[] floats = copy.Serializer.GetFloatArray();
             Assert(floats.Length == 2 && Math.Abs(floats[1] - 2.5f) < 0.0001f, "float array mismatch");
+        }
+
+        /// <summary>
+        /// Executes the test synch frame sequence roundtrip operation.
+        /// </summary>
+        private static void TestSynchFrameSequenceRoundtrip()
+        {
+            NetsquareTransformFrame transformFrame = new NetsquareTransformFrame(1, 2, 3, 0, 0, 0, 1, 12.5f);
+            transformFrame.SequenceID = 42;
+            NetSquareStateFrame stateFrame = new NetSquareStateFrame(12.5f, 7, 43);
+
+            NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrames);
+            NetSquareSynchFramesUtils.SerializeFrames(message, new List<INetSquareSynchFrame> { transformFrame, stateFrame });
+            NetworkMessage copy = new NetworkMessage(message.Serialize());
+            INetSquareSynchFrame[] frames = NetSquareSynchFramesUtils.GetFrames(copy);
+
+            Assert(frames.Length == 2, "frame count mismatch");
+            Assert(frames[0].SequenceID == 42, "transform sequence mismatch");
+            Assert(frames[1].SequenceID == 43, "state sequence mismatch");
+            Assert(Math.Abs(((NetsquareTransformFrame)frames[0]).x - 1f) < 0.0001f, "transform payload mismatch");
+            Assert(((NetSquareStateFrame)frames[1]).States == 7, "state payload mismatch");
         }
 
         /// <summary>
@@ -549,6 +572,44 @@ namespace NetSquareDiagnostics
                 Assert(client1SawClient2Leave.Wait(5000), "world leave notification was not broadcast");
 
                 world.StopUsingSynchronizer();
+            }
+        }
+
+        /// <summary>
+        /// Executes the test world transform cache updates from frames operation.
+        /// </summary>
+        private static void TestWorldTransformCacheUpdatesFromFrames()
+        {
+            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP, true))
+            {
+                const ushort worldId = 45;
+                NetSquareWorld world = server.Server.Worlds.AddWorld(worldId, "world-transform-cache", 8);
+
+                NetSquare.Client.NetSquareClient client1 = server.ConnectClient(NetSquareProtocoleType.TCP, false);
+                NetSquare.Client.NetSquareClient client2 = server.ConnectClient(NetSquareProtocoleType.TCP, false);
+                ManualResetEventSlim frameReceived = new ManualResetEventSlim(false);
+                uint receivedSequence = 0;
+                client2.WorldsManager.OnReceiveSynchFrames += delegate (uint clientID, INetSquareSynchFrame[] frames)
+                {
+                    if (clientID != client1.ClientID || frames.Length == 0)
+                        return;
+
+                    receivedSequence = frames[0].SequenceID;
+                    frameReceived.Set();
+                };
+
+                Assert(TryJoinWorld(client1, worldId, new NetsquareTransformFrame(0, 0, 0)), "client1 failed to join world");
+                Assert(TryJoinWorld(client2, worldId, new NetsquareTransformFrame(3, 0, 0)), "client2 failed to join world");
+
+                client1.WorldsManager.SendSynchFrame(new NetsquareTransformFrame(11, 0, 0));
+                WaitUntil(delegate
+                {
+                    NetsquareTransformFrame transform;
+                    return world.Clients.TryGetValue(client1.ClientID, out transform) && Math.Abs(transform.x - 11f) < 0.0001f;
+                }, 5000, "world transform cache was not updated");
+
+                Assert(frameReceived.Wait(5000), "synch frame was not broadcast");
+                Assert(receivedSequence != 0, "synch frame sequence was not assigned");
             }
         }
 

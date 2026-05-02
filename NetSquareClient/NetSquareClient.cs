@@ -81,7 +81,11 @@ namespace NetSquare.Client
         /// <summary>
         /// Gets or sets the is time synchonized value.
         /// </summary>
-        public bool IsTimeSynchonized { get { return ServerTimeOffset != 0f; } }
+        public bool IsTimeSynchonized { get { return hasServerTimeOffset; } }
+        /// <summary>
+        /// Gets whether the server time is synchronized.
+        /// </summary>
+        public bool IsTimeSynchronized { get { return hasServerTimeOffset; } }
         /// <summary>
         /// Stores the is synchronizing time value.
         /// </summary>
@@ -90,6 +94,26 @@ namespace NetSquare.Client
         /// Gets or sets the server time offset value.
         /// </summary>
         public float ServerTimeOffset { get; private set; }
+        /// <summary>
+        /// Gets the target server time offset used by smoothing.
+        /// </summary>
+        public float TargetServerTimeOffset { get; private set; }
+        /// <summary>
+        /// Gets or sets whether server time offset changes are smoothed.
+        /// </summary>
+        public bool SmoothServerTimeOffset { get; set; }
+        /// <summary>
+        /// Gets or sets the server time offset smoothing speed.
+        /// </summary>
+        public float ServerTimeOffsetSmoothingSpeed { get; set; }
+        /// <summary>
+        /// Stores whether server time was synchronized at least once.
+        /// </summary>
+        private bool hasServerTimeOffset;
+        /// <summary>
+        /// Stores the last server time offset update timestamp.
+        /// </summary>
+        private DateTime lastServerTimeOffsetUpdateUtc;
         /// <summary>
         /// Stores the nb reply asked value.
         /// </summary>
@@ -127,6 +151,9 @@ namespace NetSquare.Client
         public NetSquareClient(bool autoBindNetsquareActions = true)
         {
             Dispatcher = new NetSquareDispatcher();
+            SmoothServerTimeOffset = true;
+            ServerTimeOffsetSmoothingSpeed = 8f;
+            lastServerTimeOffsetUpdateUtc = DateTime.UtcNow;
             if (autoBindNetsquareActions)
                 Dispatcher.AutoBindHeadActionsFromAttributes();
             WorldsManager = new WorldsManager(this);
@@ -178,6 +205,19 @@ namespace NetSquare.Client
             {
                 throw ex;
             }
+        }
+
+        /// <summary>
+        /// Connect this client to the given NetSquare server using an explicit synchronization transport.
+        /// </summary>
+        /// <param name="hostNameOrIpAddress">HostName or IP address to connect on.</param>
+        /// <param name="port">Port to connect on.</param>
+        /// <param name="protocoleType">Socket protocol to use.</param>
+        /// <param name="synchronizationTransport">Transport used for world synchronization frames.</param>
+        public void Connect(string hostNameOrIpAddress, int port, NetSquareProtocoleType protocoleType, NetSquareSyncTransport synchronizationTransport)
+        {
+            Connect(hostNameOrIpAddress, port, protocoleType, synchronizationTransport == NetSquareSyncTransport.UnreliableUdp);
+            WorldsManager.SynchronizationTransport = synchronizationTransport;
         }
 
         /// <summary>
@@ -477,6 +517,7 @@ namespace NetSquare.Client
         /// <returns> Server time</returns>
         public float GetServerTime(float clientTime)
         {
+            UpdateSmoothedServerTimeOffset();
             return clientTime + ServerTimeOffset;
         }
 
@@ -501,10 +542,13 @@ namespace NetSquare.Client
 
             // create array to store received times
             float[] clientTimeOffsets = new float[precision];
+            bool[] receivedOffsets = new bool[precision];
             DateTime[] sendTimes = new DateTime[precision];
 
             // reset server time offset
             ServerTimeOffset = 0;
+            TargetServerTimeOffset = 0;
+            hasServerTimeOffset = false;
 
             // start sync thread
             Thread syncThread = new Thread(() =>
@@ -532,6 +576,7 @@ namespace NetSquare.Client
 
                         // store time offset
                         clientTimeOffsets[index] = timeOffset;
+                        receivedOffsets[index] = true;
 
                         // log everything
                         onLog?.Invoke($"Client time : {clientTime} | Server time : {serverTime} | Time offset : {timeOffset} | Ping : {pingDuration}");
@@ -539,7 +584,7 @@ namespace NetSquare.Client
                         // set time if first time
                         if (index == 0)
                         {
-                            ServerTimeOffset = clientTimeOffsets[0];
+                            SetServerTimeOffset(clientTimeOffsets[0], true);
                             // invoke callback
                             onServerTimeGet?.Invoke(GetServerTime(getClientTime.Invoke()));
                         }
@@ -550,7 +595,7 @@ namespace NetSquare.Client
                 }
 
                 // wait for all time to be received
-                while (clientTimeOffsets.Any(e => e == 0f))
+                while (receivedOffsets.Any(e => !e))
                 {
                     Thread.Sleep(10);
                 }
@@ -561,7 +606,7 @@ namespace NetSquare.Client
                     avgTime += clientTimeOffsets[j];
                 onLog?.Invoke($"Cumul time offset : {avgTime}");
                 avgTime /= precision;
-                ServerTimeOffset = avgTime;
+                SetServerTimeOffset(avgTime, false);
 
                 // log all clientTimeOffsets
                 onLog?.Invoke($"Time offsets : {string.Join(" | ", clientTimeOffsets)}");
@@ -581,6 +626,42 @@ namespace NetSquare.Client
             // start sync thread
             syncThread.IsBackground = true;
             syncThread.Start();
+        }
+
+        /// <summary>
+        /// Applies a new server time offset.
+        /// </summary>
+        /// <param name="offset">Offset to apply.</param>
+        /// <param name="immediate">Whether the offset should be applied immediately.</param>
+        private void SetServerTimeOffset(float offset, bool immediate)
+        {
+            TargetServerTimeOffset = offset;
+            if (immediate || !SmoothServerTimeOffset || !hasServerTimeOffset)
+                ServerTimeOffset = offset;
+
+            hasServerTimeOffset = true;
+            lastServerTimeOffsetUpdateUtc = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// Smoothly moves the current server time offset toward the target offset.
+        /// </summary>
+        private void UpdateSmoothedServerTimeOffset()
+        {
+            if (!hasServerTimeOffset || !SmoothServerTimeOffset)
+                return;
+
+            DateTime now = DateTime.UtcNow;
+            float deltaTime = (float)(now - lastServerTimeOffsetUpdateUtc).TotalSeconds;
+            lastServerTimeOffsetUpdateUtc = now;
+
+            if (deltaTime <= 0f)
+                return;
+
+            float t = 1f - (float)Math.Exp(-ServerTimeOffsetSmoothingSpeed * deltaTime);
+            ServerTimeOffset += (TargetServerTimeOffset - ServerTimeOffset) * t;
+            if (Math.Abs(TargetServerTimeOffset - ServerTimeOffset) < 0.0001f)
+                ServerTimeOffset = TargetServerTimeOffset;
         }
         #endregion
 

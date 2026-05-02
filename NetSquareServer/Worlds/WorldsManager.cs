@@ -384,15 +384,16 @@ namespace NetSquare.Server.Worlds
                 NetSquareWorld world;
                 if (TryGetClientWorld(message.ClientID, out worldID, out world))
                 {
+                    INetSquareSynchFrame frame = NetSquareSynchFramesUtils.GetFrame(message);
                     // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
                     if (world.UseSpatializer && world.Spatializer != null)
                     {
-                        INetSquareSynchFrame frame = NetSquareSynchFramesUtils.GetFrame(message);
                         world.Spatializer.StoreSynchFrame(message.ClientID, frame);
                     }
                     // if we don't use a spatializer, we send the new position directly to everyone in the world
                     else
                     {
+                        ApplyLatestTransformFrame(world, message.ClientID, frame);
                         world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
                     }
                     message.RestartRead();
@@ -416,14 +417,16 @@ namespace NetSquare.Server.Worlds
                 NetSquareWorld world;
                 if (TryGetClientWorld(message.ClientID, out worldID, out world))
                 {
+                    INetSquareSynchFrame[] frames = NetSquareSynchFramesUtils.GetFrames(message);
                     // if we use a spatializer, we store the frames into it so it can be used for spatialization and send to visible clients later as packed message
                     if (world.UseSpatializer && world.Spatializer != null)
                     {
-                        world.Spatializer.StoreSynchFrames(message.ClientID, NetSquareSynchFramesUtils.GetFrames(message));
+                        world.Spatializer.StoreSynchFrames(message.ClientID, frames);
                     }
                     // if we don't use a spatializer, we send the new position directly to everyone in the world
                     else
                     {
+                        ApplyLatestTransformFrame(world, message.ClientID, frames);
                         world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
                     }
                     message.RestartRead();
@@ -433,6 +436,31 @@ namespace NetSquare.Server.Worlds
             {
                 Writer.Write("Fail to set client position : \n\r" + ex.Message, ConsoleColor.Red);
             }
+        }
+
+        /// <summary>
+        /// Applies a frame to the authoritative world transform cache when it contains a transform.
+        /// </summary>
+        /// <param name="world">World that owns the client.</param>
+        /// <param name="clientID">Client that sent the frame.</param>
+        /// <param name="frame">Synchronization frame to inspect.</param>
+        private static void ApplyLatestTransformFrame(NetSquareWorld world, uint clientID, INetSquareSynchFrame frame)
+        {
+            if (frame != null && frame.SynchFrameType == 0)
+                world.SetClientTransform(clientID, (NetsquareTransformFrame)frame);
+        }
+
+        /// <summary>
+        /// Applies the most recent transform frame to the authoritative world transform cache.
+        /// </summary>
+        /// <param name="world">World that owns the client.</param>
+        /// <param name="clientID">Client that sent the frames.</param>
+        /// <param name="frames">Synchronization frames to inspect.</param>
+        private static void ApplyLatestTransformFrame(NetSquareWorld world, uint clientID, INetSquareSynchFrame[] frames)
+        {
+            NetsquareTransformFrame transformFrame;
+            if (NetSquareSynchFramesUtils.TryGetMostRecentTransformFrame(frames, out transformFrame))
+                world.SetClientTransform(clientID, transformFrame);
         }
         #endregion
     }

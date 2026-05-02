@@ -45,6 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ClientStatistics.cs" />
+    <Compile Include="NetSquareSyncTransport.cs" />
     <Compile Include="WorldsManager.cs" />
     <Compile Include="NetSquareClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

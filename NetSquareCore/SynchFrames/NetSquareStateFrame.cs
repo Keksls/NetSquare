@@ -15,6 +15,14 @@ namespace NetSquare.Core
         /// </summary>
         public float Time { get => time; set => time = value; }
         /// <summary>
+        /// Stores the sequence id value.
+        /// </summary>
+        private uint sequenceID;
+        /// <summary>
+        /// Gets or sets the sequence id value.
+        /// </summary>
+        public uint SequenceID { get => sequenceID; set => sequenceID = value; }
+        /// <summary>
         /// Stores the synch frame type value.
         /// </summary>
         private byte synchFrameType;
@@ -30,16 +38,17 @@ namespace NetSquare.Core
         /// <summary>
         /// Stores the size value.
         /// </summary>
-        public static int Size = 9;
+        public const int Size = 13;
 
         /// <summary>
         /// Create a new state frame
         /// </summary>
         /// <param name="time"> time of the frame</param>
         /// <param name="states"> states of the frame</param>
-        public NetSquareStateFrame(float time, int states)
+        public NetSquareStateFrame(float time, int states, uint sequenceID = 0)
         {
             this.time = time;
+            this.sequenceID = sequenceID;
             synchFrameType = 1;
             States = states;
         }
@@ -51,6 +60,7 @@ namespace NetSquare.Core
         public unsafe NetSquareStateFrame(ref byte* ptr)
         {
             time = 0;
+            sequenceID = 0;
             synchFrameType = 0;
             States = 0;
             Deserialize(ref ptr);
@@ -64,6 +74,7 @@ namespace NetSquare.Core
         {
             States = 0;
             time = 0f;
+            sequenceID = 0;
             synchFrameType = 0;
 
             // ensure we have enough data to read
@@ -129,8 +140,12 @@ namespace NetSquare.Core
             synchFrameType = *ptr;
             ptr++;
 
+            uint* u = (uint*)ptr;
+            sequenceID = *u;
+            u++;
+
             // read transform values using pointer
-            float* f = (float*)ptr;
+            float* f = (float*)u;
             time = *f;
             f++;
 
@@ -152,8 +167,12 @@ namespace NetSquare.Core
             *ptr = synchFrameType;
             ptr++;
 
+            uint* u = (uint*)ptr;
+            *u = SequenceID;
+            u++;
+
             // write transform values using pointer
-            float* f = (float*)ptr;
+            float* f = (float*)u;
             *f = Time;
             f++;
 

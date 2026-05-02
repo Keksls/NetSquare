@@ -38,7 +38,19 @@ namespace NetSquare.Client
         /// <summary>
         /// Gets or sets the synchronize using udp value.
         /// </summary>
-        public bool SynchronizeUsingUDP { get; set; }
+        public bool SynchronizeUsingUDP
+        {
+            get { return SynchronizationTransport == NetSquareSyncTransport.UnreliableUdp; }
+            set { SynchronizationTransport = value ? NetSquareSyncTransport.UnreliableUdp : NetSquareSyncTransport.ReliableTcp; }
+        }
+        /// <summary>
+        /// Gets or sets the transport used for world synchronization frames.
+        /// </summary>
+        public NetSquareSyncTransport SynchronizationTransport { get; set; }
+        /// <summary>
+        /// Gets or sets the maximum queued synchronization frames before older frames are dropped.
+        /// </summary>
+        public int MaxStoredSynchFrames { get; set; }
         /// <summary>
         /// Stores the auto send frames value.
         /// </summary>
@@ -55,6 +67,14 @@ namespace NetSquare.Client
         /// Stores the current client frames lock value.
         /// </summary>
         private readonly object currentClientFramesLock = new object();
+        /// <summary>
+        /// Stores the next synchronization frame sequence id.
+        /// </summary>
+        private uint nextSynchFrameSequenceID;
+        /// <summary>
+        /// Stores the synchronization frame sequence lock value.
+        /// </summary>
+        private readonly object synchFrameSequenceLock = new object();
 
         /// <summary>
         /// Initializes a new instance of the worlds manager class.
@@ -62,6 +82,8 @@ namespace NetSquare.Client
         public WorldsManager(NetSquareClient _client)
         {
             client = _client;
+            SynchronizationTransport = NetSquareSyncTransport.ReliableTcp;
+            MaxStoredSynchFrames = 256;
             client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientsLeaveWorld, "ClientsLeaveCurrentWorld", ClientsLeaveCurrentWorld);
@@ -161,7 +183,7 @@ namespace NetSquare.Client
                 return;
             // set TypeID as synchronize
             message.SetType(NetSquareMessageType.SynchronizeMessageCurrentWorld);
-            if (SynchronizeUsingUDP)
+            if (SynchronizationTransport == NetSquareSyncTransport.UnreliableUdp)
                 client.SendMessageUDP(message);
             else
                 client.SendMessage(message);
@@ -179,9 +201,11 @@ namespace NetSquare.Client
         {
             if (!IsInWorld)
                 return;
+
+            synchFrame = PrepareSynchFrame(synchFrame);
             NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrame, client.ClientID);
             synchFrame.Serialize(message);
-            if (SynchronizeUsingUDP)
+            if (SynchronizationTransport == NetSquareSyncTransport.UnreliableUdp)
                 client.SendMessageUDP(message);
             else
                 client.SendMessage(message);
@@ -197,7 +221,11 @@ namespace NetSquare.Client
                 return;
 
             lock (currentClientFramesLock)
+            {
+                synchFrame = PrepareSynchFrame(synchFrame);
                 currentClientFrames.Add(synchFrame);
+                TrimStoredSynchFrames();
+            }
         }
 
         /// <summary>
@@ -221,7 +249,7 @@ namespace NetSquare.Client
             NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrames, client.ClientID);
             NetSquareSynchFramesUtils.SerializeFrames(message, frames);
 
-            if (SynchronizeUsingUDP)
+            if (SynchronizationTransport == NetSquareSyncTransport.UnreliableUdp)
                 client.SendMessageUDP(message);
             else
                 client.SendMessage(message);
@@ -229,6 +257,47 @@ namespace NetSquare.Client
         #endregion
 
         #region Private Utils
+        /// <summary>
+        /// Assigns a sequence id to the frame when it does not have one yet.
+        /// </summary>
+        /// <param name="synchFrame">Synchronization frame to prepare.</param>
+        /// <returns>The prepared synchronization frame.</returns>
+        private INetSquareSynchFrame PrepareSynchFrame(INetSquareSynchFrame synchFrame)
+        {
+            if (synchFrame.SequenceID == 0)
+                synchFrame.SequenceID = GetNextSynchFrameSequenceID();
+
+            return synchFrame;
+        }
+
+        /// <summary>
+        /// Gets the next non-zero synchronization frame sequence id.
+        /// </summary>
+        /// <returns>The next sequence id.</returns>
+        private uint GetNextSynchFrameSequenceID()
+        {
+            lock (synchFrameSequenceLock)
+            {
+                nextSynchFrameSequenceID++;
+                if (nextSynchFrameSequenceID == 0)
+                    nextSynchFrameSequenceID = 1;
+
+                return nextSynchFrameSequenceID;
+            }
+        }
+
+        /// <summary>
+        /// Trims stored synchronization frames to the configured cap.
+        /// </summary>
+        private void TrimStoredSynchFrames()
+        {
+            if (MaxStoredSynchFrames <= 0 || currentClientFrames.Count <= MaxStoredSynchFrames)
+                return;
+
+            int removeCount = currentClientFrames.Count - MaxStoredSynchFrames;
+            currentClientFrames.RemoveRange(0, removeCount);
+        }
+
         /// <summary>
         /// Fire OnSynchronize event
         /// </summary>
@@ -293,7 +362,7 @@ namespace NetSquare.Client
         {
             if (OnReceiveSynchFrames == null)
                 return;
-            message.Serializer.DummyRead(1);
+
             OnReceiveSynchFrames(message.ClientID, new INetSquareSynchFrame[] { NetSquareSynchFramesUtils.GetFrame(message) });
         }
 

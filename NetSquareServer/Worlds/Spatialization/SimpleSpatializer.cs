@@ -25,6 +25,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public float MaxViewDistance { get; private set; }
         /// <summary>
+        /// Gets or sets the extra distance a visible client can move before leaving visibility.
+        /// </summary>
+        public float VisibilityHysteresis { get; set; }
+        /// <summary>
         /// Stores the static entities lock value.
         /// </summary>
         private readonly object staticEntitiesLock = new object();
@@ -36,9 +40,10 @@ namespace NetSquare.Server.Worlds
         /// <param name="spatializationFreq"> frequency of spatialization loop</param>
         /// <param name="synchFreq"> frequency of synch loop</param>
         /// <param name="maxViewDistance"> maximum view distance of the clients</param>
-        public SimpleSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float maxViewDistance) : base(world, spatializationFreq, synchFreq)
+        public SimpleSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float maxViewDistance, float visibilityHysteresis = 0f) : base(world, spatializationFreq, synchFreq)
         {
             MaxViewDistance = maxViewDistance;
+            VisibilityHysteresis = visibilityHysteresis < 0f ? 0f : visibilityHysteresis;
             Clients = new ConcurrentDictionary<uint, SpatialClient>();
             StaticEntities = new List<StaticEntity>();
             Start();

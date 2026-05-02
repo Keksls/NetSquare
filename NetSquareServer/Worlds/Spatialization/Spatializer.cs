@@ -32,6 +32,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public int SpatializationFrequency { get; private set; }
         /// <summary>
+        /// Gets or sets the maximum stored synchronization frames per client.
+        /// </summary>
+        public int MaxStoredFramesPerClient { get; set; }
+        /// <summary>
         /// Stores the synch name value.
         /// </summary>
         private string synchName;
@@ -80,6 +84,7 @@ namespace NetSquare.Server.Worlds
             spatializationName = "Spatializer_Spatialization_World_" + World.ID;
             SpatializationFrequency = NetSquareScheduler.GetMsFrequencyFromHz(spatializationFreq);
             SynchFrequency = NetSquareScheduler.GetMsFrequencyFromHz(synchFreq);
+            MaxStoredFramesPerClient = 256;
             syncStopWatch = new Stopwatch();
         }
 
@@ -93,9 +98,9 @@ namespace NetSquare.Server.Worlds
         /// <param name="xEnd"> end x of the world</param>
         /// <param name="yEnd"> end y of the world</param>
         /// <returns> a chunked spatializer</returns>
-        public static ChunkedSpatializer GetChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd)
+        public static ChunkedSpatializer GetChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd, float chunkHysteresis = 0f)
         {
-            return new ChunkedSpatializer(world, spatializationFreq, synchFreq, chunkSize, xStart, yStart, xEnd, yEnd);
+            return new ChunkedSpatializer(world, spatializationFreq, synchFreq, chunkSize, xStart, yStart, xEnd, yEnd, chunkHysteresis);
         }
 
         /// <summary>
@@ -104,9 +109,9 @@ namespace NetSquare.Server.Worlds
         /// <param name="world"> world to spatialize</param>
         /// <param name="maxViewDistance"> maximum view distance of the clients</param>
         /// <returns> a simple spatializer</returns>
-        public static SimpleSpatializer GetSimpleSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float maxViewDistance)
+        public static SimpleSpatializer GetSimpleSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float maxViewDistance, float visibilityHysteresis = 0f)
         {
-            return new SimpleSpatializer(world, spatializationFreq, synchFreq, maxViewDistance);
+            return new SimpleSpatializer(world, spatializationFreq, synchFreq, maxViewDistance, visibilityHysteresis);
         }
 
         #region Adaptive Synch Frequency
@@ -216,7 +221,10 @@ namespace NetSquare.Server.Worlds
 
             List<INetSquareSynchFrame> frames = ClientsTransformFrames.GetOrAdd(clientID, _ => new List<INetSquareSynchFrame>());
             lock (frames)
+            {
                 frames.AddRange(synchFrames);
+                TrimStoredFrames(frames);
+            }
 
             // set client pos as last frame
             if (NetSquareSynchFramesUtils.TryGetMostRecentTransformFrame(synchFrames, out NetsquareTransformFrame mostRecentTransformFrame))
@@ -237,7 +245,10 @@ namespace NetSquare.Server.Worlds
 
             List<INetSquareSynchFrame> frames = ClientsTransformFrames.GetOrAdd(clientID, _ => new List<INetSquareSynchFrame>());
             lock (frames)
+            {
                 frames.Add(synchFrame);
+                TrimStoredFrames(frames);
+            }
 
             // set client pos as last frame if it's a transform frame
             switch (synchFrame.SynchFrameType)
@@ -267,6 +278,19 @@ namespace NetSquare.Server.Worlds
                 }
             }
             return snapshot;
+        }
+
+        /// <summary>
+        /// Trims a stored frame list to the configured per-client cap.
+        /// </summary>
+        /// <param name="frames">Frame list to trim.</param>
+        private void TrimStoredFrames(List<INetSquareSynchFrame> frames)
+        {
+            if (MaxStoredFramesPerClient <= 0 || frames.Count <= MaxStoredFramesPerClient)
+                return;
+
+            int removeCount = frames.Count - MaxStoredFramesPerClient;
+            frames.RemoveRange(0, removeCount);
         }
 
         /// <summary>

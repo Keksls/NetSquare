@@ -22,6 +22,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public float ChunkSize { get; private set; }
         /// <summary>
+        /// Gets or sets the extra distance kept around the current chunk before moving to another chunk.
+        /// </summary>
+        public float ChunkHysteresis { get; set; }
+        /// <summary>
         /// Stores the chunks value.
         /// </summary>
         private SpatialChunk[,] Chunks;
@@ -41,7 +45,7 @@ namespace NetSquare.Server.Worlds
         /// <summary>
         /// Initializes a new instance of the chunked spatializer class.
         /// </summary>
-        public ChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd) : base(world, spatializationFreq, synchFreq)
+        public ChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd, float chunkHysteresis = 0f) : base(world, spatializationFreq, synchFreq)
         {
             if (chunkSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(chunkSize), "Chunk size must be greater than zero.");
@@ -50,6 +54,7 @@ namespace NetSquare.Server.Worlds
 
             Clients = new ConcurrentDictionary<uint, ChunkedClient>();
             ChunkSize = chunkSize;
+            ChunkHysteresis = chunkHysteresis < 0f ? 0f : chunkHysteresis;
             Bounds = new SpatialBounds(xStart, yStart, xEnd, yEnd);
             CreateChunks(xStart, yStart, xEnd, yEnd);
             Start();
@@ -134,7 +139,7 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         protected override unsafe void SynchLoop()
         {
-            if (Chunks == null)
+            if (Clients == null)
                 return;
 
             Dictionary<uint, List<INetSquareSynchFrame>> frameSnapshot = DrainStoredFrames();
@@ -142,31 +147,25 @@ namespace NetSquare.Server.Worlds
                 return;
 
             syncStopWatch.Restart();
-            int width = Chunks.GetLength(0);
-            int height = Chunks.GetLength(1);
-            for (int x = 0; x < width; x++)
+            foreach (ChunkedClient client in GetClientsSnapshot())
             {
-                for (int y = 0; y < height; y++)
+                HashSet<uint> visibleIDs;
+                lock (client.SyncRoot)
+                    visibleIDs = new HashSet<uint>(client.VisibleIDs);
+
+                if (visibleIDs.Count == 0)
+                    continue;
+
+                NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
+                foreach (uint visibleID in visibleIDs)
                 {
-                    SpatialChunk chunk = Chunks[x, y];
-                    if (chunk == null || chunk.Clients.Count == 0)
-                        continue;
-
-                    List<uint> targetIDs = new List<uint>(chunk.Clients.Keys);
-                    if (targetIDs.Count == 0)
-                        continue;
-
-                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
-                    foreach (uint clientID in targetIDs)
-                    {
-                        List<INetSquareSynchFrame> frames;
-                        if (frameSnapshot.TryGetValue(clientID, out frames) && frames.Count > 0)
-                            NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, clientID, frames);
-                    }
-
-                    if (synchMessage.HasWriteData)
-                        World.server.SendToClients(synchMessage, targetIDs);
+                    List<INetSquareSynchFrame> frames;
+                    if (frameSnapshot.TryGetValue(visibleID, out frames) && frames.Count > 0)
+                        NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleID, frames);
                 }
+
+                if (synchMessage.HasWriteData)
+                    World.server.SendToClient(synchMessage, client.ClientID);
             }
             syncStopWatch.Stop();
             UpdateSynchFrequency((int)syncStopWatch.ElapsedMilliseconds);
@@ -194,6 +193,9 @@ namespace NetSquare.Server.Worlds
                 RemoveClient(client.ClientID);
                 return;
             }
+
+            if (IsInsideCurrentChunkWithHysteresis(client, clientTransform))
+                return;
 
             short chunkX;
             short chunkY;
@@ -380,6 +382,24 @@ namespace NetSquare.Server.Worlds
             chunkX = (short)x;
             chunkY = (short)y;
             return true;
+        }
+
+        /// <summary>
+        /// Checks whether a client is still inside its current chunk plus hysteresis.
+        /// </summary>
+        /// <param name="client">Client to check.</param>
+        /// <param name="transform">Current transform.</param>
+        /// <returns>True when the client can stay in the current chunk.</returns>
+        private bool IsInsideCurrentChunkWithHysteresis(ChunkedClient client, NetsquareTransformFrame transform)
+        {
+            if (ChunkHysteresis <= 0f || !HasChunk(client.ChunkX, client.ChunkY))
+                return false;
+
+            float minX = Bounds.MinX + client.ChunkX * ChunkSize - ChunkHysteresis;
+            float maxX = Bounds.MinX + (client.ChunkX + 1) * ChunkSize + ChunkHysteresis;
+            float minZ = Bounds.MinY + client.ChunkY * ChunkSize - ChunkHysteresis;
+            float maxZ = Bounds.MinY + (client.ChunkY + 1) * ChunkSize + ChunkHysteresis;
+            return transform.x >= minX && transform.x <= maxX && transform.z >= minZ && transform.z <= maxZ;
         }
 
         /// <summary>

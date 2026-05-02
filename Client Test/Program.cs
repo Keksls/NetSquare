@@ -13,7 +13,7 @@ namespace Client_Test
     /// </summary>
     internal class Program
     {
-        static ClientsMonitor.Form1 monitor;
+        static ClientsMonitor.Form1 monitor = null;
         static void Main(string[] args)
         {
             Console.WriteLine("How many clients ? : ");
@@ -23,7 +23,6 @@ namespace Client_Test
             float radius = 1;
             float.TryParse(Console.ReadLine(), out radius);
             List<ClientRoutine> clients = new List<ClientRoutine>();
-            bool clientsCreated = false;
             float oscilation = radius * 0.8f;
             radius *= 0.01f;
 
@@ -52,7 +51,6 @@ namespace Client_Test
                         Thread.Sleep(2);
                     clientStatisticsManager.AddClient(routine.client);
                 }
-                clientsCreated = true;
             });
             t.Start();
 

@@ -7,6 +7,7 @@ namespace NetSquare.Core
     public interface INetSquareSynchFrame
     {
         float Time { get; set; }
+        uint SequenceID { get; set; }
         byte SynchFrameType { get; set; }
         int Size { get; }
 

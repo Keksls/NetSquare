@@ -92,7 +92,7 @@ namespace NetSquare.Server.Worlds
                 {
                     NetsquareTransformFrame oldVisibleTransform;
                     if (!oldVisible.TryGetTransform(out oldVisibleTransform) ||
-                        NetsquareTransformFrame.Distance(oldVisibleTransform, currentTransform) > Spatializer.MaxViewDistance)
+                        NetsquareTransformFrame.Distance(oldVisibleTransform, currentTransform) > Spatializer.MaxViewDistance + Spatializer.VisibilityHysteresis)
                     {
                         // client just leave FOV
                         clientLeaveFOV = true;
@@ -112,9 +112,15 @@ namespace NetSquare.Server.Worlds
                 foreach (SpatialClient client in Spatializer.GetClientsSnapshot())
                 {
                     NetsquareTransformFrame clientTransform;
-                    if (client.TryGetTransform(out clientTransform) &&
-                        NetsquareTransformFrame.Distance(clientTransform, currentTransform) <= Spatializer.MaxViewDistance)
+                    if (client.TryGetTransform(out clientTransform))
                     {
+                        float distance = NetsquareTransformFrame.Distance(clientTransform, currentTransform);
+                        bool wasVisible = Visibles.Contains(client);
+                        bool isVisible = distance <= Spatializer.MaxViewDistance ||
+                            (wasVisible && distance <= Spatializer.MaxViewDistance + Spatializer.VisibilityHysteresis);
+                        if (!isVisible)
+                            continue;
+
                         // new client in FOV
                         newVisibles.Add(client);
                         newVisibleIDs.Add(client.Client.ID);

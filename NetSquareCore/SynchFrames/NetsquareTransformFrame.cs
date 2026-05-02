@@ -19,6 +19,14 @@ namespace NetSquare.Core
         /// </summary>
         public float Time { get { return time; } set { time = value; } }
         /// <summary>
+        /// Stores the sequence id value.
+        /// </summary>
+        private uint sequenceID;
+        /// <summary>
+        /// Gets or sets the sequence id value.
+        /// </summary>
+        public uint SequenceID { get { return sequenceID; } set { sequenceID = value; } }
+        /// <summary>
         /// Stores the synch frame type value.
         /// </summary>
         private byte synchFrameType;
@@ -62,7 +70,7 @@ namespace NetSquare.Core
         /// <summary>
         /// Defines the size constant.
         /// </summary>
-        public const int Size = 33;
+        public const int Size = 37;
 
         /// <summary>
         /// Create a new position
@@ -76,7 +84,7 @@ namespace NetSquare.Core
         /// <param name="_rw"> w rotation</param>
         /// <param name="_state"> state</param>
         /// <param name="_time"> time</param>
-        public NetsquareTransformFrame(float _x = 0, float _y = 0, float _z = 0, float _rx = 0, float _ry = 0, float _rz = 0, float _rw = 1, float _time = 0)
+        public NetsquareTransformFrame(float _x = 0, float _y = 0, float _z = 0, float _rx = 0, float _ry = 0, float _rz = 0, float _rw = 1, float _time = 0, uint _sequenceID = 0)
         {
             x = _x;
             y = _y;
@@ -86,6 +94,7 @@ namespace NetSquare.Core
             rz = _rz;
             rw = _rw;
             time = _time;
+            sequenceID = _sequenceID;
             synchFrameType = 0;
         }
 
@@ -101,7 +110,7 @@ namespace NetSquare.Core
         /// <param name="_rw"> w rotation</param>
         /// <param name="_state"> state</param>
         /// <param name="_time"> time</param>
-        public NetsquareTransformFrame(float _x, float _y, float _z, float _rx, float _ry, float _rz, float _rw, Enum _state, float _time)
+        public NetsquareTransformFrame(float _x, float _y, float _z, float _rx, float _ry, float _rz, float _rw, Enum _state, float _time, uint _sequenceID = 0)
         {
             x = _x;
             y = _y;
@@ -111,6 +120,7 @@ namespace NetSquare.Core
             rz = _rz;
             rw = _rw;
             time = _time;
+            sequenceID = _sequenceID;
             synchFrameType = 0;
         }
 
@@ -128,6 +138,7 @@ namespace NetSquare.Core
             rz = transform.rz;
             rw = transform.rw;
             time = transform.Time;
+            sequenceID = transform.SequenceID;
             synchFrameType = 0;
         }
 
@@ -145,6 +156,7 @@ namespace NetSquare.Core
             rz = 0;
             rw = 0;
             time = 0f;
+            sequenceID = 0;
             synchFrameType = 0;
 
             // ensure we have enough data to read
@@ -178,6 +190,7 @@ namespace NetSquare.Core
             rz = 0;
             rw = 0;
             time = 0;
+            sequenceID = 0;
             synchFrameType = 0;
             Deserialize(ref ptr);
         }
@@ -209,8 +222,12 @@ namespace NetSquare.Core
             *ptr = synchFrameType;
             ptr++;
 
+            uint* u = (uint*)ptr;
+            *u = SequenceID;
+            u++;
+
             // write transform values using pointer
-            float* f = (float*)ptr;
+            float* f = (float*)u;
             *f = Time;
             f++;
 
@@ -263,8 +280,12 @@ namespace NetSquare.Core
             synchFrameType = *b;
             b++;
 
+            uint* u = (uint*)b;
+            sequenceID = *u;
+            u++;
+
             // write transform values using pointer
-            float* f = (float*)b;
+            float* f = (float*)u;
             time = *f;
             f++;
 
@@ -311,6 +332,7 @@ namespace NetSquare.Core
             rz = pos.rz;
             rw = pos.rw;
             time = pos.Time;
+            sequenceID = pos.SequenceID;
             synchFrameType = pos.SynchFrameType;
         }
 
@@ -456,7 +478,7 @@ namespace NetSquare.Core
         /// <returns> position, rotation, state and time</returns>
         public override string ToString()
         {
-            return "x : " + x + " y : " + y + " z : " + z + " rx : " + rx + " ry : " + ry + " rz : " + rz + " rw : " + rw + " time : " + Time;
+            return "x : " + x + " y : " + y + " z : " + z + " rx : " + rx + " ry : " + ry + " rz : " + rz + " rw : " + rw + " time : " + Time + " sequence : " + SequenceID;
         }
     }
 }
