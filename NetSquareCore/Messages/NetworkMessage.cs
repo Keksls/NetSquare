@@ -1,19 +1,49 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using System;
 using System.Collections.Generic;
 
 namespace NetSquare.Core
 {
+    /// <summary>
+    /// Represents the network message component.
+    /// </summary>
     public class NetworkMessage
     {
+        /// <summary>
+        /// Gets or sets the client id value.
+        /// </summary>
         public uint ClientID { get; set; }
+        /// <summary>
+        /// Gets or sets the msg type value.
+        /// </summary>
         public byte MsgType { get; set; }
+        /// <summary>
+        /// Gets or sets the reply id value.
+        /// </summary>
         public uint ReplyID { get; set; }
+        /// <summary>
+        /// Gets or sets the head id value.
+        /// </summary>
         public ushort HeadID { get; set; }
+        /// <summary>
+        /// Gets or sets the serializer value.
+        /// </summary>
         public NetSquareSerializer Serializer { get; set; }
+        /// <summary>
+        /// Gets or sets the has write data value.
+        /// </summary>
         public bool HasWriteData { get { return Serializer.HasWriteData; } }
+        /// <summary>
+        /// Gets or sets the client value.
+        /// </summary>
         public ConnectedClient Client { get; set; }
+        /// <summary>
+        /// Gets or sets the is serialized value.
+        /// </summary>
         public bool IsSerialized { get { return Serializer.SerializationMode == NetSquareSerializationMode.Read; } }
+        /// <summary>
+        /// Gets or sets the message length value.
+        /// </summary>
         public int MessageLength { get; private set; }
 
         #region Constructors
@@ -99,9 +129,15 @@ namespace NetSquare.Core
         /// <param name="data"> data to set</param>
         public NetworkMessage(byte[] data)
         {
+            if (data == null || data.Length < GetMinimumHeadSize())
+                throw new Exception("Invalid network message buffer");
             Serializer = new NetSquareSerializer();
             DecryptDecompressData(ref data);
+            if (data.Length < GetMinimumHeadSize())
+                throw new Exception("Invalid network message buffer");
             ReadHead(data);
+            if (MessageLength != data.Length)
+                throw new Exception("Network message length mismatch");
             Serializer.StartReading(data);
             RestartRead();
         }
@@ -138,7 +174,7 @@ namespace NetSquare.Core
         /// <param name="typeID"></param>
         public void SetType(NetSquareMessageType type)
         {
-            MsgType = (byte)NetSquareMessageType.Reply;
+            MsgType = (byte)type;
         }
         #endregion
 
@@ -197,6 +233,14 @@ namespace NetSquare.Core
         public int GetHeadSize()
         {
             return MsgType == (byte)NetSquareMessageType.Reply ? 13 : 10;
+        }
+
+        /// <summary>
+        /// Executes the get minimum head size operation.
+        /// </summary>
+        private static int GetMinimumHeadSize()
+        {
+            return 10;
         }
 
         /// <summary>
@@ -259,6 +303,8 @@ namespace NetSquare.Core
         {
             if (ProtocoleManager.NoCompressorOrEncryptor)
                 return;
+            if (data == null || data.Length < 4)
+                throw new Exception("Invalid encrypted network message buffer");
             byte[] encrypted = new byte[data.Length - 4];
             Buffer.BlockCopy(data, 4, encrypted, 0, encrypted.Length);
             encrypted = ProtocoleManager.Decompress(encrypted);
@@ -271,10 +317,16 @@ namespace NetSquare.Core
         /// <param name="data"> data to read</param>
         internal void ReadHead(byte[] data)
         {
+            if (data == null || data.Length < GetMinimumHeadSize())
+                throw new Exception("Invalid network message header");
             MessageLength = BitConverter.ToInt32(data, 0);
+            if (MessageLength < GetMinimumHeadSize() || MessageLength > data.Length)
+                throw new Exception("Invalid network message length");
             ClientID = UInt24.GetUInt(data, 4);
             HeadID = BitConverter.ToUInt16(data, 7);
             MsgType = data[9];
+            if (GetHeadSize() > data.Length)
+                throw new Exception("Invalid network message header");
             if (MsgType == (byte)NetSquareMessageType.Reply)
                 ReplyID = UInt24.GetUInt(data, 10);
             else
@@ -287,11 +339,19 @@ namespace NetSquare.Core
         /// <param name="data"> data to write the head</param>
         internal void WriteHead(ref byte[] data)
         {
+            WriteHead(data, data.Length);
+        }
+
+        /// <summary>
+        /// Executes the write head operation.
+        /// </summary>
+        internal void WriteHead(byte[] data, int messageLength)
+        {
             // write message Size
-            data[0] = (byte)((data.Length) & 0xFF);
-            data[1] = (byte)((data.Length >> 8) & 0xFF);
-            data[2] = (byte)((data.Length >> 16) & 0xFF);
-            data[3] = (byte)((data.Length >> 24) & 0xFF);
+            data[0] = (byte)((messageLength) & 0xFF);
+            data[1] = (byte)((messageLength >> 8) & 0xFF);
+            data[2] = (byte)((messageLength >> 16) & 0xFF);
+            data[3] = (byte)((messageLength >> 24) & 0xFF);
             // write Client ID
             data[4] = (byte)((ClientID) & 0xFF);
             data[5] = (byte)((ClientID >> 8) & 0xFF);
@@ -312,23 +372,26 @@ namespace NetSquare.Core
         #endregion
 
         #region Datagram
+        /// <summary>
+        /// Executes the safe set datagram operation.
+        /// </summary>
         public bool SafeSetDatagram(byte[] data)
         {
             try
             {
                 // check if at least we got full head
-                if (data.Length < GetHeadSize())
+                if (data == null || data.Length < GetMinimumHeadSize())
                     return false;
-                SetDataUnsafe(data);
                 DecryptDecompressData(ref data);
+                if (data.Length < GetMinimumHeadSize())
+                    return false;
                 // read head
                 ReadHead(data);
-                Serializer.Reset();
                 // check if lenght == to datagram lenght
                 if ((int)MessageLength != data.Length)
                     return false;
                 // set data from datagram
-                //SetData(data);
+                SetDataUnsafe(data);
                 return true;
             }
             catch { return false; }
@@ -336,126 +399,198 @@ namespace NetSquare.Core
         #endregion
 
         #region Set Data
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(byte val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(short val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(int val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(long val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(ushort val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(uint val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(ulong val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(float val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(bool val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(char val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(string val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(UInt24 val)
         {
             Serializer.Set(val);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(byte[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
+        public NetworkMessage Set(byte[] val, int offset, int count, bool writeLength = true)
+        {
+            Serializer.Set(val, offset, count, writeLength);
+            return this;
+        }
+
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(int[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(uint[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(long[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(ulong[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(short[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(ushort[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(float[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;
         }
 
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(bool[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
@@ -489,12 +624,31 @@ namespace NetSquare.Core
             // Write head
             WriteHead(ref data);
             // Write body
-            Buffer.BlockCopy(Serializer.ToArray(), 0, data, currentIndex, MessageLength - currentIndex);
+            Serializer.CopyTo(data, currentIndex);
             // Encrypt and compress data
             if (!ProtocoleManager.NoCompressorOrEncryptor && !ignoreCompression)
                 EncryptCompressData(ref data);
             // set data ready to read
             Serializer.StartReading(data);
+            return data;
+        }
+
+        /// <summary>
+        /// Executes the serialize pooled operation.
+        /// </summary>
+        internal PooledByteBuffer SerializePooled(bool ignoreCompression = false)
+        {
+            if (IsSerialized)
+                return PooledByteBuffer.Wrap(Serializer.ToArray());
+
+            if (!ProtocoleManager.NoCompressorOrEncryptor && !ignoreCompression)
+                return PooledByteBuffer.Wrap(Serialize(ignoreCompression));
+
+            int currentIndex = GetHeadSize();
+            MessageLength = currentIndex + Serializer.Length;
+            PooledByteBuffer data = PooledByteBuffer.Rent(MessageLength);
+            WriteHead(data.Buffer, MessageLength);
+            Serializer.CopyTo(data.Buffer, currentIndex);
             return data;
         }
 
@@ -518,28 +672,41 @@ namespace NetSquare.Core
             //  - ClientID :        Int24   3 bytes
             //  - Data :            var     BlockSize bytes
 
+            int prefixLength = 0;
+            if (!IsSerialized && Serializer.Length > 0)
+                prefixLength = Serializer.Length;
+
             // count packed message lenght
             int headSize = GetHeadSize();
-            int lenght = headSize; // headSize (10 bits or 13 bits if MsgType == 1)
+            int lenght = headSize + prefixLength; // headSize (10 bits or 13 bits if MsgType == 1)
             int nb = 0;
             foreach (NetworkMessage message in messages)
             {
-                lenght += message.Serializer.Length + 6; // blockSize (3 bits) + clientID (3 bits)
+                int blockLength = GetPackBlockLength(message, alreadySerialized);
+                if (blockLength > UInt24.MaxValue)
+                    throw new Exception("Packed message block is too large");
+                lenght += blockLength + 6; // blockSize (3 bits) + clientID (3 bits)
                 nb++;
             }
 
-            if (nb == 0)
+            if (nb == 0 && prefixLength == 0)
                 return this;
 
             // create full empty array
             byte[] data = new byte[lenght];
             // index start at headSize, because the head will be written at the end
             int index = headSize;
+            if (prefixLength > 0)
+            {
+                Serializer.CopyTo(data, index);
+                index += prefixLength;
+            }
             // Write Blocks
             foreach (NetworkMessage message in messages)
             {
                 // Write block Lenght
-                UInt24 blockSize = new UInt24((uint)(message.Serializer.Length));
+                int blockLength = GetPackBlockLength(message, alreadySerialized);
+                UInt24 blockSize = new UInt24((uint)blockLength);
                 data[index++] = blockSize.b0;
                 data[index++] = blockSize.b1;
                 data[index++] = blockSize.b2;
@@ -549,8 +716,9 @@ namespace NetSquare.Core
                 data[index++] = (byte)((message.ClientID >> 8) & 0xFF);
                 data[index++] = (byte)((message.ClientID >> 16) & 0xFF);
 
-                Buffer.BlockCopy(message.Serializer.ToArray(), 0, data, index, message.Serializer.Length);
-                index += message.Serializer.Length;
+                int sourceOffset = alreadySerialized ? message.GetHeadSize() : 0;
+                Buffer.BlockCopy(message.Serializer.Buffer, sourceOffset, data, index, blockLength);
+                index += blockLength;
             }
 
             // Write head
@@ -561,7 +729,20 @@ namespace NetSquare.Core
 
             // set data ready to read
             Serializer.StartReading(data);
+            RestartRead();
             return this;
+        }
+
+        /// <summary>
+        /// Executes the get pack block length operation.
+        /// </summary>
+        private static int GetPackBlockLength(NetworkMessage message, bool alreadySerialized)
+        {
+            if (!alreadySerialized)
+                return message.Serializer.Length;
+
+            int length = message.Serializer.Length - message.GetHeadSize();
+            return length < 0 ? 0 : length;
         }
 
         /// <summary>

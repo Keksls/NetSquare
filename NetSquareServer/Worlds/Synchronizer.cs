@@ -1,20 +1,45 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 
+#region Source
 namespace NetSquare.Server.Worlds
 {
+    /// <summary>
+    /// Represents the synchronizer component.
+    /// </summary>
     public class Synchronizer
     {
+        /// <summary>
+        /// Gets or sets the synchronize using udp value.
+        /// </summary>
         public bool SynchronizeUsingUDP { get; private set; }
+        /// <summary>
+        /// Gets or sets the messages value.
+        /// </summary>
         public ConcurrentDictionary<ushort, SynchronizedMessage> Messages { get; private set; }
+        /// <summary>
+        /// Gets or sets the synchronizing value.
+        /// </summary>
         public bool Synchronizing { get; private set; }
+        /// <summary>
+        /// Gets or sets the frequency value.
+        /// </summary>
         public int Frequency { get; private set; }
+        /// <summary>
+        /// Gets or sets the world value.
+        /// </summary>
         public NetSquareWorld World { get; private set; }
+        /// <summary>
+        /// Stores the server value.
+        /// </summary>
         private NetSquareServer server;
 
+        /// <summary>
+        /// Initializes a new instance of the synchronizer class.
+        /// </summary>
         public Synchronizer(NetSquareServer _server, NetSquareWorld world, bool synchronizeUsingUDP)
         {
             World = world;
@@ -66,15 +91,14 @@ namespace NetSquare.Server.Worlds
         /// <param name="message">message to sync</param>
         public void AddMessage(NetworkMessage message)
         {
-            // add Head list of not exists
-            if (!Messages.ContainsKey(message.HeadID))
-                while (!Messages.TryAdd(message.HeadID, new SynchronizedMessage(message.HeadID)))
-                    continue;
-            // add client to head list if not exists
-            Messages[message.HeadID].AddMessage(message);
+            SynchronizedMessage synchronizedMessage = Messages.GetOrAdd(message.HeadID, headID => new SynchronizedMessage(headID));
+            synchronizedMessage.AddMessage(message);
         }
 
         Stopwatch syncWatch = new Stopwatch();
+        /// <summary>
+        /// Executes the syncronization loop operation.
+        /// </summary>
         private void SyncronizationLoop()
         {
             while (Synchronizing)
@@ -86,13 +110,14 @@ namespace NetSquare.Server.Worlds
                 {
                     foreach (SynchronizedMessage message in Messages.Values)
                     {
-                        if (message.Empty)
+                        Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
+                        if (snapshot.Count == 0)
                             continue;
                         // get spatialized messages
                         List<NetworkMessage> packedMessages = new List<NetworkMessage>();
                         World.Spatializer.ForEach((clientID, visibleIDs) =>
                         {
-                            NetworkMessage msg = message.GetSpatializedPackedMessage(visibleIDs, clientID);
+                            NetworkMessage msg = message.GetSpatializedPackedMessage(visibleIDs, clientID, snapshot);
                             if (msg != null)
                                 packedMessages.Add(msg);
                         });
@@ -107,31 +132,29 @@ namespace NetSquare.Server.Worlds
                             foreach (var packed in packedMessages)
                                 server.SafeGetClient(packed.ClientID)?.AddTCPMessage(packed);
                         }
-                        message.Clear();
+                        message.RemoveSnapshot(snapshot);
                     }
                 }
                 else // don't use spatializer
                 {
                     foreach (SynchronizedMessage message in Messages.Values)
                     {
-                        if (message.Empty)
+                        Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
+                        if (snapshot.Count == 0)
                             continue;
-                        lock (World.Clients)
+
+                        NetworkMessage packed = message.GetPackedMessage(snapshot);
+                        if (SynchronizeUsingUDP)
                         {
-                            if (SynchronizeUsingUDP)
-                            {
-                                NetworkMessage packed = message.GetPackedMessage();
-                                foreach (uint clientID in World.Clients.Keys)
-                                    server.SafeGetClient(clientID)?.AddUDPMessage(packed);
-                            }
-                            else
-                            {
-                                NetworkMessage packed = message.GetPackedMessage();
-                                foreach (uint clientID in World.Clients.Keys)
-                                    server.SafeGetClient(clientID)?.AddTCPMessage(packed);
-                            }
+                            foreach (uint clientID in World.Clients.Keys)
+                                server.SafeGetClient(clientID)?.AddUDPMessage(packed);
                         }
-                        message.Clear();
+                        else
+                        {
+                            foreach (uint clientID in World.Clients.Keys)
+                                server.SafeGetClient(clientID)?.AddTCPMessage(packed);
+                        }
+                        message.RemoveSnapshot(snapshot);
                     }
                 }
                 syncWatch.Stop();
@@ -143,3 +166,4 @@ namespace NetSquare.Server.Worlds
         }
     }
 }
+#endregion

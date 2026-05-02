@@ -1,5 +1,6 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
+#region Source
 namespace NetSquare.Core
 {
     /// <summary>
@@ -11,15 +12,36 @@ namespace NetSquare.Core
     ///     - Fast Half Float Conversions, Jeroen van der Zijp, link: http://www.fox-toolkit.org/ftp/fasthalffloatconversion.pdf
     /// </remarks>
     [ComVisible(false)]
+    /// <summary>
+    /// Represents the half helper component.
+    /// </summary>
     internal static class HalfHelper
     {
+        /// <summary>
+        /// Stores the mantissa table value.
+        /// </summary>
         private static uint[] mantissaTable = GenerateMantissaTable();
+        /// <summary>
+        /// Stores the exponent table value.
+        /// </summary>
         private static uint[] exponentTable = GenerateExponentTable();
+        /// <summary>
+        /// Stores the offset table value.
+        /// </summary>
         private static ushort[] offsetTable = GenerateOffsetTable();
+        /// <summary>
+        /// Stores the base table value.
+        /// </summary>
         private static ushort[] baseTable = GenerateBaseTable();
+        /// <summary>
+        /// Stores the shift table value.
+        /// </summary>
         private static sbyte[] shiftTable = GenerateShiftTable();
 
         // Transforms the subnormal representation to a normalized one. 
+        /// <summary>
+        /// Executes the convert mantissa operation.
+        /// </summary>
         private static uint ConvertMantissa(int i)
         {
             uint m = (uint)(i << 13); // Zero pad mantissa bits
@@ -36,6 +58,9 @@ namespace NetSquare.Core
             return m | e; // Return combined number
         }
 
+        /// <summary>
+        /// Executes the generate mantissa table operation.
+        /// </summary>
         private static uint[] GenerateMantissaTable()
         {
             uint[] mantissaTable = new uint[2048];
@@ -51,6 +76,9 @@ namespace NetSquare.Core
 
             return mantissaTable;
         }
+        /// <summary>
+        /// Executes the generate exponent table operation.
+        /// </summary>
         private static uint[] GenerateExponentTable()
         {
             uint[] exponentTable = new uint[64];
@@ -69,6 +97,9 @@ namespace NetSquare.Core
 
             return exponentTable;
         }
+        /// <summary>
+        /// Executes the generate offset table operation.
+        /// </summary>
         private static ushort[] GenerateOffsetTable()
         {
             ushort[] offsetTable = new ushort[64];
@@ -85,6 +116,9 @@ namespace NetSquare.Core
 
             return offsetTable;
         }
+        /// <summary>
+        /// Executes the generate base table operation.
+        /// </summary>
         private static ushort[] GenerateBaseTable()
         {
             ushort[] baseTable = new ushort[512];
@@ -120,6 +154,9 @@ namespace NetSquare.Core
 
             return baseTable;
         }
+        /// <summary>
+        /// Executes the generate shift table operation.
+        /// </summary>
         private static sbyte[] GenerateShiftTable()
         {
             sbyte[] shiftTable = new sbyte[512];
@@ -156,11 +193,17 @@ namespace NetSquare.Core
             return shiftTable;
         }
 
+        /// <summary>
+        /// Executes the half to single operation.
+        /// </summary>
         public static unsafe float HalfToSingle(Half half)
         {
             uint result = mantissaTable[offsetTable[half.value >> 10] + (half.value & 0x3ff)] + exponentTable[half.value >> 10];
             return *((float*)&result);
         }
+        /// <summary>
+        /// Executes the single to half operation.
+        /// </summary>
         public static unsafe Half SingleToHalf(float single)
         {
             uint value = *((uint*)&single);
@@ -169,30 +212,49 @@ namespace NetSquare.Core
             return Half.ToHalf(result);
         }
 
+        /// <summary>
+        /// Executes the negate operation.
+        /// </summary>
         public static Half Negate(Half half)
         {
             return Half.ToHalf((ushort)(half.value ^ 0x8000));
         }
+        /// <summary>
+        /// Executes the abs operation.
+        /// </summary>
         public static Half Abs(Half half)
         {
             return Half.ToHalf((ushort)(half.value & 0x7fff));
         }
 
+        /// <summary>
+        /// Executes the is na n operation.
+        /// </summary>
         public static bool IsNaN(Half half)
         {
             return ((half.value & 0x7fff) > 0x7c00);
         }
+        /// <summary>
+        /// Executes the is infinity operation.
+        /// </summary>
         public static bool IsInfinity(Half half)
         {
             return ((half.value & 0x7fff) == 0x7c00);
         }
+        /// <summary>
+        /// Executes the is positive infinity operation.
+        /// </summary>
         public static bool IsPositiveInfinity(Half half)
         {
             return (half.value == 0x7c00);
         }
+        /// <summary>
+        /// Executes the is negative infinity operation.
+        /// </summary>
         public static bool IsNegativeInfinity(Half half)
         {
             return (half.value == 0xfc00);
         }
     }
 }
+#endregion

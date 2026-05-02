@@ -1,10 +1,17 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
 
+#region Source
 namespace NetSquare.Core.Compression
 {
+    /// <summary>
+    /// Represents the g zip compressor component.
+    /// </summary>
     public class GZipCompressor : Compressor
     {
+        /// <summary>
+        /// Executes the compress operation.
+        /// </summary>
         public override byte[] Compress(byte[] data)
         {
             using (var compressedStream = new MemoryStream())
@@ -16,6 +23,9 @@ namespace NetSquare.Core.Compression
             }
         }
 
+        /// <summary>
+        /// Executes the decompress operation.
+        /// </summary>
         public override byte[] Decompress(byte[] data)
         {
             using (var compressedStream = new MemoryStream(data))
@@ -28,3 +38,4 @@ namespace NetSquare.Core.Compression
         }
     }
 }
+#endregion

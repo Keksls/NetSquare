@@ -1,5 +1,9 @@
-﻿namespace NetSquare.Core.Messages
+#region Source
+namespace NetSquare.Core.Messages
 {
+    /// <summary>
+    /// Defines the available net square message id values.
+    /// </summary>
     public enum NetSquareMessageID : ushort
     {
         ClientJoinWorld = 65535,
@@ -22,3 +26,4 @@
         SetSynchFramesPacked = 65528
     }
 }
+#endregion

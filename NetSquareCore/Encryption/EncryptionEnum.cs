@@ -1,5 +1,9 @@
-﻿namespace NetSquare.Core.Encryption
+#region Source
+namespace NetSquare.Core.Encryption
 {
+    /// <summary>
+    /// Defines the available net square encryption values.
+    /// </summary>
     public enum NetSquareEncryption
     {
         NoEncryption = 0,
@@ -13,3 +17,4 @@
         XOR = 8
     }
 }
+#endregion

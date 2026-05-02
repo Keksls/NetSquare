@@ -1,22 +1,56 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 
+#region Source
 namespace NetSquare.Client
 {
+    /// <summary>
+    /// Represents the client statistics value.
+    /// </summary>
     public struct ClientStatistics
     {
+        /// <summary>
+        /// Stores the nb clients value.
+        /// </summary>
         public int NbClients;
+        /// <summary>
+        /// Stores the nb messages to send value.
+        /// </summary>
         public int NbMessagesToSend;
+        /// <summary>
+        /// Stores the nb messages sended value.
+        /// </summary>
         public long NbMessagesSended;
+        /// <summary>
+        /// Stores the nb messages received value.
+        /// </summary>
         public long NbMessagesReceived;
+        /// <summary>
+        /// Stores the downloading value.
+        /// </summary>
         public float Downloading;
+        /// <summary>
+        /// Stores the uploading value.
+        /// </summary>
         public float Uploading;
+        /// <summary>
+        /// Stores the nb messages sending value.
+        /// </summary>
         public int NbMessagesSending;
+        /// <summary>
+        /// Stores the nb messages receiving value.
+        /// </summary>
         public int NbMessagesReceiving;
+        /// <summary>
+        /// Stores the nb processing messages value.
+        /// </summary>
         public int NbProcessingMessages;
 
+        /// <summary>
+        /// Executes the to string operation.
+        /// </summary>
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
@@ -37,16 +71,46 @@ namespace NetSquare.Client
         }
     }
 
+    /// <summary>
+    /// Represents the client statistics manager component.
+    /// </summary>
     public class ClientStatisticsManager
     {
+        /// <summary>
+        /// Stores the clients value.
+        /// </summary>
         private List<NetSquareClient> clients;
+        /// <summary>
+        /// Stores the stop order value.
+        /// </summary>
         private bool stopOrder = false;
+        /// <summary>
+        /// Occurs when get statistics is raised.
+        /// </summary>
         public event Action<ClientStatistics> OnGetStatistics;
+        /// <summary>
+        /// Gets or sets the running value.
+        /// </summary>
         public bool Running { get; private set; }
+        /// <summary>
+        /// Gets or sets the current statistics value.
+        /// </summary>
         public ClientStatistics CurrentStatistics { get; private set; }
+        /// <summary>
+        /// Stores the last process received value.
+        /// </summary>
         private long lastProcessReceived = 0;
+        /// <summary>
+        /// Stores the last process sended value.
+        /// </summary>
         private long lastProcessSended = 0;
+        /// <summary>
+        /// Stores the interval ms value.
+        /// </summary>
         private int intervalMs = 100;
+        /// <summary>
+        /// Stores the interval ms value.
+        /// </summary>
         public int IntervalMs
         {
             get
@@ -59,11 +123,17 @@ namespace NetSquare.Client
             }
         }
 
+        /// <summary>
+        /// Executes the client statistics manager operation.
+        /// </summary>
         public ClientStatisticsManager()
         {
             clients = new List<NetSquareClient>();
         }
 
+        /// <summary>
+        /// Executes the add client operation.
+        /// </summary>
         public void AddClient(NetSquareClient client)
         {
             lock (clients)
@@ -72,6 +142,9 @@ namespace NetSquare.Client
             }
         }
 
+        /// <summary>
+        /// Executes the add clients operation.
+        /// </summary>
         public void AddClients(List<NetSquareClient> clients)
         {
             lock (clients)
@@ -80,6 +153,9 @@ namespace NetSquare.Client
             }
         }
 
+        /// <summary>
+        /// Executes the remove client operation.
+        /// </summary>
         public void RemoveClient(NetSquareClient client)
         {
             lock (clients)
@@ -88,6 +164,9 @@ namespace NetSquare.Client
             }
         }
 
+        /// <summary>
+        /// Executes the clear clients operation.
+        /// </summary>
         public void ClearClients()
         {
             lock (clients)
@@ -96,6 +175,9 @@ namespace NetSquare.Client
             }
         }
 
+        /// <summary>
+        /// Executes the remove clients operation.
+        /// </summary>
         public void RemoveClients(List<NetSquareClient> clients)
         {
             lock (clients)
@@ -105,6 +187,9 @@ namespace NetSquare.Client
             }
         }
 
+        /// <summary>
+        /// Executes the start operation.
+        /// </summary>
         public void Start()
         {
             Running = true;
@@ -163,6 +248,9 @@ namespace NetSquare.Client
             });
         }
 
+        /// <summary>
+        /// Executes the stop operation.
+        /// </summary>
         public void Stop()
         {
             stopOrder = true;
@@ -170,3 +258,4 @@ namespace NetSquare.Client
         }
     }
 }
+#endregion

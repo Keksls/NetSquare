@@ -1,14 +1,27 @@
-﻿using System.IO;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
+#region Source
 namespace NetSquare.Core.Encryption
 {
+    /// <summary>
+    /// Represents the aes encryptor component.
+    /// </summary>
     public class AES_Encryptor : Encryptor
     {
+        /// <summary>
+        /// Gets or sets the encryptor value.
+        /// </summary>
         public ICryptoTransform encryptor { get; private set; }
+        /// <summary>
+        /// Gets or sets the decryptor value.
+        /// </summary>
         public ICryptoTransform decryptor { get; private set; }
 
+        /// <summary>
+        /// Executes the decrypt operation.
+        /// </summary>
         public override byte[] Decrypt(byte[] data)
         {
             byte[] decrypted = null;
@@ -25,6 +38,9 @@ namespace NetSquare.Core.Encryption
             return decrypted;
         }
 
+        /// <summary>
+        /// Executes the encrypt operation.
+        /// </summary>
         public override byte[] Encrypt(byte[] data)
         {
             byte[] encrypted = null;
@@ -41,6 +57,9 @@ namespace NetSquare.Core.Encryption
             return encrypted;
         }
 
+        /// <summary>
+        /// Executes the generate random salt operation.
+        /// </summary>
         private static byte[] GenerateRandomSalt()
         {
             byte[] data = new byte[32];
@@ -50,6 +69,9 @@ namespace NetSquare.Core.Encryption
             return data;
         }
 
+        /// <summary>
+        /// Executes the post set key operation.
+        /// </summary>
         internal override void PostSetKey()
         {
             var key = new Rfc2898DeriveBytes(Encoding.UTF8.GetBytes(password), GenerateRandomSalt(), 52768);
@@ -66,3 +88,4 @@ namespace NetSquare.Core.Encryption
         }
     }
 }
+#endregion

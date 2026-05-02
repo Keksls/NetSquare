@@ -1,19 +1,26 @@
-﻿using System;
-using System.Windows.Forms;
+using System;
+using System.Windows;
 
+#region Source
 namespace ServerMonitor
 {
+    /// <summary>
+    /// Represents the program component.
+    /// </summary>
     internal static class Program
     {
-        /// <summary>
-        /// Point d'entrée principal de l'application.
-        /// </summary>
         [STAThread]
-        static void Main()
+        /// <summary>
+        /// Executes the main operation.
+        /// </summary>
+        private static void Main()
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Form1());
+            Application application = new Application
+            {
+                ShutdownMode = ShutdownMode.OnMainWindowClose
+            };
+            application.Run(new Form1());
         }
     }
 }
+#endregion

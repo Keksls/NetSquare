@@ -1,11 +1,15 @@
-﻿using Newtonsoft.Json;
+using System.Web.Script.Serialization;
 using System;
 using System.IO;
 using System.Reflection;
 using System.Text;
 
+#region Source
 namespace NetSquare.Server
 {
+    /// <summary>
+    /// Represents the net square configuration component.
+    /// </summary>
     public class NetSquareConfiguration
     {
         /// <summary>
@@ -41,6 +45,9 @@ namespace NetSquare.Server
         /// </summary>
         public float UpdateFrequencyHz { get; set; }
 
+        /// <summary>
+        /// Initializes a new instance of the net square configuration class.
+        /// </summary>
         public NetSquareConfiguration()
         {
             Port = 5555;
@@ -52,6 +59,9 @@ namespace NetSquare.Server
             UpdateFrequencyHz = 10;
         }
 
+        /// <summary>
+        /// Executes the to string operation.
+        /// </summary>
         public override string ToString()
         {
             StringBuilder sb = new StringBuilder();
@@ -66,9 +76,18 @@ namespace NetSquare.Server
         }
     }
 
+    /// <summary>
+    /// Represents the net square configuration manager component.
+    /// </summary>
     public static class NetSquareConfigurationManager
     {
+        /// <summary>
+        /// Stores the configuration value.
+        /// </summary>
         public static NetSquareConfiguration Configuration;
+        /// <summary>
+        /// Stores the configuration path value.
+        /// </summary>
         private static string configurationPath;
 
         static NetSquareConfigurationManager()
@@ -76,7 +95,7 @@ namespace NetSquare.Server
             configurationPath = Environment.CurrentDirectory + @"\config.json";
             if (File.Exists(configurationPath))
             {
-                Configuration = JsonConvert.DeserializeObject<NetSquareConfiguration>(File.ReadAllText(configurationPath));
+                Configuration = new JavaScriptSerializer().Deserialize<NetSquareConfiguration>(File.ReadAllText(configurationPath));
                 Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
             }
             else
@@ -165,7 +184,8 @@ namespace NetSquare.Server
         {
             Configuration = configuration;
             Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
-            File.WriteAllText(configurationPath, JsonConvert.SerializeObject(configuration));
+            File.WriteAllText(configurationPath, new JavaScriptSerializer().Serialize(configuration));
         }
     }
 }
+#endregion

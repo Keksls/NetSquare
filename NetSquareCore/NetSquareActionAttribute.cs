@@ -1,11 +1,15 @@
-﻿using System;
+using System;
 
+#region Source
 namespace NetSquare.Core
 {
     /// <summary>
     /// Use this attribute to link method to a particular HeadID or a networkMessage received by NetSquare
     /// </summary>
     [AttributeUsage(AttributeTargets.Method)]
+    /// <summary>
+    /// Represents the net square action attribute component.
+    /// </summary>
     public class NetSquareActionAttribute : Attribute
     {
         /// <summary>
@@ -32,3 +36,4 @@ namespace NetSquare.Core
         }
     }
 }
+#endregion

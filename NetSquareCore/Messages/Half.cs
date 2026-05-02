@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Globalization;
 
@@ -23,13 +23,22 @@ namespace NetSquare.Core
     ///     - IEEE 754 revision, link: http://grouper.ieee.org/groups/754/
     /// </remarks>
     [Serializable]
+    /// <summary>
+    /// Represents the half value.
+    /// </summary>
     public struct Half : IComparable, IFormattable, IConvertible, IComparable<Half>, IEquatable<Half>
     {
         /// <summary>
         /// Internal representation of the half-precision floating-point number.
         /// </summary>
         [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        /// <summary>
+        /// Stores the value value.
+        /// </summary>
         internal ushort value;
+        /// <summary>
+        /// Gets or sets the value value.
+        /// </summary>
         public ushort Value { get { return value; } }
 
         #region Constants

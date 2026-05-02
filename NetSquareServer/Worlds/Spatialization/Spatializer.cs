@@ -1,4 +1,4 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -6,21 +6,67 @@ using System.Diagnostics;
 
 namespace NetSquare.Server.Worlds
 {
+    /// <summary>
+    /// Represents the spatializer component.
+    /// </summary>
     public abstract class Spatializer
     {
+        /// <summary>
+        /// Gets or sets the world value.
+        /// </summary>
         public NetSquareWorld World { get; private set; }
+        /// <summary>
+        /// Gets or sets the static entities count value.
+        /// </summary>
         public uint StaticEntitiesCount { get; internal set; }
+        /// <summary>
+        /// Gets or sets the clients transform frames value.
+        /// </summary>
         public ConcurrentDictionary<uint, List<INetSquareSynchFrame>> ClientsTransformFrames { get; internal set; }
+        /// <summary>
+        /// Gets or sets the synch frequency value.
+        /// </summary>
         public int SynchFrequency { get; private set; }
+        /// <summary>
+        /// Gets or sets the spatialization frequency value.
+        /// </summary>
         public int SpatializationFrequency { get; private set; }
+        /// <summary>
+        /// Stores the synch name value.
+        /// </summary>
         private string synchName;
+        /// <summary>
+        /// Stores the spatialization name value.
+        /// </summary>
         private string spatializationName;
+        /// <summary>
+        /// Stores the synch max frequency value.
+        /// </summary>
         private int synchMaxFrequency = -1;
+        /// <summary>
+        /// Stores the synch min frequency value.
+        /// </summary>
         private int synchMinFrequency = -1;
+        /// <summary>
+        /// Stores the synch minimum offset value.
+        /// </summary>
         private int synchMinimumOffset = 50;
+        /// <summary>
+        /// Stores the last frame pending messages value.
+        /// </summary>
         private int lastFramePendingMessages = 0;
+        /// <summary>
+        /// Stores the synch last durations value.
+        /// </summary>
         private List<int> synchLastDurations;
+        /// <summary>
+        /// Stores the sync stop watch value.
+        /// </summary>
         protected Stopwatch syncStopWatch;
+        /// <summary>
+        /// Stores the started value.
+        /// </summary>
+        private bool started;
 
         /// <summary>
         /// Instantiate a new spatializer
@@ -35,7 +81,6 @@ namespace NetSquare.Server.Worlds
             SpatializationFrequency = NetSquareScheduler.GetMsFrequencyFromHz(spatializationFreq);
             SynchFrequency = NetSquareScheduler.GetMsFrequencyFromHz(synchFreq);
             syncStopWatch = new Stopwatch();
-            Start();
         }
 
         /// <summary>
@@ -166,26 +211,13 @@ namespace NetSquare.Server.Worlds
         /// <param name="synchFrames"> list of frames to store</param>
         public virtual void StoreSynchFrames(uint clientID, INetSquareSynchFrame[] synchFrames)
         {
-            // create a new list of frames for the client if it doesn't exist
-            if (!ClientsTransformFrames.ContainsKey(clientID))
-            {
-                lock (ClientsTransformFrames)
-                {
-                    // add the first frame to the client current frames
-                    while (!ClientsTransformFrames.TryAdd(clientID, new List<INetSquareSynchFrame>()))
-                    {
-                        continue;
-                    }
-                }
-            }
-            // add frames to the client current frames
-            foreach (var frame in synchFrames)
-            {
-                lock (ClientsTransformFrames)
-                {
-                    ClientsTransformFrames[clientID].Add(frame);
-                }
-            }
+            if (synchFrames == null || synchFrames.Length == 0)
+                return;
+
+            List<INetSquareSynchFrame> frames = ClientsTransformFrames.GetOrAdd(clientID, _ => new List<INetSquareSynchFrame>());
+            lock (frames)
+                frames.AddRange(synchFrames);
+
             // set client pos as last frame
             if (NetSquareSynchFramesUtils.TryGetMostRecentTransformFrame(synchFrames, out NetsquareTransformFrame mostRecentTransformFrame))
             {
@@ -200,19 +232,12 @@ namespace NetSquare.Server.Worlds
         /// <param name="synchFrame"> frame to store</param>
         public virtual void StoreSynchFrame(uint clientID, INetSquareSynchFrame synchFrame)
         {
-            lock (ClientsTransformFrames)
-            {
-                // create a new list of frames for the client if it doesn't exist
-                if (!ClientsTransformFrames.ContainsKey(clientID))
-                {
-                    while (!ClientsTransformFrames.TryAdd(clientID, new List<INetSquareSynchFrame>()))
-                    {
-                        continue;
-                    }
-                }
-                // add frames to the client current frames
-                ClientsTransformFrames[clientID].Add(synchFrame);
-            }
+            if (synchFrame == null)
+                return;
+
+            List<INetSquareSynchFrame> frames = ClientsTransformFrames.GetOrAdd(clientID, _ => new List<INetSquareSynchFrame>());
+            lock (frames)
+                frames.Add(synchFrame);
 
             // set client pos as last frame if it's a transform frame
             switch (synchFrame.SynchFrameType)
@@ -221,6 +246,36 @@ namespace NetSquare.Server.Worlds
                     World.SetClientTransform(clientID, (NetsquareTransformFrame)synchFrame);
                     break;
             }
+        }
+
+        /// <summary>
+        /// Executes the drain stored frames operation.
+        /// </summary>
+        protected Dictionary<uint, List<INetSquareSynchFrame>> DrainStoredFrames()
+        {
+            Dictionary<uint, List<INetSquareSynchFrame>> snapshot = new Dictionary<uint, List<INetSquareSynchFrame>>();
+            foreach (var pair in ClientsTransformFrames)
+            {
+                List<INetSquareSynchFrame> frames = pair.Value;
+                lock (frames)
+                {
+                    if (frames.Count == 0)
+                        continue;
+
+                    snapshot[pair.Key] = new List<INetSquareSynchFrame>(frames);
+                    frames.Clear();
+                }
+            }
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Executes the remove stored frames operation.
+        /// </summary>
+        protected void RemoveStoredFrames(uint clientID)
+        {
+            List<INetSquareSynchFrame> removed;
+            ClientsTransformFrames.TryRemove(clientID, out removed);
         }
 
         /// <summary>
@@ -262,6 +317,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public void Start()
         {
+            if (started)
+                return;
+
+            started = true;
             // start synchronization loop
             NetSquareScheduler.AddAction(synchName, SynchFrequency, true, SynchLoop);
             NetSquareScheduler.StartAction(synchName);
@@ -276,11 +335,18 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public void Stop()
         {
+            if (!started)
+                return;
+
             NetSquareScheduler.StopAction(synchName);
             NetSquareScheduler.StopAction(spatializationName);
+            started = false;
         }
     }
 
+    /// <summary>
+    /// Defines the available spatializer type values.
+    /// </summary>
     public enum SpatializerType
     {
         None = 0,

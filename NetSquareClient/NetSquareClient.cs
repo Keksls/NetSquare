@@ -1,4 +1,4 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Core.Messages;
 using System;
 using System.Collections.Concurrent;
@@ -9,34 +9,114 @@ using System.Threading;
 
 namespace NetSquare.Client
 {
+    /// <summary>
+    /// Represents the net square client component.
+    /// </summary>
     public class NetSquareClient
     {
         #region Events
+        /// <summary>
+        /// Occurs when disconected is raised.
+        /// </summary>
         public event Action OnDisconected;
+        /// <summary>
+        /// Occurs when connected is raised.
+        /// </summary>
         public event Action<uint> OnConnected;
+        /// <summary>
+        /// Occurs when connection fail is raised.
+        /// </summary>
         public event Action OnConnectionFail;
+        /// <summary>
+        /// Occurs when unregistered message received is raised.
+        /// </summary>
         public event Action<NetworkMessage> OnUnregisteredMessageReceived;
+        /// <summary>
+        /// Occurs when exception is raised.
+        /// </summary>
         public event Action<Exception> OnException;
         #endregion
 
         #region Variables
+        /// <summary>
+        /// Stores the dispatcher value.
+        /// </summary>
         public NetSquareDispatcher Dispatcher;
+        /// <summary>
+        /// Gets or sets the worlds manager value.
+        /// </summary>
         public WorldsManager WorldsManager { get; private set; }
+        /// <summary>
+        /// Gets or sets the client value.
+        /// </summary>
         public ConnectedClient Client { get; private set; }
+        /// <summary>
+        /// Gets or sets the port value.
+        /// </summary>
         public int Port { get; private set; }
+        /// <summary>
+        /// Gets or sets the ip adress value.
+        /// </summary>
         public string IPAdress { get; private set; }
+        /// <summary>
+        /// Gets or sets the client id value.
+        /// </summary>
         public uint ClientID { get { return Client != null ? Client.ID : 0; } }
+        /// <summary>
+        /// Gets or sets the is connected value.
+        /// </summary>
         public bool IsConnected { get { return Client?.TcpSocket?.Connected ?? false; } }
+        /// <summary>
+        /// Gets or sets the nb sending messages value.
+        /// </summary>
         public int NbSendingMessages { get { return Client != null ? Client.NbMessagesToSend : 0; } }
+        /// <summary>
+        /// Gets or sets the nb processing messages value.
+        /// </summary>
         public int NbProcessingMessages { get { return messagesQueue.Count; } }
+        /// <summary>
+        /// Stores the protocole type value.
+        /// </summary>
         public NetSquareProtocoleType ProtocoleType;
+        /// <summary>
+        /// Gets or sets the is time synchonized value.
+        /// </summary>
         public bool IsTimeSynchonized { get { return ServerTimeOffset != 0f; } }
+        /// <summary>
+        /// Stores the is synchronizing time value.
+        /// </summary>
         private bool isSynchronizingTime = false;
+        /// <summary>
+        /// Gets or sets the server time offset value.
+        /// </summary>
         public float ServerTimeOffset { get; private set; }
-        private uint nbReplyAsked = 1;
+        /// <summary>
+        /// Stores the nb reply asked value.
+        /// </summary>
+        private uint nbReplyAsked = 0;
+        /// <summary>
+        /// Stores the reply id lock value.
+        /// </summary>
+        private readonly object replyIDLock = new object();
+        /// <summary>
+        /// Stores the is started value.
+        /// </summary>
         private bool isStarted;
+        /// <summary>
+        /// Stores the messages queue value.
+        /// </summary>
         private ConcurrentQueue<NetworkMessage> messagesQueue = new ConcurrentQueue<NetworkMessage>();
-        private Dictionary<uint, NetSquareAction> replyCallBack = new Dictionary<uint, NetSquareAction>();
+        /// <summary>
+        /// Stores the messages available value.
+        /// </summary>
+        private SemaphoreSlim messagesAvailable = new SemaphoreSlim(0);
+        /// <summary>
+        /// Stores the reply call back value.
+        /// </summary>
+        private ConcurrentDictionary<uint, NetSquareAction> replyCallBack = new ConcurrentDictionary<uint, NetSquareAction>();
+        /// <summary>
+        /// Stores the types dic value.
+        /// </summary>
         private static Dictionary<Type, Action<NetworkMessage, object>> typesDic;
         #endregion
 
@@ -88,6 +168,7 @@ namespace NetSquare.Client
                 Port = port;
                 IPAdress = hostNameOrIpAddress;
                 TcpClient tcpClient = new TcpClient();
+                tcpClient.NoDelay = true;
                 tcpClient.Connect(hostNameOrIpAddress, port);
 
                 // start routine that will validate server connection
@@ -105,6 +186,7 @@ namespace NetSquare.Client
         public void Disconnect()
         {
             isStarted = false;
+            messagesAvailable.Release();
             OnDisconected?.Invoke();
             if (Client == null)
                 return;
@@ -168,6 +250,7 @@ namespace NetSquare.Client
         private void Client_OnMessageReceived(NetworkMessage message)
         {
             messagesQueue.Enqueue(message);
+            messagesAvailable.Release();
         }
 
         /// <summary>
@@ -181,6 +264,7 @@ namespace NetSquare.Client
             {
                 try
                 {
+                    messagesAvailable.Wait(100);
                     while (messagesQueue.TryDequeue(out message))
                     {
                         switch ((NetSquareMessageType)message.MsgType)
@@ -194,10 +278,10 @@ namespace NetSquare.Client
 
                             // It's a reply message, we need to invoke the callback
                             case NetSquareMessageType.Reply:
-                                if (replyCallBack.ContainsKey(message.ReplyID))
+                                NetSquareAction callback;
+                                if (replyCallBack.TryRemove(message.ReplyID, out callback))
                                 {
-                                    Dispatcher.ExecuteinMainThread(replyCallBack[message.ReplyID], message);
-                                    replyCallBack.Remove(message.ReplyID);
+                                    Dispatcher.ExecuteinMainThread(callback, message);
                                 }
                                 break;
 
@@ -215,7 +299,25 @@ namespace NetSquare.Client
                 {
                     OnException?.Invoke(ex);
                 }
-                Thread.Sleep(1);
+            }
+        }
+
+        /// <summary>
+        /// Executes the get next reply id operation.
+        /// </summary>
+        private uint GetNextReplyID()
+        {
+            lock (replyIDLock)
+            {
+                do
+                {
+                    nbReplyAsked++;
+                    if (nbReplyAsked == 0 || nbReplyAsked > UInt24.MaxValue)
+                        nbReplyAsked = 1;
+                }
+                while (replyCallBack.ContainsKey(nbReplyAsked));
+
+                return nbReplyAsked;
             }
         }
         #endregion
@@ -260,13 +362,9 @@ namespace NetSquare.Client
         /// <param name="callback">callback to invoke when server respond</param>
         public void SendMessage(NetworkMessage msg, NetSquareAction callback)
         {
-            lock (replyCallBack)
-            {
-                msg.ReplyTo(nbReplyAsked);
-                nbReplyAsked++;
-                uint rplID = msg.ReplyID;
-                replyCallBack.Add(rplID, callback);
-            }
+            uint rplID = GetNextReplyID();
+            msg.ReplyTo(rplID);
+            replyCallBack[rplID] = callback;
             SendMessage(msg);
         }
 
@@ -278,13 +376,9 @@ namespace NetSquare.Client
         public void SendMessage(ushort headID, NetSquareAction callback)
         {
             NetworkMessage msg = new NetworkMessage(headID);
-            lock (replyCallBack)
-            {
-                msg.ReplyTo(nbReplyAsked);
-                nbReplyAsked++;
-                uint rplID = msg.ReplyID;
-                replyCallBack.Add(rplID, callback);
-            }
+            uint rplID = GetNextReplyID();
+            msg.ReplyTo(rplID);
+            replyCallBack[rplID] = callback;
             SendMessage(msg);
         }
 
@@ -296,13 +390,9 @@ namespace NetSquare.Client
         public void SendMessage(Enum headID, NetSquareAction callback)
         {
             NetworkMessage msg = new NetworkMessage(headID);
-            lock (replyCallBack)
-            {
-                msg.ReplyTo(nbReplyAsked);
-                nbReplyAsked++;
-                uint rplID = msg.ReplyID;
-                replyCallBack.Add(rplID, callback);
-            }
+            uint rplID = GetNextReplyID();
+            msg.ReplyTo(rplID);
+            replyCallBack[rplID] = callback;
             SendMessage(msg);
         }
 

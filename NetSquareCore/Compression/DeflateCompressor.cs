@@ -1,10 +1,17 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
 
+#region Source
 namespace NetSquare.Core.Compression
 {
+    /// <summary>
+    /// Represents the deflate compressor component.
+    /// </summary>
     public class DeflateCompressor : Compressor
     {
+        /// <summary>
+        /// Executes the compress operation.
+        /// </summary>
         public override byte[] Compress(byte[] data)
         {
             MemoryStream output = new MemoryStream();
@@ -15,6 +22,9 @@ namespace NetSquare.Core.Compression
             return output.ToArray();
         }
 
+        /// <summary>
+        /// Executes the decompress operation.
+        /// </summary>
         public override byte[] Decompress(byte[] data)
         {
             MemoryStream input = new MemoryStream(data);
@@ -27,3 +37,4 @@ namespace NetSquare.Core.Compression
         }
     }
 }
+#endregion

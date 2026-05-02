@@ -1,27 +1,64 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Core.Messages;
 using System;
 using System.Collections.Generic;
 
 namespace NetSquare.Client
 {
+    /// <summary>
+    /// Represents the worlds manager component.
+    /// </summary>
     public class WorldsManager
     {
+        /// <summary>
+        /// Gets or sets the is in world value.
+        /// </summary>
         public bool IsInWorld { get; private set; }
+        /// <summary>
+        /// Gets or sets the current world id value.
+        /// </summary>
         public ushort CurrentWorldID { get; private set; }
         /// <summary>
         /// Event raised when a client join the world.
         /// ClientID, transform of the client, message received
         /// </summary>
         public event Action<uint, NetsquareTransformFrame, NetworkMessage> OnClientJoinWorld;
+        /// <summary>
+        /// Occurs when synchronize is raised.
+        /// </summary>
         public event NetSquareAction OnSynchronize;
+        /// <summary>
+        /// Occurs when client leave world is raised.
+        /// </summary>
         public event Action<uint> OnClientLeaveWorld;
+        /// <summary>
+        /// Occurs when receive synch frames is raised.
+        /// </summary>
         public event Action<uint, INetSquareSynchFrame[]> OnReceiveSynchFrames;
+        /// <summary>
+        /// Gets or sets the synchronize using udp value.
+        /// </summary>
         public bool SynchronizeUsingUDP { get; set; }
+        /// <summary>
+        /// Stores the auto send frames value.
+        /// </summary>
         public bool AutoSendFrames = true;
+        /// <summary>
+        /// Stores the client value.
+        /// </summary>
         private NetSquareClient client;
+        /// <summary>
+        /// Stores the current client frames value.
+        /// </summary>
         private List<INetSquareSynchFrame> currentClientFrames = new List<INetSquareSynchFrame>();
+        /// <summary>
+        /// Stores the current client frames lock value.
+        /// </summary>
+        private readonly object currentClientFramesLock = new object();
 
+        /// <summary>
+        /// Initializes a new instance of the worlds manager class.
+        /// </summary>
         public WorldsManager(NetSquareClient _client)
         {
             client = _client;
@@ -156,7 +193,11 @@ namespace NetSquare.Client
         /// <param name="synchFrame"> synch frame to store</param>
         public void StoreSynchFrame(INetSquareSynchFrame synchFrame)
         {
-            currentClientFrames.Add(synchFrame);
+            if (synchFrame == null)
+                return;
+
+            lock (currentClientFramesLock)
+                currentClientFrames.Add(synchFrame);
         }
 
         /// <summary>
@@ -166,12 +207,19 @@ namespace NetSquare.Client
         {
             if (!IsInWorld)
                 return;
-            if (currentClientFrames.Count == 0)
-                return;
+
+            List<INetSquareSynchFrame> frames;
+            lock (currentClientFramesLock)
+            {
+                if (currentClientFrames.Count == 0)
+                    return;
+
+                frames = new List<INetSquareSynchFrame>(currentClientFrames);
+                currentClientFrames.Clear();
+            }
 
             NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrames, client.ClientID);
-            NetSquareSynchFramesUtils.SerializeFrames(message, currentClientFrames);
-            currentClientFrames.Clear();
+            NetSquareSynchFramesUtils.SerializeFrames(message, frames);
 
             if (SynchronizeUsingUDP)
                 client.SendMessageUDP(message);
@@ -238,6 +286,9 @@ namespace NetSquare.Client
                 OnClientLeaveWorld(message.Serializer.GetUInt24().UInt32);
         }
 
+        /// <summary>
+        /// Executes the set synch frame operation.
+        /// </summary>
         private void SetSynchFrame(NetworkMessage message)
         {
             if (OnReceiveSynchFrames == null)
@@ -246,6 +297,9 @@ namespace NetSquare.Client
             OnReceiveSynchFrames(message.ClientID, new INetSquareSynchFrame[] { NetSquareSynchFramesUtils.GetFrame(message) });
         }
 
+        /// <summary>
+        /// Executes the set synch frames operation.
+        /// </summary>
         private unsafe void SetSynchFrames(NetworkMessage message)
         {
             if (OnReceiveSynchFrames == null)
@@ -256,6 +310,9 @@ namespace NetSquare.Client
                 OnReceiveSynchFrames(message.ClientID, frames);
         }
 
+        /// <summary>
+        /// Executes the set synch frames packed operation.
+        /// </summary>
         private unsafe void SetSynchFramesPacked(NetworkMessage message)
         {
             if (OnReceiveSynchFrames == null)

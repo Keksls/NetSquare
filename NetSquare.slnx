@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="Client Test/Client Test.csproj" Id="6bd6377a-6ff7-4b8a-ac78-2648a2892b90" />
+  <Project Path="ClientsMonitor/ClientsMonitor.csproj" Id="f04e56f6-3747-4da3-9c82-2b5190749fc2" />
+  <Project Path="NetSquareClient/NetSquareClient.csproj" Id="775043f8-96a9-48e7-8a85-437d336bde72" />
+  <Project Path="NetSquareCore/NetSquareCore.csproj" Id="f828690c-33d4-4c51-872e-cae5ef3c7b7b" />
+  <Project Path="NetSquareDiagnostics/NetSquareDiagnostics.csproj" Id="7f01e60a-4b34-49c7-9c3b-73b90b55a24b" />
+  <Project Path="NetSquareServer/NetSquareServer.csproj" Id="73e58ab1-7e71-486e-98fd-3531ad2f3c1a" />
+  <Project Path="Server Test/Server Test.csproj" Id="65a4b2c9-610c-4b88-a18e-630fcf3dc33f" />
+  <Project Path="ServerMonitor/ServerMonitor.csproj" Id="a85b1ab8-0266-40c0-88f1-46000f319e16" />
+</Solution>

@@ -1,15 +1,28 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
+#region Source
 namespace NetSquare.Core.Encryption
 {
+    /// <summary>
+    /// Represents the rijndael encryptor component.
+    /// </summary>
     public class Rijndael_Encryptor : Encryptor
     {
+        /// <summary>
+        /// Stores the encryptor value.
+        /// </summary>
         private ICryptoTransform encryptor;
+        /// <summary>
+        /// Stores the decryptor value.
+        /// </summary>
         private ICryptoTransform decryptor;
 
+        /// <summary>
+        /// Executes the decrypt operation.
+        /// </summary>
         public override byte[] Decrypt(byte[] data)
         {
             byte[] decrypted = null;
@@ -26,6 +39,9 @@ namespace NetSquare.Core.Encryption
             return decrypted;
         }
 
+        /// <summary>
+        /// Executes the encrypt operation.
+        /// </summary>
         public override byte[] Encrypt(byte[] data)
         {
             byte[] encrypted = null;
@@ -42,6 +58,9 @@ namespace NetSquare.Core.Encryption
             return encrypted;
         }
 
+        /// <summary>
+        /// Executes the generate random salt operation.
+        /// </summary>
         private static byte[] GenerateRandomSalt()
         {
             byte[] data = new byte[32];
@@ -51,6 +70,9 @@ namespace NetSquare.Core.Encryption
             return data;
         }
 
+        /// <summary>
+        /// Executes the post set key operation.
+        /// </summary>
         internal override void PostSetKey()
         {
             if (string.IsNullOrEmpty(password))
@@ -72,3 +94,4 @@ namespace NetSquare.Core.Encryption
         }
     }
 }
+#endregion

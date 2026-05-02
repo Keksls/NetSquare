@@ -1,15 +1,33 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
 namespace NetSquare.Core
 {
+    /// <summary>
+    /// Represents the net square serializer component.
+    /// </summary>
     public class NetSquareSerializer
     {
+        /// <summary>
+        /// Stores the buffer value.
+        /// </summary>
         private byte[] _buffer;
+        /// <summary>
+        /// Stores the position value.
+        /// </summary>
         private int _position;
+        /// <summary>
+        /// Stores the length value.
+        /// </summary>
         private int _length;
+        /// <summary>
+        /// Stores the grow min value.
+        /// </summary>
         private int _growMin;
+        /// <summary>
+        /// Stores the serialization mode value.
+        /// </summary>
         private NetSquareSerializationMode _serializationMode = NetSquareSerializationMode.None;
 
         /// <summary>
@@ -33,7 +51,7 @@ namespace NetSquare.Core
         /// <param name="position"> The position in the buffer </param>
         public void StartReading(int length = 0, int position = 0)
         {
-            _length = length > 0 ? Math.Min(length, _buffer.Length) : Math.Min(position, _buffer.Length);
+            _length = length > 0 ? Math.Min(length, _buffer.Length) : _buffer.Length;
             _position = position;
             _serializationMode = NetSquareSerializationMode.Read;
         }
@@ -49,6 +67,40 @@ namespace NetSquare.Core
             _position = 0;
             _growMin = growMin;
             _serializationMode = NetSquareSerializationMode.Write;
+        }
+
+        /// <summary>
+        /// Executes the can read bytes operation.
+        /// </summary>
+        private bool CanReadBytes(int length)
+        {
+            return length >= 0 && length <= _length - _position;
+        }
+
+        /// <summary>
+        /// Executes the can read elements operation.
+        /// </summary>
+        private bool CanReadElements(int count, int elementSize)
+        {
+            return count >= 0 && count <= (_length - _position) / elementSize;
+        }
+
+        /// <summary>
+        /// Executes the throw if cannot read bytes operation.
+        /// </summary>
+        private void ThrowIfCannotReadBytes(int length)
+        {
+            if (!CanReadBytes(length))
+                throw new Exception("Buffer overflow");
+        }
+
+        /// <summary>
+        /// Executes the throw if cannot read elements operation.
+        /// </summary>
+        private void ThrowIfCannotReadElements(int count, int elementSize)
+        {
+            if (!CanReadElements(count, elementSize))
+                throw new Exception("Buffer overflow");
         }
 
         #region Get Methods
@@ -291,10 +343,7 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadBytes(length);
                     string value = Encoding.UTF8.GetString(_buffer, _position, length);
                     _position += length;
                     return value;
@@ -338,12 +387,28 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadBytes(length);
                     byte[] value = new byte[length];
                     Array.Copy(_buffer, _position, value, 0, length);
+                    _position += length;
+                    return value;
+
+                default:
+                    throw new Exception("Invalid serialization mode");
+            }
+        }
+
+        /// <summary>
+        /// Executes the get byte array segment operation.
+        /// </summary>
+        public ArraySegment<byte> GetByteArraySegment()
+        {
+            switch (_serializationMode)
+            {
+                case NetSquareSerializationMode.Read:
+                    int length = GetInt();
+                    ThrowIfCannotReadBytes(length);
+                    ArraySegment<byte> value = new ArraySegment<byte>(_buffer, _position, length);
                     _position += length;
                     return value;
 
@@ -363,11 +428,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 2 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 2);
                     ushort[] value = new ushort[length];
+                    int byteLength = length * 2;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToUInt16(_buffer, _position);
@@ -391,11 +460,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 2 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 2);
                     short[] value = new short[length];
+                    int byteLength = length * 2;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToInt16(_buffer, _position);
@@ -419,11 +492,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 4 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 4);
                     int[] value = new int[length];
+                    int byteLength = length * 4;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToInt32(_buffer, _position);
@@ -447,11 +524,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 4 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 4);
                     uint[] value = new uint[length];
+                    int byteLength = length * 4;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToUInt32(_buffer, _position);
@@ -475,11 +556,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 8 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 8);
                     long[] value = new long[length];
+                    int byteLength = length * 8;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToInt64(_buffer, _position);
@@ -503,11 +588,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 8 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 8);
                     ulong[] value = new ulong[length];
+                    int byteLength = length * 8;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToUInt64(_buffer, _position);
@@ -531,11 +620,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 4 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 4);
                     float[] value = new float[length];
+                    int byteLength = length * 4;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToSingle(_buffer, _position);
@@ -559,11 +652,15 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (_position + length * 8 > _length)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfCannotReadElements(length, 8);
                     double[] value = new double[length];
+                    int byteLength = length * 8;
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(_buffer, _position, value, 0, byteLength);
+                        _position += byteLength;
+                        return value;
+                    }
                     for (int i = 0; i < length; i++)
                     {
                         value[i] = BitConverter.ToDouble(_buffer, _position);
@@ -587,6 +684,10 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
+                    if (length < 0)
+                    {
+                        throw new Exception("Buffer overflow");
+                    }
                     string[] value = new string[length];
                     for (int i = 0; i < length; i++)
                     {
@@ -652,6 +753,10 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
+                    if (length < 0)
+                    {
+                        throw new Exception("Buffer overflow");
+                    }
                     T[] value = new T[length];
                     for (int i = 0; i < length; i++)
                     {
@@ -675,6 +780,10 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
+                    if (length < 0)
+                    {
+                        throw new Exception("Buffer overflow");
+                    }
                     List<T> value = new List<T>(length);
                     for (int i = 0; i < length; i++)
                     {
@@ -699,6 +808,10 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
+                    if (length < 0)
+                    {
+                        throw new Exception("Buffer overflow");
+                    }
                     Dictionary<TKey, TValue> value = new Dictionary<TKey, TValue>(length);
                     for (int i = 0; i < length; i++)
                     {
@@ -726,7 +839,7 @@ namespace NetSquare.Core
             switch (_serializationMode)
             {
                 case NetSquareSerializationMode.Read:
-                    return _position + length <= _length;
+                    return CanReadBytes(length);
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -744,7 +857,7 @@ namespace NetSquare.Core
             switch (_serializationMode)
             {
                 case NetSquareSerializationMode.Read:
-                    return _position + length <= _length;
+                    return length <= int.MaxValue && CanReadBytes((int)length);
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -936,7 +1049,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length + 4 <= _length;
+                    return length >= 0 && length <= _length - _position - 4;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -975,7 +1088,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length + 4 <= _length;
+                    return length >= 0 && length <= _length - _position - 4;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -997,7 +1110,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 2 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 2;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1019,7 +1132,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 2 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 2;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1041,7 +1154,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 4 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 4;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1063,7 +1176,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 4 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 4;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1085,7 +1198,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 8 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 8;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1107,7 +1220,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 8 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 8;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1129,7 +1242,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 4 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 4;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1151,7 +1264,7 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    return _position + length * 8 + 4 <= _length;
+                    return length >= 0 && length <= (_length - _position - 4) / 8;
 
                 default:
                     throw new Exception("Invalid serialization mode");
@@ -1173,13 +1286,23 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
+                    if (length < 0)
+                    {
+                        return false;
+                    }
+                    int savedPosition = _position;
+                    _position += 4;
                     for (int i = 0; i < length; i++)
                     {
                         if (!CanGetString())
                         {
+                            _position = savedPosition;
                             return false;
                         }
+                        int stringLength = BitConverter.ToInt32(_buffer, _position);
+                        _position += 4 + stringLength;
                     }
+                    _position = savedPosition;
                     return true;
 
                 default:
@@ -1397,17 +1520,12 @@ namespace NetSquare.Core
         /// Set a float value to the buffer
         /// </summary>
         /// <param name="value"> The value to Set </param>
-        public void Set(float value)
+        public unsafe void Set(float value)
         {
             switch (_serializationMode)
             {
                 case NetSquareSerializationMode.Write:
-                    byte[] bytes = BitConverter.GetBytes(value);
-                    EnsureCapacity(4);
-                    _buffer[_position++] = bytes[0];
-                    _buffer[_position++] = bytes[1];
-                    _buffer[_position++] = bytes[2];
-                    _buffer[_position++] = bytes[3];
+                    Set(*(uint*)&value);
                     break;
 
                 default:
@@ -1419,21 +1537,12 @@ namespace NetSquare.Core
         /// Set a double value to the buffer
         /// </summary>
         /// <param name="value"> The value to Set </param>
-        public void Set(double value)
+        public unsafe void Set(double value)
         {
             switch (_serializationMode)
             {
                 case NetSquareSerializationMode.Write:
-                    byte[] bytes = BitConverter.GetBytes(value);
-                    EnsureCapacity(8);
-                    _buffer[_position++] = bytes[0];
-                    _buffer[_position++] = bytes[1];
-                    _buffer[_position++] = bytes[2];
-                    _buffer[_position++] = bytes[3];
-                    _buffer[_position++] = bytes[4];
-                    _buffer[_position++] = bytes[5];
-                    _buffer[_position++] = bytes[6];
-                    _buffer[_position++] = bytes[7];
+                    Set(*(ulong*)&value);
                     break;
 
                 default:
@@ -1468,18 +1577,32 @@ namespace NetSquare.Core
         /// <param name="value"> The value to Set </param>
         public void Set(byte[] value, bool writeLenght = true)
         {
+            if (value == null)
+                throw new ArgumentNullException(nameof(value));
+            Set(value, 0, value.Length, writeLenght);
+        }
+
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
+        public void Set(byte[] value, int offset, int length, bool writeLenght = true)
+        {
             switch (_serializationMode)
             {
                 case NetSquareSerializationMode.Write:
+                    if (value == null)
+                        throw new ArgumentNullException(nameof(value));
+                    if (offset < 0 || length < 0 || offset > value.Length - length)
+                        throw new ArgumentOutOfRangeException();
                     switch (writeLenght)
                     {
                         case true:
-                            Set(value.Length);
+                            Set(length);
                             break;
                     }
-                    EnsureCapacity(value.Length);
-                    Array.Copy(value, 0, _buffer, _position, value.Length);
-                    _position += value.Length;
+                    EnsureCapacity(length);
+                    Array.Copy(value, offset, _buffer, _position, length);
+                    _position += length;
                     break;
 
                 default:
@@ -1504,7 +1627,14 @@ namespace NetSquare.Core
                             Set(ushorts.Length);
                             break;
                     }
-                    EnsureCapacity(ushorts.Length * 2);
+                    int byteLength = ushorts.Length * 2;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(ushorts, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < ushorts.Length; i++)
                     {
                         _buffer[_position++] = (byte)ushorts[i];
@@ -1534,7 +1664,14 @@ namespace NetSquare.Core
                             Set(shorts.Length);
                             break;
                     }
-                    EnsureCapacity(shorts.Length * 2);
+                    int byteLength = shorts.Length * 2;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(shorts, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < shorts.Length; i++)
                     {
                         _buffer[_position++] = (byte)shorts[i];
@@ -1564,7 +1701,14 @@ namespace NetSquare.Core
                             Set(ints.Length);
                             break;
                     }
-                    EnsureCapacity(ints.Length * 4);
+                    int byteLength = ints.Length * 4;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(ints, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < ints.Length; i++)
                     {
                         _buffer[_position++] = (byte)ints[i];
@@ -1596,7 +1740,14 @@ namespace NetSquare.Core
                             Set(uints.Length);
                             break;
                     }
-                    EnsureCapacity(uints.Length * 4);
+                    int byteLength = uints.Length * 4;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(uints, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < uints.Length; i++)
                     {
                         _buffer[_position++] = (byte)uints[i];
@@ -1628,7 +1779,14 @@ namespace NetSquare.Core
                             Set(longs.Length);
                             break;
                     }
-                    EnsureCapacity(longs.Length * 8);
+                    int byteLength = longs.Length * 8;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(longs, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < longs.Length; i++)
                     {
                         _buffer[_position++] = (byte)longs[i];
@@ -1664,7 +1822,14 @@ namespace NetSquare.Core
                             Set(ulongs.Length);
                             break;
                     }
-                    EnsureCapacity(ulongs.Length * 8);
+                    int byteLength = ulongs.Length * 8;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(ulongs, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < ulongs.Length; i++)
                     {
                         _buffer[_position++] = (byte)ulongs[i];
@@ -1689,7 +1854,7 @@ namespace NetSquare.Core
         /// <param name="floats"> The value to Set </param>
         /// <param name="writeLenght"> Write the length of the array </param>
         /// <exception cref="Exception"></exception>
-        public void Set(float[] floats, bool writeLenght = true)
+        public unsafe void Set(float[] floats, bool writeLenght = true)
         {
             switch (_serializationMode)
             {
@@ -1700,14 +1865,22 @@ namespace NetSquare.Core
                             Set(floats.Length);
                             break;
                     }
-                    EnsureCapacity(floats.Length * 4);
+                    int byteLength = floats.Length * 4;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(floats, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < floats.Length; i++)
                     {
-                        byte[] bytes = BitConverter.GetBytes(floats[i]);
-                        _buffer[_position++] = bytes[0];
-                        _buffer[_position++] = bytes[1];
-                        _buffer[_position++] = bytes[2];
-                        _buffer[_position++] = bytes[3];
+                        float item = floats[i];
+                        uint value = *(uint*)&item;
+                        _buffer[_position++] = (byte)value;
+                        _buffer[_position++] = (byte)(value >> 8);
+                        _buffer[_position++] = (byte)(value >> 16);
+                        _buffer[_position++] = (byte)(value >> 24);
                     }
                     break;
 
@@ -1722,7 +1895,7 @@ namespace NetSquare.Core
         /// <param name="doubles"> The value to Set </param>
         /// <param name="writeLenght"> Write the length of the array </param>
         /// <exception cref="Exception"></exception>
-        public void Set(double[] doubles, bool writeLenght = true)
+        public unsafe void Set(double[] doubles, bool writeLenght = true)
         {
             switch (_serializationMode)
             {
@@ -1733,18 +1906,26 @@ namespace NetSquare.Core
                             Set(doubles.Length);
                             break;
                     }
-                    EnsureCapacity(doubles.Length * 8);
+                    int byteLength = doubles.Length * 8;
+                    EnsureCapacity(byteLength);
+                    if (BitConverter.IsLittleEndian)
+                    {
+                        System.Buffer.BlockCopy(doubles, 0, _buffer, _position, byteLength);
+                        _position += byteLength;
+                        break;
+                    }
                     for (int i = 0; i < doubles.Length; i++)
                     {
-                        byte[] bytes = BitConverter.GetBytes(doubles[i]);
-                        _buffer[_position++] = bytes[0];
-                        _buffer[_position++] = bytes[1];
-                        _buffer[_position++] = bytes[2];
-                        _buffer[_position++] = bytes[3];
-                        _buffer[_position++] = bytes[4];
-                        _buffer[_position++] = bytes[5];
-                        _buffer[_position++] = bytes[6];
-                        _buffer[_position++] = bytes[7];
+                        double item = doubles[i];
+                        ulong value = *(ulong*)&item;
+                        _buffer[_position++] = (byte)value;
+                        _buffer[_position++] = (byte)(value >> 8);
+                        _buffer[_position++] = (byte)(value >> 16);
+                        _buffer[_position++] = (byte)(value >> 24);
+                        _buffer[_position++] = (byte)(value >> 32);
+                        _buffer[_position++] = (byte)(value >> 40);
+                        _buffer[_position++] = (byte)(value >> 48);
+                        _buffer[_position++] = (byte)(value >> 56);
                     }
                     break;
 
@@ -1949,6 +2130,14 @@ namespace NetSquare.Core
             byte[] result = new byte[_position];
             Array.Copy(_buffer, result, _position);
             return result;
+        }
+
+        /// <summary>
+        /// Copy the readable/written bytes into an existing buffer without allocating.
+        /// </summary>
+        public void CopyTo(byte[] destination, int destinationOffset)
+        {
+            Array.Copy(_buffer, 0, destination, destinationOffset, Length);
         }
 
         /// <summary>

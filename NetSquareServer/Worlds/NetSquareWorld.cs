@@ -1,23 +1,62 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace NetSquare.Server.Worlds
 {
+    /// <summary>
+    /// Represents the net square world component.
+    /// </summary>
     public class NetSquareWorld
     {
+        /// <summary>
+        /// Occurs when show static entities is raised.
+        /// </summary>
         public event Action<uint, List<StaticEntity>> OnShowStaticEntities;
+        /// <summary>
+        /// Occurs when hide static entities is raised.
+        /// </summary>
         public event Action<uint, List<StaticEntity>> OnHideStaticEntities;
+        /// <summary>
+        /// Occurs when client join world is raised.
+        /// </summary>
         public event Action<uint, NetsquareTransformFrame> OnClientJoinWorld;
+        /// <summary>
+        /// Gets or sets the id value.
+        /// </summary>
         public ushort ID { get; private set; }
+        /// <summary>
+        /// Gets or sets the clients value.
+        /// </summary>
         public ConcurrentDictionary<uint, NetsquareTransformFrame> Clients { get; private set; }
+        /// <summary>
+        /// Gets or sets the max clients in world value.
+        /// </summary>
         public ushort MaxClientsInWorld { get; private set; }
+        /// <summary>
+        /// Gets or sets the name value.
+        /// </summary>
         public string Name { get; private set; }
+        /// <summary>
+        /// Gets or sets the use spatializer value.
+        /// </summary>
         public bool UseSpatializer { get; private set; }
+        /// <summary>
+        /// Gets or sets the use synchronizer value.
+        /// </summary>
         public bool UseSynchronizer { get; private set; }
+        /// <summary>
+        /// Gets or sets the spatializer value.
+        /// </summary>
         public Spatializer Spatializer { get; private set; }
+        /// <summary>
+        /// Gets or sets the synchronizer value.
+        /// </summary>
         public Synchronizer Synchronizer { get; private set; }
+        /// <summary>
+        /// Stores the server value.
+        /// </summary>
         internal NetSquareServer server;
 
         /// <summary>
@@ -100,8 +139,17 @@ namespace NetSquare.Server.Worlds
             }
 
             // if spatializer is not null, start using spatializer
+            if (Spatializer != null && Spatializer != spatializer)
+                Spatializer.Stop();
+
             Spatializer = spatializer;
             UseSpatializer = true;
+            foreach (uint clientID in Clients.Keys)
+            {
+                ConnectedClient client = server.SafeGetClient(clientID);
+                if (client != null)
+                    Spatializer.AddClient(client);
+            }
         }
 
         /// <summary>
@@ -112,13 +160,41 @@ namespace NetSquare.Server.Worlds
         /// <returns>true if success</returns>
         public bool TryJoinWorld(uint clientID, NetsquareTransformFrame clientTransform)
         {
-            if (Clients.ContainsKey(clientID) || Clients.Count >= MaxClientsInWorld)
+            if (Clients.Count >= MaxClientsInWorld)
                 return false;
-            while (!Clients.TryAdd(clientID, clientTransform))
+
+            if (!Clients.TryAdd(clientID, clientTransform))
+                return false;
+
+            if (Clients.Count > MaxClientsInWorld)
             {
-                continue;
+                NetsquareTransformFrame removedTransform;
+                Clients.TryRemove(clientID, out removedTransform);
+                return false;
             }
-            Spatializer?.AddClient(server.GetClient(clientID));
+
+            try
+            {
+                if (Spatializer != null)
+                {
+                    ConnectedClient client = server.SafeGetClient(clientID);
+                    if (client == null)
+                    {
+                        NetsquareTransformFrame removedTransform;
+                        Clients.TryRemove(clientID, out removedTransform);
+                        return false;
+                    }
+
+                    Spatializer.AddClient(client);
+                }
+            }
+            catch
+            {
+                NetsquareTransformFrame removedTransform;
+                Clients.TryRemove(clientID, out removedTransform);
+                throw;
+            }
+
             OnClientJoinWorld?.Invoke(clientID, clientTransform);
             return true;
         }
@@ -130,16 +206,12 @@ namespace NetSquare.Server.Worlds
         /// <returns>true if success</returns>
         public bool TryLeaveWorld(uint clientID)
         {
+            NetsquareTransformFrame clientTransform;
+            if (!Clients.TryRemove(clientID, out clientTransform))
+                return false;
+
             Spatializer?.RemoveClient(clientID);
-            if (Clients.ContainsKey(clientID))
-            {
-                while (!Clients.TryRemove(clientID, out NetsquareTransformFrame clientTransform))
-                {
-                    continue;
-                }
-                return true;
-            }
-            return false;
+            return true;
         }
 
         /// <summary>
@@ -160,14 +232,41 @@ namespace NetSquare.Server.Worlds
         /// <param name="transform"> new transform of the client</param>
         public void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
         {
-            if (Clients.ContainsKey(clientID))
+            NetsquareTransformFrame currentTransform;
+            while (Clients.TryGetValue(clientID, out currentTransform))
             {
-                Clients[clientID] = transform;
-                server.Worlds.Fire_OnClientMove(clientID, transform);
+                if (Clients.TryUpdate(clientID, transform, currentTransform))
+                {
+                    server.Worlds.Fire_OnClientMove(clientID, transform);
+                    return;
+                }
             }
         }
 
         #region Broadcast
+        /// <summary>
+        /// Executes the get broadcast targets operation.
+        /// </summary>
+        private HashSet<uint> GetBroadcastTargets(uint clientID, bool useSpatialization)
+        {
+            if (UseSpatializer && useSpatialization && Spatializer != null)
+                return Spatializer.GetVisibleClients(clientID);
+
+            return new HashSet<uint>(Clients.Keys);
+        }
+
+        /// <summary>
+        /// Executes the remove excluded clients operation.
+        /// </summary>
+        private static void RemoveExcludedClients(HashSet<uint> clients, IEnumerable<uint> excludedClientIDs)
+        {
+            if (excludedClientIDs == null)
+                return;
+
+            foreach (uint excludedClientID in excludedClientIDs)
+                clients.Remove(excludedClientID);
+        }
+
         /// <summary>
         /// Send message to anyone in this world
         /// </summary>
@@ -175,10 +274,7 @@ namespace NetSquare.Server.Worlds
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
         public void Broadcast(NetworkMessage message, bool useSpatialization = true)
         {
-            if (UseSpatializer && useSpatialization)
-                server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
-            else
-                server.SendToClients(message, new HashSet<uint>(Clients.Keys));
+            server.SendToClients(message, GetBroadcastTargets(message.ClientID, useSpatialization));
         }
 
         /// <summary>
@@ -188,14 +284,9 @@ namespace NetSquare.Server.Worlds
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
         public void Broadcast(NetworkMessage message, uint excludedClientID, bool useSpatialization = true)
         {
-            if (UseSpatializer && useSpatialization)
-                server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
-            else
-            {
-                HashSet<uint> clients = new HashSet<uint>(Clients.Keys);
-                clients.Remove(excludedClientID);
-                server.SendToClients(message, clients);
-            }
+            HashSet<uint> clients = GetBroadcastTargets(message.ClientID, useSpatialization);
+            clients.Remove(excludedClientID);
+            server.SendToClients(message, clients);
         }
 
         /// <summary>
@@ -205,15 +296,9 @@ namespace NetSquare.Server.Worlds
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
         public void Broadcast(NetworkMessage message, IEnumerable<uint> excludedClientIDs, bool useSpatialization = true)
         {
-            if (UseSpatializer && useSpatialization)
-                server.SendToClients(message, Spatializer.GetVisibleClients(message.ClientID));
-            else
-            {
-                HashSet<uint> clients = new HashSet<uint>(Clients.Keys);
-                foreach (uint excludedClientID in excludedClientIDs)
-                    clients.Remove(excludedClientID);
-                server.SendToClients(message, clients);
-            }
+            HashSet<uint> clients = GetBroadcastTargets(message.ClientID, useSpatialization);
+            RemoveExcludedClients(clients, excludedClientIDs);
+            server.SendToClients(message, clients);
         }
 
         /// <summary>
@@ -223,10 +308,7 @@ namespace NetSquare.Server.Worlds
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
         public void Broadcast(byte[] message, uint clientID, bool useSpatialization = true)
         {
-            if (UseSpatializer && useSpatialization)
-                server.SendToClients(message, Spatializer.GetVisibleClients(clientID));
-            else
-                server.SendToClients(message, new HashSet<uint>(Clients.Keys));
+            server.SendToClients(message, GetBroadcastTargets(clientID, useSpatialization));
         }
 
         /// <summary>
@@ -236,10 +318,7 @@ namespace NetSquare.Server.Worlds
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
         public void BroadcastUDP(NetworkMessage message, bool useSpatialization = true)
         {
-            if (UseSpatializer && useSpatialization)
-                server.SendToClientsUDP(message, Spatializer.GetVisibleClients(message.ClientID));
-            else
-                server.SendToClientsUDP(message, new HashSet<uint>(Clients.Keys));
+            server.SendToClientsUDP(message, GetBroadcastTargets(message.ClientID, useSpatialization));
         }
         #endregion
     }

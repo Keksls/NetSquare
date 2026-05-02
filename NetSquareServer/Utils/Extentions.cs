@@ -1,7 +1,11 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 
+#region Source
 namespace NetSquare.Server.Utils
 {
+    /// <summary>
+    /// Represents the network message extentions component.
+    /// </summary>
     public static class NetworkMessageExtentions
     {
         /// <summary>
@@ -18,3 +22,4 @@ namespace NetSquare.Server.Utils
         }
     }
 }
+#endregion

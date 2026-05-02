@@ -1,15 +1,31 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
+#region Source
 namespace NetSquare.Server.Worlds
 {
+    /// <summary>
+    /// Represents the synchronized message component.
+    /// </summary>
     public class SynchronizedMessage
     {
+        /// <summary>
+        /// Gets or sets the empty value.
+        /// </summary>
         public bool Empty { get { return messagesList.Count == 0; } }
+        /// <summary>
+        /// Gets or sets the head id value.
+        /// </summary>
         public ushort HeadID { get; set; }
+        /// <summary>
+        /// Gets or sets the messages list value.
+        /// </summary>
         private ConcurrentDictionary<uint, NetworkMessage> messagesList = new ConcurrentDictionary<uint, NetworkMessage>(); // clientID => message
 
+        /// <summary>
+        /// Initializes a new instance of the synchronized message class.
+        /// </summary>
         public SynchronizedMessage(ushort headID)
         {
             HeadID = headID;
@@ -21,11 +37,7 @@ namespace NetSquare.Server.Worlds
         /// <param name="message">message to synchronize</param>
         public void AddMessage(NetworkMessage message)
         {
-            if (!messagesList.ContainsKey(message.ClientID))
-                while (!messagesList.TryAdd(message.ClientID, message))
-                    continue;
-            else
-                messagesList[message.ClientID] = message;
+            messagesList[message.ClientID] = message;
         }
 
         /// <summary>
@@ -35,12 +47,29 @@ namespace NetSquare.Server.Worlds
         public void RemoveMessagesFromClient(uint ClientID)
         {
             NetworkMessage removed;
-            while (!messagesList.TryRemove(ClientID, out removed))
+            messagesList.TryRemove(ClientID, out removed);
+        }
+
+        /// <summary>
+        /// Executes the get snapshot operation.
+        /// </summary>
+        public Dictionary<uint, NetworkMessage> GetSnapshot()
+        {
+            Dictionary<uint, NetworkMessage> snapshot = new Dictionary<uint, NetworkMessage>();
+            foreach (var pair in messagesList)
+                snapshot[pair.Key] = pair.Value;
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Executes the remove snapshot operation.
+        /// </summary>
+        public void RemoveSnapshot(Dictionary<uint, NetworkMessage> snapshot)
+        {
+            foreach (uint clientID in snapshot.Keys)
             {
-                if (!messagesList.ContainsKey(ClientID))
-                    return;
-                else
-                    continue;
+                NetworkMessage removed;
+                messagesList.TryRemove(clientID, out removed);
             }
         }
 
@@ -50,10 +79,20 @@ namespace NetSquare.Server.Worlds
         /// <returns>packed message</returns>
         public NetworkMessage GetPackedMessage()
         {
+            Dictionary<uint, NetworkMessage> snapshot = GetSnapshot();
+            NetworkMessage packed = GetPackedMessage(snapshot);
+            RemoveSnapshot(snapshot);
+            return packed;
+        }
+
+        /// <summary>
+        /// Executes the get packed message operation.
+        /// </summary>
+        public NetworkMessage GetPackedMessage(Dictionary<uint, NetworkMessage> snapshot)
+        {
             NetworkMessage packed = new NetworkMessage(HeadID);
             packed.HeadID = HeadID;
-            packed.Pack(messagesList.Values, true);
-            messagesList.Clear();
+            packed.Pack(snapshot.Values, true);
             return packed;
         }
 
@@ -64,11 +103,20 @@ namespace NetSquare.Server.Worlds
         /// <returns>packed message</returns>
         public NetworkMessage GetSpatializedPackedMessage(IEnumerable<uint> visivleClientsID, uint clientID)
         {
+            return GetSpatializedPackedMessage(visivleClientsID, clientID, GetSnapshot());
+        }
+
+        /// <summary>
+        /// Executes the get spatialized packed message operation.
+        /// </summary>
+        public NetworkMessage GetSpatializedPackedMessage(IEnumerable<uint> visivleClientsID, uint clientID, Dictionary<uint, NetworkMessage> snapshot)
+        {
             List<NetworkMessage> messages = new List<NetworkMessage>();
             foreach (uint visibleID in visivleClientsID)
             {
-                if (messagesList.ContainsKey(visibleID))
-                    messages.Add(messagesList[visibleID]);
+                NetworkMessage message;
+                if (snapshot.TryGetValue(visibleID, out message))
+                    messages.Add(message);
             }
             if (messages.Count == 0)
                 return null;
@@ -89,3 +137,4 @@ namespace NetSquare.Server.Worlds
         }
     }
 }
+#endregion

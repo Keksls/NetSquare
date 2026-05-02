@@ -1,13 +1,20 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
 
+#region Source
 namespace Server_Test
 {
+    /// <summary>
+    /// Represents the serialization performances component.
+    /// </summary>
     public class SerializationPerformances
     {
+        /// <summary>
+        /// Executes the test custom object serialization operation.
+        /// </summary>
         public void TestCustomObjectSerialization()
         {
             //NetworkMessage message = new NetworkMessage();
@@ -18,6 +25,9 @@ namespace Server_Test
             //GameClient go = msg.GetObject<GameClient>();
         }
 
+        /// <summary>
+        /// Executes the test performances operation.
+        /// </summary>
         public void TestPerformances(int nbMessages)
         {
             Stopwatch sw = new Stopwatch();
@@ -111,6 +121,9 @@ namespace Server_Test
             //Console.WriteLine("Serialized size : " + messagesArray[1].Data.Length);
         }
 
+        /// <summary>
+        /// Executes the test array perfo operation.
+        /// </summary>
         public unsafe void TestArrayPerfo(int nbtests)
         {
             FieldInfo field = typeof(List<byte[]>).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -183,6 +196,9 @@ namespace Server_Test
 
         }
 
+        /// <summary>
+        /// Executes the test contain perfo operation.
+        /// </summary>
         public void TestContainPerfo()
         {
             HashSet<int> intSet = new HashSet<int>();
@@ -218,6 +234,9 @@ namespace Server_Test
             sw.Reset();
         }
 
+        /// <summary>
+        /// Executes the hash set contains perfo operation.
+        /// </summary>
         public void HashSetContainsPerfo()
         {
             HashSet<int> intSet = new HashSet<int>();
@@ -247,14 +266,35 @@ namespace Server_Test
         }
     }
 
+    /// <summary>
+    /// Represents the performance test class component.
+    /// </summary>
     internal class PerformanceTestClass
     {
+        /// <summary>
+        /// Stores the id value.
+        /// </summary>
         public int ID;
+        /// <summary>
+        /// Stores the name value.
+        /// </summary>
         public string Name;
+        /// <summary>
+        /// Stores the width value.
+        /// </summary>
         public float Width;
+        /// <summary>
+        /// Stores the height value.
+        /// </summary>
         public float Height;
+        /// <summary>
+        /// Stores the description value.
+        /// </summary>
         public string Description;
 
+        /// <summary>
+        /// Executes the performance test class operation.
+        /// </summary>
         internal PerformanceTestClass()
         {
             ID = int.MaxValue;
@@ -266,18 +306,55 @@ namespace Server_Test
     }
 
     [Serializable]
+    /// <summary>
+    /// Represents the game client component.
+    /// </summary>
     public class GameClient
     {
+        /// <summary>
+        /// Gets or sets the id value.
+        /// </summary>
         public int ID { get; set; }
+        /// <summary>
+        /// Gets or sets the account value.
+        /// </summary>
         public string Account { get; set; }
+        /// <summary>
+        /// Gets or sets the pseudo value.
+        /// </summary>
         public string Pseudo { get; set; }
+        /// <summary>
+        /// Gets or sets the pass value.
+        /// </summary>
         public string Pass { get; set; }
+        /// <summary>
+        /// Gets or sets the mail value.
+        /// </summary>
         public string Mail { get; set; }
+        /// <summary>
+        /// Gets or sets the is in fight value.
+        /// </summary>
         public bool isInFight { get; set; }
+        /// <summary>
+        /// Gets or sets the map id value.
+        /// </summary>
         public ushort mapID { get; set; }
+        /// <summary>
+        /// Gets or sets the cell x value.
+        /// </summary>
         public int CellX { get; set; }
+        /// <summary>
+        /// Gets or sets the cell y value.
+        /// </summary>
         public int CellY { get; set; }
+        /// <summary>
+        /// Gets or sets the level value.
+        /// </summary>
         public int Level { get; set; }
+        /// <summary>
+        /// Gets or sets the xp value.
+        /// </summary>
         public int XP { get; set; }
     }
 }
+#endregion

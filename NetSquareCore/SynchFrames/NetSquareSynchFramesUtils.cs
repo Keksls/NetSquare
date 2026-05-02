@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
+#region Source
 namespace NetSquare.Core
 {
     /// <summary>
@@ -8,7 +9,13 @@ namespace NetSquare.Core
     /// </summary>
     public static class NetSquareSynchFramesUtils
     {
+        /// <summary>
+        /// Stores the custom deserializers value.
+        /// </summary>
         private static Dictionary<byte, Func<NetworkMessage, INetSquareSynchFrame>> customDeserializers = new Dictionary<byte, Func<NetworkMessage, INetSquareSynchFrame>>();
+        /// <summary>
+        /// Stores the custom sized value.
+        /// </summary>
         private static Dictionary<byte, int> customSized = new Dictionary<byte, int>();
 
         /// <summary>
@@ -292,3 +299,4 @@ namespace NetSquare.Core
         }
     }
 }
+#endregion

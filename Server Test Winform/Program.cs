@@ -1,11 +1,15 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+#region Source
 namespace Server_Test_Winform
 {
+    /// <summary>
+    /// Represents the program component.
+    /// </summary>
     internal static class Program
     {
         /// <summary>
@@ -20,3 +24,4 @@ namespace Server_Test_Winform
         }
     }
 }
+#endregion

@@ -1,15 +1,22 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Core.Messages;
 using NetSquare.Server.Utils;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
+using System.Threading;
 
 namespace NetSquare.Server.Worlds
 {
+    /// <summary>
+    /// Represents the worlds manager component.
+    /// </summary>
     public class WorldsManager
     {
-        public Dictionary<ushort, NetSquareWorld> Worlds = new Dictionary<ushort, NetSquareWorld>(); // worldID => World object
+        /// <summary>
+        /// Gets or sets the worlds value.
+        /// </summary>
+        public ConcurrentDictionary<ushort, NetSquareWorld> Worlds = new ConcurrentDictionary<ushort, NetSquareWorld>(); // worldID => World object
         /// <summary>
         /// WorldID, ClientID, Transform of the client, Message to broadcast. Send new client data to already conneced clients
         /// </summary>
@@ -22,9 +29,26 @@ namespace NetSquare.Server.Worlds
         /// ClientID, Transform of the client. Client just move
         /// </summary>
         public event Action<uint, NetsquareTransformFrame> OnClientMove;
-        private Dictionary<uint, ushort> ClientsWorlds = new Dictionary<uint, ushort>(); // clientID => worldID
+        /// <summary>
+        /// Gets or sets the clients worlds value.
+        /// </summary>
+        private ConcurrentDictionary<uint, ushort> ClientsWorlds = new ConcurrentDictionary<uint, ushort>(); // clientID => worldID
+        /// <summary>
+        /// Stores the world membership lock value.
+        /// </summary>
+        private readonly object worldMembershipLock = new object();
+        /// <summary>
+        /// Stores the next world id value.
+        /// </summary>
+        private int nextWorldId;
+        /// <summary>
+        /// Stores the server value.
+        /// </summary>
         private NetSquareServer server;
 
+        /// <summary>
+        /// Initializes a new instance of the worlds manager class.
+        /// </summary>
         public WorldsManager(NetSquareServer _server)
         {
             server = _server;
@@ -63,9 +87,11 @@ namespace NetSquare.Server.Worlds
         /// <returns>ID of the world</returns>
         public NetSquareWorld AddWorld(string name = "", ushort nbMaxClients = 128)
         {
-            ushort id = (Worlds.Count == 0) ? (ushort)0 : Worlds.Keys.Max<ushort>();
-            id++;
-            return AddWorld(id, name, nbMaxClients);
+            int id = Interlocked.Increment(ref nextWorldId);
+            if (id > ushort.MaxValue)
+                throw new InvalidOperationException("No world ID is available.");
+
+            return AddWorld((ushort)id, name, nbMaxClients);
         }
 
         /// <summary>
@@ -77,9 +103,27 @@ namespace NetSquare.Server.Worlds
         public NetSquareWorld AddWorld(ushort id, string name = "", ushort nbMaxClients = 128)
         {
             NetSquareWorld world = new NetSquareWorld(server, id, name, nbMaxClients);
-            Worlds.Add(id, world);
+            if (!Worlds.TryAdd(id, world))
+                throw new InvalidOperationException("World " + id + " already exists.");
+
+            TrackWorldId(id);
             Writer.Write("World " + id + " added", ConsoleColor.Green);
             return world;
+        }
+
+        /// <summary>
+        /// Executes the track world id operation.
+        /// </summary>
+        private void TrackWorldId(ushort id)
+        {
+            int current;
+            do
+            {
+                current = nextWorldId;
+                if (id <= current)
+                    return;
+            }
+            while (Interlocked.CompareExchange(ref nextWorldId, id, current) != current);
         }
 
         /// <summary>
@@ -89,9 +133,21 @@ namespace NetSquare.Server.Worlds
         /// <returns>World object if exists</returns>
         public NetSquareWorld GetWorld(ushort id)
         {
-            if (Worlds.ContainsKey(id))
-                return Worlds[id];
-            return null;
+            NetSquareWorld world;
+            return Worlds.TryGetValue(id, out world) ? world : null;
+        }
+
+        /// <summary>
+        /// Executes the try get client world operation.
+        /// </summary>
+        private bool TryGetClientWorld(uint clientID, out ushort worldID, out NetSquareWorld world)
+        {
+            worldID = 0;
+            world = null;
+            if (!ClientsWorlds.TryGetValue(clientID, out worldID))
+                return false;
+
+            return Worlds.TryGetValue(worldID, out world) && world != null;
         }
 
         /// <summary>
@@ -100,14 +156,20 @@ namespace NetSquare.Server.Worlds
         /// <param name="clientID">ID of disconnected client</param>
         public void ClientDisconnected(uint clientID)
         {
-            if (IsInWorld(clientID))
+            lock (worldMembershipLock)
             {
-                NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
-                // tell anyone in this world that a client just leave the world
+                ushort worldID;
+                if (!ClientsWorlds.TryRemove(clientID, out worldID))
+                    return;
+
+                NetSquareWorld world = GetWorld(worldID);
+                if (world == null)
+                    return;
+
+                // Tell visible clients before the leaver is removed from the spatializer.
                 world.Broadcast(new NetworkMessage(NetSquareMessageID.ClientLeaveWorld, clientID).Set(clientID));
                 world.Synchronizer?.RemoveMessagesFromClient(clientID);
                 world.TryLeaveWorld(clientID);
-                ClientsWorlds.Remove(clientID);
             }
         }
 
@@ -138,9 +200,8 @@ namespace NetSquare.Server.Worlds
         /// <returns>ID of the world, or 0 if none. Check before with 'IsClientInWorld()'</returns>
         public ushort GetClientWorldID(uint clientID)
         {
-            if (IsInWorld(clientID))
-                return ClientsWorlds[clientID];
-            return 0;
+            ushort worldID;
+            return ClientsWorlds.TryGetValue(clientID, out worldID) ? worldID : (ushort)0;
         }
 
         #region Network Messages
@@ -150,8 +211,10 @@ namespace NetSquare.Server.Worlds
         /// <param name="message">message received from client</param>
         public void ReceiveSyncronizationMessage(NetworkMessage message)
         {
-            if (ClientsWorlds.ContainsKey(message.ClientID))
-                Worlds[ClientsWorlds[message.ClientID]].Synchronizer?.AddMessage(message);
+            ushort worldID;
+            NetSquareWorld world;
+            if (TryGetClientWorld(message.ClientID, out worldID, out world))
+                world.Synchronizer?.AddMessage(message);
         }
 
         /// <summary>
@@ -167,20 +230,33 @@ namespace NetSquare.Server.Worlds
                 NetsquareTransformFrame clientTransform = new NetsquareTransformFrame(message);
                 // get world instance
                 NetSquareWorld world = GetWorld(worldID);
-                // throw new exception if world don't exists
                 if (world == null)
+                {
                     Writer.Write("World " + worldID + " don't exists", ConsoleColor.Red);
-                // world exit so let's try add client into it
-                bool added = world.TryJoinWorld(message.ClientID, clientTransform);
+                    server.Reply(message, new NetworkMessage().Set(false));
+                    return;
+                }
+
+                bool added = false;
+                lock (worldMembershipLock)
+                {
+                    if (!ClientsWorlds.ContainsKey(message.ClientID))
+                    {
+                        added = world.TryJoinWorld(message.ClientID, clientTransform);
+                        if (added && !ClientsWorlds.TryAdd(message.ClientID, worldID))
+                        {
+                            world.TryLeaveWorld(message.ClientID);
+                            added = false;
+                        }
+                    }
+                }
+
                 // reply to client the added state
                 NetworkMessage reply = new NetworkMessage().Set(added);
                 server.PrepareReply(message, reply);
 
-                // add clientID / worldID mapping
                 if (added)
                 {
-                    ClientsWorlds.Remove(message.ClientID);
-                    ClientsWorlds.Add(message.ClientID, worldID);
                     Writer.Write("Client " + message.ClientID + " join world " + worldID + " at pos : " + clientTransform.x + ", " + clientTransform.y + ", " + clientTransform.z, ConsoleColor.Gray);
 
                     // send already connected clients to new client
@@ -194,21 +270,18 @@ namespace NetSquare.Server.Worlds
 
                         // send connected clients to new client but him
                         List<NetworkMessage> messages = new List<NetworkMessage>();
-                        lock (world.Clients)
+                        foreach (var client in world.Clients)
                         {
-                            foreach (var client in world.Clients)
-                            {
-                                if (client.Key == message.ClientID)
-                                    continue;
-                                // create new message
-                                NetworkMessage connectedClientMessage = new NetworkMessage(NetSquareMessageID.ClientJoinWorld, client.Key);
-                                // set Transform frame
-                                client.Value.Serialize(connectedClientMessage);
-                                // send message so server event for being custom binded
-                                OnSendWorldClients?.Invoke(worldID, client.Key, connectedClientMessage);
-                                // add message to list for packing
-                                messages.Add(connectedClientMessage);
-                            }
+                            if (client.Key == message.ClientID)
+                                continue;
+                            // create new message
+                            NetworkMessage connectedClientMessage = new NetworkMessage(NetSquareMessageID.ClientJoinWorld, client.Key);
+                            // set Transform frame
+                            client.Value.Serialize(connectedClientMessage);
+                            // send message so server event for being custom binded
+                            OnSendWorldClients?.Invoke(worldID, client.Key, connectedClientMessage);
+                            // add message to list for packing
+                            messages.Add(connectedClientMessage);
                         }
                         // pack messages
                         reply.Pack(messages);
@@ -232,12 +305,10 @@ namespace NetSquare.Server.Worlds
         /// <param name="useSpatialization">if this client's world use spatialization, broadcast to anyone visible only</param>
         public void BroadcastToWorld(NetworkMessage message, bool useSpatialization = true)
         {
-            if (IsInWorld(message.ClientID))
-            {
-                NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
-                if (world != null)
-                    world.Broadcast(message, useSpatialization);
-            }
+            ushort worldID;
+            NetSquareWorld world;
+            if (TryGetClientWorld(message.ClientID, out worldID, out world))
+                world.Broadcast(message, useSpatialization);
         }
 
         /// <summary>
@@ -247,12 +318,10 @@ namespace NetSquare.Server.Worlds
         /// <param name="useSpatialization">if this client's world use spatialization, broadcast to anyone visible only</param>
         public void BroadcastToWorld(byte[] message, uint clientID, bool useSpatialization = true)
         {
-            if (IsInWorld(clientID))
-            {
-                NetSquareWorld world = GetWorld(GetClientWorldID(clientID));
-                if (world != null)
-                    world.Broadcast(message, clientID, useSpatialization);
-            }
+            ushort worldID;
+            NetSquareWorld world;
+            if (TryGetClientWorld(clientID, out worldID, out world))
+                world.Broadcast(message, clientID, useSpatialization);
         }
 
         /// <summary>
@@ -264,30 +333,36 @@ namespace NetSquare.Server.Worlds
             try
             {
                 bool leave = false;
-                if (IsInWorld(message.ClientID))
+                ushort worldID = 0;
+                NetSquareWorld world = null;
+
+                lock (worldMembershipLock)
                 {
-                    ushort worldID = GetClientWorldID(message.ClientID);
-                    NetSquareWorld world = GetWorld(worldID);
-                    if (world != null)
+                    if (ClientsWorlds.TryRemove(message.ClientID, out worldID))
                     {
-                        // world exit so let's try add client into it
-                        leave = world.TryLeaveWorld(message.ClientID);
-                        ClientsWorlds.Remove(message.ClientID);
-                        // remove clientID / worldID apping
-                        if (leave)
+                        world = GetWorld(worldID);
+                        if (world != null)
                         {
-                            Writer.Write("Client " + message.ClientID + " leave world " + worldID, ConsoleColor.Gray);
-                            if (!world.UseSpatializer) // if spatializer is used, it will handle this event, so let's do nothing here
-                            {
-                                // tell anyone in this world that a client just leave the world
-                                world.Broadcast(new NetworkMessage(NetSquareMessageID.ClientLeaveWorld).Set(message.ClientID));
-                            }
+                            // world exist so let's try remove client from it
+                            leave = world.TryLeaveWorld(message.ClientID);
+                            if (leave)
+                                world.Synchronizer?.RemoveMessagesFromClient(message.ClientID);
                         }
                     }
-                    // reply to client the added state
-                    if (message.Client != null)
-                        server.Reply(message, new NetworkMessage().Set(leave));
                 }
+
+                if (leave && world != null)
+                {
+                    Writer.Write("Client " + message.ClientID + " leave world " + worldID, ConsoleColor.Gray);
+                    if (!world.UseSpatializer) // if spatializer is used, it will handle this event, so let's do nothing here
+                    {
+                        // tell anyone in this world that a client just leave the world
+                        world.Broadcast(new NetworkMessage(NetSquareMessageID.ClientLeaveWorld).Set(message.ClientID));
+                    }
+                }
+
+                if (message.Client != null)
+                    server.Reply(message, new NetworkMessage().Set(leave));
             }
             catch (Exception ex)
             {
@@ -305,24 +380,22 @@ namespace NetSquare.Server.Worlds
         {
             try
             {
-                if (IsInWorld(message.ClientID))
+                ushort worldID;
+                NetSquareWorld world;
+                if (TryGetClientWorld(message.ClientID, out worldID, out world))
                 {
-                    NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
-                    if (world != null)
+                    // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
+                    if (world.UseSpatializer && world.Spatializer != null)
                     {
-                        // if we use a spatializer, we store the frame into it so it can be used for spatialization and send to visible clients later as packed message
-                        if (world.UseSpatializer)
-                        {
-                            INetSquareSynchFrame frame = NetSquareSynchFramesUtils.GetFrame(message);
-                            world.Spatializer.StoreSynchFrame(message.ClientID, frame);
-                        }
-                        // if we don't use a spatializer, we send the new position directly to everyone in the world
-                        else
-                        {
-                            world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
-                        }
-                        message.RestartRead();
+                        INetSquareSynchFrame frame = NetSquareSynchFramesUtils.GetFrame(message);
+                        world.Spatializer.StoreSynchFrame(message.ClientID, frame);
                     }
+                    // if we don't use a spatializer, we send the new position directly to everyone in the world
+                    else
+                    {
+                        world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
+                    }
+                    message.RestartRead();
                 }
             }
             catch (Exception ex)
@@ -339,23 +412,21 @@ namespace NetSquare.Server.Worlds
         {
             try
             {
-                if (IsInWorld(message.ClientID))
+                ushort worldID;
+                NetSquareWorld world;
+                if (TryGetClientWorld(message.ClientID, out worldID, out world))
                 {
-                    NetSquareWorld world = GetWorld(GetClientWorldID(message.ClientID));
-                    if (world != null)
+                    // if we use a spatializer, we store the frames into it so it can be used for spatialization and send to visible clients later as packed message
+                    if (world.UseSpatializer && world.Spatializer != null)
                     {
-                        // if we use a spatializer, we store the frames into it so it can be used for spatialization and send to visible clients later as packed message
-                        if (world.UseSpatializer)
-                        {
-                            world.Spatializer.StoreSynchFrames(message.ClientID, NetSquareSynchFramesUtils.GetFrames(message));
-                        }
-                        // if we don't use a spatializer, we send the new position directly to everyone in the world
-                        else
-                        {
-                            world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
-                        }
-                        message.RestartRead();
+                        world.Spatializer.StoreSynchFrames(message.ClientID, NetSquareSynchFramesUtils.GetFrames(message));
                     }
+                    // if we don't use a spatializer, we send the new position directly to everyone in the world
+                    else
+                    {
+                        world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
+                    }
+                    message.RestartRead();
                 }
             }
             catch (Exception ex)

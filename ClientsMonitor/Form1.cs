@@ -1,10 +1,14 @@
-﻿using NetSquare.Client;
+using NetSquare.Client;
 using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 
+#region Source
 namespace ClientsMonitor
 {
+    /// <summary>
+    /// Represents the form1 component.
+    /// </summary>
     public partial class Form1 : Form
     {
         List<int> receptionsSpeedValues;
@@ -12,6 +16,9 @@ namespace ClientsMonitor
         List<float> receptionsSizeValues;
         List<float> sendingSizeValues;
 
+        /// <summary>
+        /// Initializes a new instance of the form1 class.
+        /// </summary>
         public Form1()
         {
             InitializeComponent();
@@ -21,21 +28,33 @@ namespace ClientsMonitor
             sendingSizeValues = new List<float>();
         }
 
+        /// <summary>
+        /// Executes the chart2 click operation.
+        /// </summary>
         private void chart2_Click(object sender, EventArgs e)
         {
 
         }
 
+        /// <summary>
+        /// Executes the chart1 click operation.
+        /// </summary>
         private void chart1_Click(object sender, EventArgs e)
         {
 
         }
 
+        /// <summary>
+        /// Executes the form1 load operation.
+        /// </summary>
         private void Form1_Load(object sender, EventArgs e)
         {
 
         }
 
+        /// <summary>
+        /// Executes the update statistics operation.
+        /// </summary>
         public void UpdateStatistics(ClientStatistics statistics)
         {
             if (InvokeRequired)
@@ -82,3 +101,4 @@ namespace ClientsMonitor
         }
     }
 }
+#endregion

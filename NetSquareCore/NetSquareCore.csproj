@@ -78,6 +78,7 @@
     <Compile Include="Encryption\SimplePasswordedCipher_Encryptor.cs" />
     <Compile Include="Encryption\XOR_Encryptor.cs" />
     <Compile Include="NetSquareProtocoleType.cs" />
+    <Compile Include="NetSquareBufferPool.cs" />
     <Compile Include="HandShake.cs" />
     <Compile Include="Messages\NetSquareMessageID.cs" />
     <Compile Include="Messages\Half.cs" />

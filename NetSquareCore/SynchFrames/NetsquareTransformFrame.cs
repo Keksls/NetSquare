@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 
+#region Source
 namespace NetSquare.Core
 {
     /// <summary>
@@ -9,19 +10,58 @@ namespace NetSquare.Core
     /// </summary>
     public struct NetsquareTransformFrame : INetSquareSynchFrame
     {
+        /// <summary>
+        /// Stores the time value.
+        /// </summary>
         private float time;
+        /// <summary>
+        /// Gets or sets the time value.
+        /// </summary>
         public float Time { get { return time; } set { time = value; } }
+        /// <summary>
+        /// Stores the synch frame type value.
+        /// </summary>
         private byte synchFrameType;
+        /// <summary>
+        /// Gets or sets the synch frame type value.
+        /// </summary>
         public byte SynchFrameType { get { return synchFrameType; } set { synchFrameType = value; } }
+        /// <summary>
+        /// Stores the x value.
+        /// </summary>
         public float x;
+        /// <summary>
+        /// Stores the y value.
+        /// </summary>
         public float y;
+        /// <summary>
+        /// Stores the z value.
+        /// </summary>
         public float z;
+        /// <summary>
+        /// Stores the rx value.
+        /// </summary>
         public float rx;
+        /// <summary>
+        /// Stores the ry value.
+        /// </summary>
         public float ry;
+        /// <summary>
+        /// Stores the rz value.
+        /// </summary>
         public float rz;
+        /// <summary>
+        /// Stores the rw value.
+        /// </summary>
         public float rw;
+        /// <summary>
+        /// Gets or sets the zero value.
+        /// </summary>
         public static NetsquareTransformFrame zero { get { return new NetsquareTransformFrame(); } }
         int INetSquareSynchFrame.Size => NetsquareTransformFrame.Size;
+        /// <summary>
+        /// Defines the size constant.
+        /// </summary>
         public const int Size = 33;
 
         /// <summary>
@@ -383,11 +423,20 @@ namespace NetSquare.Core
         /// Union to get the float square root
         /// </summary>
         [StructLayout(LayoutKind.Explicit)]
+        /// <summary>
+        /// Represents the float int union value.
+        /// </summary>
         private struct FloatIntUnion
         {
             [FieldOffset(0)]
+            /// <summary>
+            /// Stores the f value.
+            /// </summary>
             public float f;
             [FieldOffset(0)]
+            /// <summary>
+            /// Stores the tmp value.
+            /// </summary>
             public int tmp;
         }
 
@@ -411,3 +460,4 @@ namespace NetSquare.Core
         }
     }
 }
+#endregion

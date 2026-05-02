@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 
 namespace NetSquare.Core.Encryption
@@ -8,7 +8,13 @@ namespace NetSquare.Core.Encryption
     /// </summary>
     public static class Encryption
     {
+        /// <summary>
+        /// Gets or sets the encryptor type value.
+        /// </summary>
         public static NetSquareEncryption encryptorType { get; private set; }
+        /// <summary>
+        /// Gets or sets the encryptor value.
+        /// </summary>
         public static Encryptor encryptor { get; private set; }
 
         #region Encryptor Initalisation

@@ -1,4 +1,4 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Core.Messages;
 using NetSquare.Server.Server;
 using NetSquare.Server.Utils;
@@ -17,6 +17,9 @@ using System.Threading;
 
 namespace NetSquare.Server
 {
+    /// <summary>
+    /// Represents the net square server component.
+    /// </summary>
     public class NetSquareServer
     {
         #region DllImport
@@ -31,29 +34,92 @@ namespace NetSquare.Server
         #endregion
 
         #region Events
+        /// <summary>
+        /// Gets or sets the client id counter value.
+        /// </summary>
         public uint ClientIDCounter { get; private set; }
+        /// <summary>
+        /// Occurs when before load configuration step one is raised.
+        /// </summary>
         public event Action BeforeLoadConfiguration_StepOne;
+        /// <summary>
+        /// Occurs when after load configuration step two is raised.
+        /// </summary>
         public event Action AfterLoadConfiguration_StepTwo;
+        /// <summary>
+        /// Occurs when client connected is raised.
+        /// </summary>
         public event Action<uint> OnClientConnected;
+        /// <summary>
+        /// Occurs when client disconnected is raised.
+        /// </summary>
         public event Action<uint> OnClientDisconnected;
+        /// <summary>
+        /// Occurs when message received is raised.
+        /// </summary>
         public event Action<NetworkMessage> OnMessageReceived;
+        /// <summary>
+        /// Occurs when message send is raised.
+        /// </summary>
         public event Action<byte[]> OnMessageSend;
+        /// <summary>
+        /// Occurs when time loop is raised.
+        /// </summary>
         public event Action<float> OnTimeLoop;
+        /// <summary>
+        /// Stores the draw header override callback value.
+        /// </summary>
         public Action<string> DrawHeaderOverrideCallback = null;
         #endregion
 
         #region Variables
+        /// <summary>
+        /// Gets or sets the time value.
+        /// </summary>
         public float Time { get; private set; }
+        /// <summary>
+        /// Stores the server tick rate value.
+        /// </summary>
         private float serverTickRate = 1f / 60f;
+        /// <summary>
+        /// Gets or sets the is started value.
+        /// </summary>
         public bool IsStarted { get { return Listeners.Any(l => l.Listener.Active); } }
+        /// <summary>
+        /// Gets or sets the server i ps value.
+        /// </summary>
         public HashSet<string> ServerIPs { get; private set; }
+        /// <summary>
+        /// Stores the listeners value.
+        /// </summary>
         public List<TcpListener> Listeners = new List<TcpListener>();
+        /// <summary>
+        /// Stores the dispatcher value.
+        /// </summary>
         public NetSquareDispatcher Dispatcher;
+        /// <summary>
+        /// Gets or sets the protocole type value.
+        /// </summary>
         public NetSquareProtocoleType ProtocoleType { get; private set; }
+        /// <summary>
+        /// Stores the message queue manager value.
+        /// </summary>
         internal MessageQueueManager MessageQueueManager;
+        /// <summary>
+        /// Stores the worlds value.
+        /// </summary>
         public WorldsManager Worlds;
+        /// <summary>
+        /// Stores the statistics value.
+        /// </summary>
         public ServerStatisticsManager Statistics;
+        /// <summary>
+        /// Gets or sets the clients value.
+        /// </summary>
         public ConcurrentDictionary<uint, ConnectedClient> Clients = new ConcurrentDictionary<uint, ConnectedClient>(); // ID Client => ConnectedClient
+        /// <summary>
+        /// Stores the get new client id value.
+        /// </summary>
         public Func<uint> GetNewClientID;
         #endregion
 
@@ -278,6 +344,8 @@ namespace NetSquare.Server
         /// </summary>
         public void Stop()
         {
+            try { Statistics?.Stop(); } catch { }
+            try { MessageQueueManager?.StopQueues(); } catch { }
             Listeners.ForEach(l => l.Stop());
             while (Listeners.Any(l => l.Listener.Active))
             {
@@ -329,8 +397,9 @@ namespace NetSquare.Server
         /// <param name="clientID"> The client ID </param>
         public void SendToClient(byte[] message, uint clientID)
         {
-            if (Clients.ContainsKey(clientID))
-                Clients[clientID].AddTCPMessage(message);
+            ConnectedClient client;
+            if (Clients.TryGetValue(clientID, out client))
+                client.AddTCPMessage(message);
         }
 
         /// <summary>
@@ -340,8 +409,9 @@ namespace NetSquare.Server
         /// <param name="clientID"> The client ID </param>
         public void SendToClient(NetworkMessage message, uint clientID)
         {
-            if (Clients.ContainsKey(clientID))
-                Clients[clientID].AddTCPMessage(message);
+            ConnectedClient client;
+            if (Clients.TryGetValue(clientID, out client))
+                client.AddTCPMessage(message);
         }
 
         /// <summary>
@@ -361,10 +431,11 @@ namespace NetSquare.Server
         /// <param name="clients"> The clients </param>
         public void SendToClients(NetworkMessage message, List<ConnectedClient> clients)
         {
+            byte[] data = message.Serialize();
             lock (clients)
             {
                 foreach (ConnectedClient client in clients)
-                    client?.AddTCPMessage(message);
+                    client?.AddTCPMessage(data);
             }
         }
 
@@ -375,11 +446,15 @@ namespace NetSquare.Server
         /// <param name="clients"> The clients </param>
         public void SendToClients(NetworkMessage message, IEnumerable<uint> clients)
         {
+            byte[] data = message.Serialize();
             lock (clients)
             {
                 foreach (uint clientID in clients)
-                    if (Clients.ContainsKey(clientID))
-                        Clients[clientID].AddTCPMessage(message);
+                {
+                    ConnectedClient client;
+                    if (Clients.TryGetValue(clientID, out client))
+                        client.AddTCPMessage(data);
+                }
             }
         }
 
@@ -393,8 +468,11 @@ namespace NetSquare.Server
             lock (clients)
             {
                 foreach (uint clientID in clients)
-                    if (Clients.ContainsKey(clientID))
-                        Clients[clientID].AddTCPMessage(message);
+                {
+                    ConnectedClient client;
+                    if (Clients.TryGetValue(clientID, out client))
+                        client.AddTCPMessage(message);
+                }
             }
         }
 
@@ -404,11 +482,15 @@ namespace NetSquare.Server
         /// <param name="message"> The message </param>
         public void Broadcast(NetworkMessage message)
         {
+            byte[] data = message.Serialize();
             lock (Clients)
             {
                 foreach (var pair in Clients)
-                    if (Clients.ContainsKey(pair.Key))
-                        Clients[pair.Key].AddTCPMessage(message);
+                {
+                    ConnectedClient client;
+                    if (Clients.TryGetValue(pair.Key, out client))
+                        client.AddTCPMessage(data);
+                }
             }
         }
 
@@ -513,7 +595,7 @@ namespace NetSquare.Server
                     return;
                 OnClientDisconnected?.Invoke(client.ID);
                 // remove client from world
-                Worlds.ClientDisconnected(client.ID);
+                Worlds?.ClientDisconnected(client.ID);
                 // supprime des clients connectés
                 ConnectedClient c = null;
                 while (!Clients.TryRemove(client.ID, out c))
@@ -524,6 +606,7 @@ namespace NetSquare.Server
                         continue;
                 }
                 // unregister client event
+                client.UDP?.UnregisterServerClient();
                 client.OnMessageReceived -= MessageReceived;
                 client.OnMessageSend -= MessageSended;
                 // try clean disconnect if not already
@@ -637,6 +720,7 @@ namespace NetSquare.Server
             client.ID = GetNewClientID();
             while (!Clients.TryAdd(client.ID, client))
                 Thread.Sleep(1);
+            client.UDP?.RegisterServerClient();
             client.OnMessageReceived += MessageReceived;
             client.OnMessageSend += MessageSended;
             client.OnDisconected += Client_OnDisconected;

@@ -1,16 +1,34 @@
-﻿using NetSquare.Core.Compression;
+using NetSquare.Core.Compression;
 using NetSquare.Core.Encryption;
 using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 
 namespace NetSquare.Core
 {
+    /// <summary>
+    /// Represents the protocole manager component.
+    /// </summary>
     public static class ProtocoleManager
     {
+        /// <summary>
+        /// Stores the compressor type value.
+        /// </summary>
         private static NetSquareCompression compressorType;
+        /// <summary>
+        /// Stores the compressor value.
+        /// </summary>
         private static Compressor compressor;
+        /// <summary>
+        /// Stores the encryptor type value.
+        /// </summary>
         private static NetSquareEncryption encryptorType;
+        /// <summary>
+        /// Stores the encryptor value.
+        /// </summary>
         private static Encryptor encryptor;
+        /// <summary>
+        /// Gets or sets the no compressor or encryptor value.
+        /// </summary>
         public static bool NoCompressorOrEncryptor { get { return compressorType == NetSquareCompression.NoCompression && encryptorType == NetSquareEncryption.NoEncryption; } }
 
         static ProtocoleManager()
@@ -159,6 +177,9 @@ namespace NetSquare.Core
         #endregion
 
         #region Compression
+        /// <summary>
+        /// Executes the set compressor operation.
+        /// </summary>
         public static void SetCompressor(NetSquareCompression _compressorType)
         {
             compressorType = _compressorType;
@@ -177,11 +198,17 @@ namespace NetSquare.Core
             }
         }
 
+        /// <summary>
+        /// Executes the compress operation.
+        /// </summary>
         public static byte[] Compress(byte[] buffer)
         {
             return compressor.Compress(buffer);
         }
 
+        /// <summary>
+        /// Executes the decompress operation.
+        /// </summary>
         public static byte[] Decompress(byte[] buffer)
         {
             return compressor.Decompress(buffer);

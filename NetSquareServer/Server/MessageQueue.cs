@@ -1,21 +1,53 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Server.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
 
+#region Source
 namespace NetSquare.Server.Server
 {
+    /// <summary>
+    /// Represents the message queue component.
+    /// </summary>
     public class MessageQueue
     {
+        /// <summary>
+        /// Stores the queue value.
+        /// </summary>
         public ConcurrentQueue<NetworkMessage> Queue = new ConcurrentQueue<NetworkMessage>();
+        /// <summary>
+        /// Gets or sets the queue id value.
+        /// </summary>
         public int QueueID { get; private set; }
+        /// <summary>
+        /// Gets or sets the started value.
+        /// </summary>
         public bool Started { get; private set; }
+        /// <summary>
+        /// Gets or sets the nb messages value.
+        /// </summary>
         public int NbMessages { get { return Queue.Count; } }
+        /// <summary>
+        /// Gets or sets the process queue thread value.
+        /// </summary>
         public Thread ProcessQueueThread { get; private set; }
+        /// <summary>
+        /// Stores the server value.
+        /// </summary>
         private NetSquareServer server;
+        /// <summary>
+        /// Stores the current message value.
+        /// </summary>
         private NetworkMessage currentMessage = null;
+        /// <summary>
+        /// Stores the queue signal value.
+        /// </summary>
+        private SemaphoreSlim queueSignal = new SemaphoreSlim(0);
 
+        /// <summary>
+        /// Initializes a new instance of the message queue class.
+        /// </summary>
         public MessageQueue(int queueID, NetSquareServer _server)
         {
             server = _server;
@@ -23,21 +55,36 @@ namespace NetSquare.Server.Server
             QueueID = queueID;
         }
 
+        /// <summary>
+        /// Executes the add message operation.
+        /// </summary>
         public void AddMessage(NetworkMessage msg)
         {
             Queue.Enqueue(msg);
+            queueSignal.Release();
         }
 
+        /// <summary>
+        /// Executes the stop queue operation.
+        /// </summary>
         public void StopQueue()
         {
             Started = false;
+            queueSignal.Release();
         }
 
+        /// <summary>
+        /// Executes the clear queue operation.
+        /// </summary>
         public void ClearQueue()
         {
             Queue = new ConcurrentQueue<NetworkMessage>();
+            queueSignal = new SemaphoreSlim(0);
         }
 
+        /// <summary>
+        /// Executes the start queue operation.
+        /// </summary>
         public void StartQueue()
         {
             Started = true;
@@ -47,6 +94,7 @@ namespace NetSquare.Server.Server
                 {
                     try
                     {
+                        queueSignal.Wait(100);
                         while (Queue.TryDequeue(out currentMessage))
                         {
                             if (currentMessage == null)
@@ -87,7 +135,6 @@ namespace NetSquare.Server.Server
                             }
                             currentMessage = null;
                         }
-                        Thread.Sleep(1);
                     }
                     catch (Exception ex)
                     {
@@ -100,30 +147,51 @@ namespace NetSquare.Server.Server
         }
     }
 
+    /// <summary>
+    /// Represents the message queue manager component.
+    /// </summary>
     public class MessageQueueManager
     {
+        /// <summary>
+        /// Stores the queues value.
+        /// </summary>
         public MessageQueue[] Queues;
+        /// <summary>
+        /// Stores the server value.
+        /// </summary>
         private NetSquareServer server;
+        /// <summary>
+        /// Gets or sets the nb queues value.
+        /// </summary>
         public int NbQueues { get; private set; }
+        /// <summary>
+        /// Gets or sets the queues started value.
+        /// </summary>
         public bool QueuesStarted { get; private set; }
+        /// <summary>
+        /// Gets or sets the emptiest queue id value.
+        /// </summary>
         public int EmptiestQueueID { get; private set; }
 
+        /// <summary>
+        /// Executes the message queue manager operation.
+        /// </summary>
         public MessageQueueManager(NetSquareServer _server, int nbQueues)
         {
             server = _server;
-            NbQueues = nbQueues;
-            Queues = new MessageQueue[nbQueues];
-            for (int i = 0; i < nbQueues; i++)
+            NbQueues = Math.Max(1, nbQueues);
+            Queues = new MessageQueue[NbQueues];
+            for (int i = 0; i < NbQueues; i++)
                 Queues[i] = new MessageQueue(i, server);
         }
 
+        /// <summary>
+        /// Executes the start queues operation.
+        /// </summary>
         public void StartQueues()
         {
             QueuesStarted = true;
             EmptiestQueueID = 0;
-            min = int.MaxValue;
-            Thread processEmptiestQueueIDThread = new Thread(ProcessEmptiestQueueID);
-            processEmptiestQueueIDThread.Start();
             foreach (MessageQueue queue in Queues)
             {
                 queue.ClearQueue();
@@ -131,6 +199,9 @@ namespace NetSquare.Server.Server
             }
         }
 
+        /// <summary>
+        /// Executes the stop queues operation.
+        /// </summary>
         public void StopQueues()
         {
             QueuesStarted = false;
@@ -142,27 +213,15 @@ namespace NetSquare.Server.Server
             EmptiestQueueID = 0;
         }
 
+        /// <summary>
+        /// Executes the message received operation.
+        /// </summary>
         public void MessageReceived(NetworkMessage message)
         {
-            Queues[EmptiestQueueID].AddMessage(message);
-        }
-
-        int min;
-        private void ProcessEmptiestQueueID()
-        {
-            while (QueuesStarted)
-            {
-                min = int.MaxValue;
-                for (int i = 0; i < NbQueues; i++)
-                {
-                    if (Queues[i].NbMessages < min)
-                    {
-                        min = Queues[i].NbMessages;
-                        EmptiestQueueID = i;
-                    }
-                }
-                Thread.Sleep(1);
-            }
+            int queueID = (int)(message.ClientID % (uint)NbQueues);
+            EmptiestQueueID = queueID;
+            Queues[queueID].AddMessage(message);
         }
     }
 }
+#endregion

@@ -1,26 +1,66 @@
-﻿using NetSquare.Client;
+using NetSquare.Client;
 using NetSquare.Core;
 using System;
 using System.Diagnostics;
 
+#region Source
 namespace Client_Test
 {
+    /// <summary>
+    /// Represents the client routine component.
+    /// </summary>
     public class ClientRoutine
     {
+        /// <summary>
+        /// Stores the client value.
+        /// </summary>
         public NetSquareClient client;
         bool readyToSync = false;
+        /// <summary>
+        /// Stores the server offset value.
+        /// </summary>
         private static float serverOffset = 0;
+        /// <summary>
+        /// Gets or sets the time value.
+        /// </summary>
         public static float Time { get { return EnlapsedTime + serverOffset; } }
+        /// <summary>
+        /// Gets or sets the enlapsed time value.
+        /// </summary>
         public static float EnlapsedTime { get { return (float)(DateTime.Now - startTime).TotalSeconds; } }
+        /// <summary>
+        /// Stores the start time value.
+        /// </summary>
         private static DateTime startTime;
+        /// <summary>
+        /// Stores the line index value.
+        /// </summary>
         public int LineIndex = 0;
         NetsquareTransformFrame currentPos;
+        /// <summary>
+        /// Stores the x offset value.
+        /// </summary>
         private float xOffset = 100;
+        /// <summary>
+        /// Stores the z offset value.
+        /// </summary>
         private float zOffset = 100;
+        /// <summary>
+        /// Gets or sets the time synced value.
+        /// </summary>
         private static bool timeSynced => nbTimeSynced > 1;
+        /// <summary>
+        /// Stores the nb time synced value.
+        /// </summary>
         private static int nbTimeSynced = 0;
+        /// <summary>
+        /// Stores the sw value.
+        /// </summary>
         private Stopwatch sw;
 
+        /// <summary>
+        /// Executes the start operation.
+        /// </summary>
         public void Start(float x, float y, float z)
         {
             sw = Stopwatch.StartNew();
@@ -33,6 +73,9 @@ namespace Client_Test
             client.Connect("127.0.0.1", 5050, NetSquareProtocoleType.TCP, false);
         }
 
+        /// <summary>
+        /// Executes the worlds manager on client move operation.
+        /// </summary>
         private void WorldsManager_OnClientMove(uint clientID, INetSquareSynchFrame[] frames)
         {
             if (client.ClientID == 1)
@@ -44,16 +87,25 @@ namespace Client_Test
             }
         }
 
+        /// <summary>
+        /// Executes the client disconected operation.
+        /// </summary>
         private void Client_Disconected()
         {
             Console.WriteLine("Client Disconnected");
         }
 
+        /// <summary>
+        /// Executes the client connection fail operation.
+        /// </summary>
         private void Client_ConnectionFail()
         {
             Console.WriteLine("Client Connection fail");
         }
 
+        /// <summary>
+        /// Executes the client connected operation.
+        /// </summary>
         private void Client_Connected(uint ID)
         {
             if (!timeSynced)
@@ -89,12 +141,18 @@ namespace Client_Test
         }
 
         [NetSquareAction((ushort)MessagesTypes.WelcomeMessage)]
+        /// <summary>
+        /// Executes the receiving debug message from server operation.
+        /// </summary>
         public static void ReceivingDebugMessageFromServer(NetworkMessage message)
         {
             string text = message.Serializer.GetString();
             Console.WriteLine("from Server : " + text);
         }
 
+        /// <summary>
+        /// Executes the update operation.
+        /// </summary>
         public void Update(bool send, float x, float y)
         {
             if (!readyToSync)
@@ -113,3 +171,4 @@ namespace Client_Test
         WelcomeMessage = 0
     }
 }
+#endregion

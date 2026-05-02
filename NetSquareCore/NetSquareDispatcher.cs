@@ -1,18 +1,37 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 
+#region Source
 namespace NetSquare.Core
 {
+    /// <summary>
+    /// Represents the net square dispatcher component.
+    /// </summary>
     public class NetSquareDispatcher
     {
+        /// <summary>
+        /// Stores the head actions value.
+        /// </summary>
         private Dictionary<ushort, NetSquareHeadAction> HeadActions;
+        /// <summary>
+        /// Gets or sets the count value.
+        /// </summary>
         public int Count { get { return HeadActions.Count; } }
+        /// <summary>
+        /// Stores the execute in main thread callback value.
+        /// </summary>
         private Action<NetSquareAction, NetworkMessage> executeInMainThreadCallback;
+        /// <summary>
+        /// Stores the net square methods value.
+        /// </summary>
         private static List<MethodInfo> netSquareMethods = null;
 
+        /// <summary>
+        /// Initializes a new instance of the net square dispatcher class.
+        /// </summary>
         public NetSquareDispatcher()
         {
             HeadActions = new Dictionary<ushort, NetSquareHeadAction>();
@@ -173,3 +192,4 @@ namespace NetSquare.Core
         }
     }
 }
+#endregion

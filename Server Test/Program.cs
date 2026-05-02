@@ -1,13 +1,16 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Server;
 using NetSquare.Server.Server;
 using NetSquare.Server.Utils;
 using NetSquare.Server.Worlds;
 using System;
-using System.Windows.Forms;
+using System.Windows;
 
 namespace Server_Test
 {
+    /// <summary>
+    /// Represents the program component.
+    /// </summary>
     internal class Program
     {
         static NetSquareServer server;
@@ -50,13 +53,22 @@ namespace Server_Test
             Writer.StartDisplayTitle();
 
             // Start Server Monitor
-            Application.EnableVisualStyles();
             monitor = new ServerMonitor.Form1();
             monitor.Initialize(600, 10);
-            Application.Run(monitor);
+            Application application = new Application
+            {
+                ShutdownMode = ShutdownMode.OnMainWindowClose
+            };
+            application.Run(monitor);
         }
 
+        /// <summary>
+        /// Stores the current statistics value.
+        /// </summary>
         private static ServerStatistics currentStatistics;
+        /// <summary>
+        /// Executes the server on time loop operation.
+        /// </summary>
         private static void Server_OnTimeLoop(float obj)
         {
             if (!Writer.DisplayTitle)
@@ -66,6 +78,9 @@ namespace Server_Test
         }
 
         #region Server Events
+        /// <summary>
+        /// Executes the statistics on get statistics operation.
+        /// </summary>
         private static void Statistics_OnGetStatistics(ServerStatistics statistics)
         {
             if (!Writer.DisplayTitle)
@@ -85,6 +100,9 @@ namespace Server_Test
             monitor.UpdateStatistics(currentStatistics);
         }
 
+        /// <summary>
+        /// Executes the server on client connected operation.
+        /// </summary>
         private static void Server_OnClientConnected(uint clientID)
         {
             server.SendToClient(new NetworkMessage(0).Set("Welcome to my NetSquare server, client " + clientID), clientID);
@@ -97,6 +115,9 @@ namespace Server_Test
         /// </summary>
         /// <param name="message">Message received from client that Invoke this method</param>
         [NetSquareAction(0)]
+        /// <summary>
+        /// Executes the client sent text message operation.
+        /// </summary>
         public static void ClientSentTextMessage(NetworkMessage message)
         {
             Writer.Write("Client " + message.ClientID + " say : " + message.Serializer.GetString(), ConsoleColor.White);
@@ -104,6 +125,9 @@ namespace Server_Test
 
         #region Private Utils
         static Random random = new Random();
+        /// <summary>
+        /// Executes the get random color array operation.
+        /// </summary>
         private static byte[] GetRandomColorArray()
         {
             byte[] array = new byte[16];

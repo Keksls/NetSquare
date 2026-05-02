@@ -1,6 +1,7 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 
+#region Source
 namespace DFLNetwork
 {
 	/// <summary>
@@ -25,9 +26,13 @@ namespace DFLNetwork
 		{
 		}
 
+		/// <summary>
+		/// Stores the active value.
+		/// </summary>
 		public new bool Active
 		{
 			get { return base.Active; }
 		}
 	}
 }
+#endregion

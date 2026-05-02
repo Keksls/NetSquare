@@ -1,17 +1,27 @@
-﻿using NetSquare.Server.Utils;
-using Newtonsoft.Json;
+using NetSquare.Server.Utils;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Web.Script.Serialization;
 
+#region Source
 namespace NetSquare.Server
 {
+    /// <summary>
+    /// Represents the black list manager component.
+    /// </summary>
     public static class BlackListManager
     {
+        /// <summary>
+        /// Stores the ip black list value.
+        /// </summary>
         public static HashSet<string> IPBlackList = new HashSet<string>();
 
+        /// <summary>
+        /// Executes the initialize operation.
+        /// </summary>
         public static void Initialize()
         {
             // Load Black list
@@ -20,24 +30,30 @@ namespace NetSquare.Server
             {
                 IPBlackList = new HashSet<string>();
                 if (!File.Exists(NetSquareConfigurationManager.Configuration.BlackListFilePath))
-                    File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, JsonConvert.SerializeObject(new HashSet<string>()));
-                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, JsonConvert.SerializeObject(IPBlackList));
+                    File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, SerializeBlackList(new HashSet<string>()));
+                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, SerializeBlackList(IPBlackList));
             }
-            IPBlackList = JsonConvert.DeserializeObject<HashSet<string>>(File.ReadAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath));
+            IPBlackList = DeserializeBlackList(File.ReadAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath));
             Writer.Write(IPBlackList.Count.ToString(), ConsoleColor.Green);
         }
 
+        /// <summary>
+        /// Executes the black list ip operation.
+        /// </summary>
         public static void BlackListIP(string IP)
         {
             if (IPBlackList.Add(IP))
             {
-                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, JsonConvert.SerializeObject(IPBlackList));
+                File.WriteAllText(NetSquareConfigurationManager.Configuration.BlackListFilePath, SerializeBlackList(IPBlackList));
                 Writer.Write("BlackList ID : " + IP, ConsoleColor.Red);
             }
             else
                 Writer.Write("IP already in BlackList : " + IP, ConsoleColor.DarkRed);
         }
 
+        /// <summary>
+        /// Executes the is black listed operation.
+        /// </summary>
         public static bool IsBlackListed(Socket client)
         {
             string IP = ((IPEndPoint)client.RemoteEndPoint).Address.ToString();
@@ -65,6 +81,9 @@ namespace NetSquare.Server
             return false;
         }
 
+        /// <summary>
+        /// Executes the is black listed local operation.
+        /// </summary>
         public static bool IsBlackListed_Local(string IP)
         {
             return IPBlackList.Contains(IP);
@@ -98,15 +117,39 @@ namespace NetSquare.Server
             }
         }
 
+        /// <summary>
+        /// Initializes a new instance of the black list class.
+        /// </summary>
         public static void BlackList(TcpClient client)
         {
             string IP = ((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
             BlackListIP(IP);
         }
 
+        /// <summary>
+        /// Executes the is local address operation.
+        /// </summary>
         public static bool IsLocalAddress(string IP)
         {
             return IP.StartsWith("127.0.0.1") || IP.StartsWith("192.168.");
         }
+
+        /// <summary>
+        /// Executes the serialize black list operation.
+        /// </summary>
+        private static string SerializeBlackList(HashSet<string> blackList)
+        {
+            return new JavaScriptSerializer().Serialize(blackList);
+        }
+
+        /// <summary>
+        /// Executes the deserialize black list operation.
+        /// </summary>
+        private static HashSet<string> DeserializeBlackList(string json)
+        {
+            string[] addresses = new JavaScriptSerializer().Deserialize<string[]>(json);
+            return new HashSet<string>(addresses ?? new string[0]);
+        }
     }
 }
+#endregion

@@ -1,16 +1,33 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Core.Messages;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
+#region Source
 namespace NetSquare.Server.Worlds
 {
+    /// <summary>
+    /// Represents the simple spatializer component.
+    /// </summary>
     public class SimpleSpatializer : Spatializer
     {
+        /// <summary>
+        /// Stores the clients value.
+        /// </summary>
         public ConcurrentDictionary<uint, SpatialClient> Clients;
+        /// <summary>
+        /// Stores the static entities value.
+        /// </summary>
         public List<StaticEntity> StaticEntities;
+        /// <summary>
+        /// Gets or sets the max view distance value.
+        /// </summary>
         public float MaxViewDistance { get; private set; }
+        /// <summary>
+        /// Stores the static entities lock value.
+        /// </summary>
+        private readonly object staticEntitiesLock = new object();
 
         /// <summary>
         /// Instantiate a new simple spatializer based on distance between clients
@@ -24,6 +41,7 @@ namespace NetSquare.Server.Worlds
             MaxViewDistance = maxViewDistance;
             Clients = new ConcurrentDictionary<uint, SpatialClient>();
             StaticEntities = new List<StaticEntity>();
+            Start();
         }
 
         /// <summary>
@@ -32,10 +50,11 @@ namespace NetSquare.Server.Worlds
         /// <param name="client">ID of the client to add</param>
         public override void AddClient(ConnectedClient client)
         {
+            if (client == null)
+                return;
+
             SpatialClient spatializedClient = new SpatialClient(this, client);
-            if (!Clients.ContainsKey(client.ID))
-                while (!Clients.TryAdd(client.ID, spatializedClient))
-                    continue;
+            Clients.TryAdd(client.ID, spatializedClient);
         }
 
         /// <summary>
@@ -45,13 +64,8 @@ namespace NetSquare.Server.Worlds
         public override void RemoveClient(uint clientID)
         {
             SpatialClient client;
-            while (!Clients.TryRemove(clientID, out client))
-            {
-                if (!Clients.ContainsKey(clientID))
-                    return;
-                else
-                    continue;
-            }
+            Clients.TryRemove(clientID, out client);
+            RemoveStoredFrames(clientID);
         }
 
         /// <summary>
@@ -62,9 +76,12 @@ namespace NetSquare.Server.Worlds
         /// <returns></returns>
         public override HashSet<uint> GetVisibleClients(uint clientID)
         {
-            if (!Clients.ContainsKey(clientID))
+            SpatialClient client;
+            if (!Clients.TryGetValue(clientID, out client))
                 return new HashSet<uint>();
-            return new HashSet<uint>(Clients[clientID].VisibleIDs);
+
+            lock (client.SyncRoot)
+                return new HashSet<uint>(client.VisibleIDs);
         }
 
         /// <summary>
@@ -85,76 +102,71 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         protected override unsafe void SynchLoop()
         {
+            Dictionary<uint, List<INetSquareSynchFrame>> frameSnapshot = DrainStoredFrames();
+            if (frameSnapshot.Count == 0)
+                return;
+
             foreach (var client in Clients)
             {
-                lock (Clients)
+                // get visible clients
+                HashSet<uint> visibleClients = GetVisibleClients(client.Key);
+                // create new synch message
+                NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
+
+                // add visible clients to the message
+                foreach (var visibleClient in visibleClients)
                 {
-                    // get visible clients
-                    HashSet<uint> visibleClients = GetVisibleClients(client.Key);
-                    // create new synch message
-                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
-
-                    // add visible clients to the message
-                    foreach (var visibleClient in visibleClients)
-                    {
-                        // if client has transform frames to send
-                        if (ClientsTransformFrames.ContainsKey(visibleClient) && ClientsTransformFrames[visibleClient].Count > 0)
-                        {
-                            // create new byte array to pack transform frames for this client
-                            UInt24 clientId = new UInt24(visibleClient);
-                            ushort nbFrames = (ushort)ClientsTransformFrames[visibleClient].Count;
-                            byte[] bytes = new byte[5 + nbFrames * NetsquareTransformFrame.Size];
-                            // write transform values using pointer
-                            fixed (byte* ptr = bytes)
-                            {
-                                byte* b = ptr;
-                                // write client id
-                                *b = clientId.b0;
-                                b++;
-                                *b = clientId.b1;
-                                b++;
-                                *b = clientId.b2;
-                                b++;
-
-                                // lock client frames list so we can read it safely
-                                lock (ClientsTransformFrames)
-                                {
-                                    // write frames count
-                                    *b = (byte)nbFrames;
-                                    b++;
-                                    *b = (byte)(nbFrames >> 8);
-                                    b++;
-
-                                    // iterate on each frames of the client to pack them
-                                    for (ushort i = 0; i < nbFrames; i++)
-                                    {
-                                        ClientsTransformFrames[visibleClient][i].Serialize(ref b);
-                                    }
-                                    // clear frames
-                                    ClientsTransformFrames[visibleClient].Clear();
-                                }
-                            }
-                            // set message bytes
-                            synchMessage.Set(bytes, false);
-                        }
-                    }
-                    // send message to client
-                    if (synchMessage.HasWriteData)
-                        World.server.SendToClient(synchMessage, client.Key);
+                    List<INetSquareSynchFrame> frames;
+                    if (frameSnapshot.TryGetValue(visibleClient, out frames) && frames.Count > 0)
+                        NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleClient, frames);
                 }
+                // send message to client
+                if (synchMessage.HasWriteData)
+                    World.server.SendToClient(synchMessage, client.Key);
             }
         }
 
+        /// <summary>
+        /// Executes the for each operation.
+        /// </summary>
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)
         {
             foreach (var client in Clients)
-                callback(client.Key, GetVisibleClients(client.Key));
+            {
+                HashSet<uint> visible = GetVisibleClients(client.Key);
+                callback(client.Key, visible);
+            }
         }
 
+        /// <summary>
+        /// Executes the add static entity operation.
+        /// </summary>
         public override void AddStaticEntity(short type, uint id, NetsquareTransformFrame pos)
         {
-            StaticEntities.Add(new StaticEntity(type, id, pos));
+            lock (staticEntitiesLock)
+                StaticEntities.Add(new StaticEntity(type, id, pos));
             StaticEntitiesCount++;
+        }
+
+        /// <summary>
+        /// Executes the get clients snapshot operation.
+        /// </summary>
+        internal List<SpatialClient> GetClientsSnapshot()
+        {
+            List<SpatialClient> snapshot = new List<SpatialClient>();
+            foreach (var pair in Clients)
+                snapshot.Add(pair.Value);
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Executes the get static entities snapshot operation.
+        /// </summary>
+        internal List<StaticEntity> GetStaticEntitiesSnapshot()
+        {
+            lock (staticEntitiesLock)
+                return new List<StaticEntity>(StaticEntities);
         }
     }
 }
+#endregion

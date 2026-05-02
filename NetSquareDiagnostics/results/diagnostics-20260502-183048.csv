@@ -1,0 +1,4 @@
+﻿timestamp,machine,git,name,operations,clients,payload_bytes,elapsed_ms,ops_per_second,kib_per_second,p50_ms,p95_ms,p99_ms,gc0,gc1,gc2,memory_before,memory_after,failures
+"2026-05-02T18:30:48.9858117+02:00","DESKTOP-FJUJ9O6","c460ff1","serialize+deserialize",50000,0,0,11.149,4484586.476,127004.89,0,0,0,10,0,0,64600,4977328,0
+"2026-05-02T18:30:48.9858117+02:00","DESKTOP-FJUJ9O6","c460ff1","tcp send pump",2000,0,0,28.808,69424.437,949.162,0,0,0,1,0,0,4977328,4414216,0
+"2026-05-02T18:30:48.9858117+02:00","DESKTOP-FJUJ9O6","c460ff1","real server TCP roundtrip",4096,64,192,91.446,44791.609,18502.784,60.297,78.527,84.057,5,1,0,4414216,6534544,0

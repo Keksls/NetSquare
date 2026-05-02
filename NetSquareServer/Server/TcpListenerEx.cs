@@ -1,5 +1,6 @@
-﻿using System.Net;
+using System.Net;
 
+#region Source
 namespace NetSquare.Server
 {
     /// <summary>
@@ -24,9 +25,13 @@ namespace NetSquare.Server
         {
         }
 
+        /// <summary>
+        /// Stores the active value.
+        /// </summary>
         public new bool Active
         {
             get { return base.Active; }
         }
     }
 }
+#endregion

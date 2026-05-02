@@ -1,15 +1,25 @@
-﻿using System;
+using System;
 using System.Text;
 
+#region Source
 namespace NetSquare.Core.Encryption
 {
+    /// <summary>
+    /// Represents the xor encryptor component.
+    /// </summary>
     public class XOR_Encryptor : Encryptor
     {
+        /// <summary>
+        /// Executes the decrypt operation.
+        /// </summary>
         public override byte[] Decrypt(byte[] data)
         {
             return Encrypt(data);
         }
 
+        /// <summary>
+        /// Executes the encrypt operation.
+        /// </summary>
         public override byte[] Encrypt(byte[] data)
         {
             byte[] output = data;
@@ -24,6 +34,9 @@ namespace NetSquare.Core.Encryption
             return data;
         }
 
+        /// <summary>
+        /// Executes the post set key operation.
+        /// </summary>
         internal override void PostSetKey()
         {
             if (string.IsNullOrEmpty(password))
@@ -33,3 +46,4 @@ namespace NetSquare.Core.Encryption
         }
     }
 }
+#endregion

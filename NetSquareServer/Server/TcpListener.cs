@@ -1,21 +1,53 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 using NetSquare.Server.Utils;
 using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 
+#region Source
 namespace NetSquare.Server
 {
+    /// <summary>
+    /// Represents the tcp listener component.
+    /// </summary>
     public class TcpListener
     {
+        /// <summary>
+        /// Gets or sets the started value.
+        /// </summary>
         public bool Started { get; private set; }
+        /// <summary>
+        /// Gets or sets the verifying clients value.
+        /// </summary>
         public int VerifyingClients { get; private set; }
+        /// <summary>
+        /// Gets or sets the check black list value.
+        /// </summary>
         public bool CheckBlackList { get; private set; }
+        /// <summary>
+        /// Stores the listen backlog value.
+        /// </summary>
+        public static int ListenBacklog = 1024;
+        /// <summary>
+        /// Stores the listener value.
+        /// </summary>
         private TcpListenerEx _listener = null;
+        /// <summary>
+        /// Stores the server value.
+        /// </summary>
         private NetSquareServer server = null;
+        /// <summary>
+        /// Gets or sets the ip address value.
+        /// </summary>
         internal IPAddress IPAddress { get; private set; }
+        /// <summary>
+        /// Gets or sets the port value.
+        /// </summary>
         internal int Port { get; private set; }
+        /// <summary>
+        /// Gets or sets the listener value.
+        /// </summary>
         internal TcpListenerEx Listener { get { return _listener; } }
 
         /// <summary>
@@ -33,7 +65,7 @@ namespace NetSquare.Server
             IPAddress = ipAddress;
             Port = port;
             _listener = new TcpListenerEx(ipAddress, port);
-            _listener.Start();
+            _listener.Start(ListenBacklog);
             ThreadPool.QueueUserWorkItem((sender) => { HandleConnection(); });
             ThreadPool.QueueUserWorkItem((sender) => { HandleDisconnection(); });
         }
@@ -44,6 +76,7 @@ namespace NetSquare.Server
         public void Stop()
         {
             Started = false;
+            try { _listener.Stop(); } catch { }
         }
 
         /// <summary>
@@ -53,12 +86,21 @@ namespace NetSquare.Server
         {
             while (Started)
             {
-                // Handle new clients Connection
-                if (_listener.Pending())
+                try
                 {
-                    ThreadPool.QueueUserWorkItem(AcceptConnection);
+                    Socket newClient = _listener.AcceptTcpClient().Client;
+                    newClient.NoDelay = true;
+                    ThreadPool.QueueUserWorkItem((sender) => { AcceptConnection(newClient); });
                 }
-                Thread.Sleep(1);
+                catch (SocketException ex)
+                {
+                    if (Started)
+                        Writer.Write("Fail to accept client : " + ex.ToString(), ConsoleColor.Red);
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
             }
         }
 
@@ -68,7 +110,7 @@ namespace NetSquare.Server
         /// <param name="sender"> The sender </param>
         private void AcceptConnection(object sender)
         {
-            Socket newClient = _listener.AcceptTcpClient().Client;
+            Socket newClient = (Socket)sender;
             if (CheckBlackList && BlackListManager.IsBlackListed(newClient))
                 newClient.Close();
             else
@@ -145,6 +187,8 @@ namespace NetSquare.Server
                             Writer.Write("Client awnser wrong handshake key.", ConsoleColor.Red);
                         break;
                     }
+
+                    Thread.Sleep(1);
                 }
 
                 // client awnser good
@@ -183,3 +227,4 @@ namespace NetSquare.Server
         }
     }
 }
+#endregion

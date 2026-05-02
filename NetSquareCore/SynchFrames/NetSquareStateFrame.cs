@@ -1,13 +1,35 @@
-﻿namespace NetSquare.Core
+#region Source
+namespace NetSquare.Core
 {
+    /// <summary>
+    /// Represents the net square state frame value.
+    /// </summary>
     public struct NetSquareStateFrame : INetSquareSynchFrame
     {
+        /// <summary>
+        /// Stores the time value.
+        /// </summary>
         private float time;
+        /// <summary>
+        /// Gets or sets the time value.
+        /// </summary>
         public float Time { get => time; set => time = value; }
+        /// <summary>
+        /// Stores the synch frame type value.
+        /// </summary>
         private byte synchFrameType;
+        /// <summary>
+        /// Gets or sets the synch frame type value.
+        /// </summary>
         public byte SynchFrameType { get => synchFrameType; set => synchFrameType = value; }
         int INetSquareSynchFrame.Size => NetSquareStateFrame.Size;
+        /// <summary>
+        /// Stores the states value.
+        /// </summary>
         public int States;
+        /// <summary>
+        /// Stores the size value.
+        /// </summary>
         public static int Size = 9;
 
         /// <summary>
@@ -144,3 +166,4 @@
         }
     }
 }
+#endregion

@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 
+#region Source
 namespace NetSquare.Core
 {
     /// <summary>
@@ -10,6 +11,9 @@ namespace NetSquare.Core
     /// </summary>
     public static class NetSquareScheduler
     {
+        /// <summary>
+        /// Gets or sets the scheduled actions value.
+        /// </summary>
         private static Dictionary<string, NetSquareScheduledActionRunner> ScheduledActions { get; set; }
 
         /// <summary>
@@ -172,6 +176,9 @@ namespace NetSquare.Core
         }
     }
 
+    /// <summary>
+    /// Represents the net square scheduled action component.
+    /// </summary>
     public class NetSquareScheduledAction
     {
         /// <summary>
@@ -207,13 +214,31 @@ namespace NetSquare.Core
         }
     }
 
+    /// <summary>
+    /// Represents the net square scheduled action runner component.
+    /// </summary>
     internal class NetSquareScheduledActionRunner
     {
+        /// <summary>
+        /// Gets or sets the action value.
+        /// </summary>
         public NetSquareScheduledAction Action { get; private set; }
+        /// <summary>
+        /// Gets or sets the is running value.
+        /// </summary>
         public bool IsRunning { get; private set; }
+        /// <summary>
+        /// Occurs when do action is raised.
+        /// </summary>
         public event Action OnDoAction;
+        /// <summary>
+        /// Stores the action thread value.
+        /// </summary>
         private Thread actionThread;
 
+        /// <summary>
+        /// Executes the net square scheduled action runner operation.
+        /// </summary>
         public NetSquareScheduledActionRunner(NetSquareScheduledAction action)
         {
             Action = action;
@@ -263,6 +288,9 @@ namespace NetSquare.Core
                 return false;
         }
 
+        /// <summary>
+        /// Executes the smart frequency action loop operation.
+        /// </summary>
         private void SmartFrequencyActionLoop()
         {
             Stopwatch sw = new Stopwatch();
@@ -279,6 +307,9 @@ namespace NetSquare.Core
             }
         }
 
+        /// <summary>
+        /// Executes the normal frequency action loop operation.
+        /// </summary>
         private void NormalFrequencyActionLoop()
         {
             while (IsRunning)
@@ -290,3 +321,4 @@ namespace NetSquare.Core
         }
     }
 }
+#endregion

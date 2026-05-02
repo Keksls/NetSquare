@@ -1,44 +1,166 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
+using System.Threading;
 
 namespace NetSquare.Core
 {
+    /// <summary>
+    /// Represents the connected client component.
+    /// </summary>
     public class ConnectedClient
     {
+        /// <summary>
+        /// Defines the min tcp message size constant.
+        /// </summary>
+        public const int MinTcpMessageSize = 10;
+        /// <summary>
+        /// Stores the max tcp message size value.
+        /// </summary>
+        public static int MaxTcpMessageSize = 16 * 1024 * 1024;
+        /// <summary>
+        /// Stores the max tcp queued messages value.
+        /// </summary>
+        public static int MaxTcpQueuedMessages = 65536;
+        /// <summary>
+        /// Stores the max tcp queued bytes value.
+        /// </summary>
+        public static long MaxTcpQueuedBytes = 64L * 1024L * 1024L;
+
         // events
+        /// <summary>
+        /// Occurs when disconected is raised.
+        /// </summary>
         public event Action<uint> OnDisconected;
+        /// <summary>
+        /// Occurs when message received is raised.
+        /// </summary>
         public event Action<NetworkMessage> OnMessageReceived;
+        /// <summary>
+        /// Occurs when message send is raised.
+        /// </summary>
         public event Action<byte[]> OnMessageSend;
+        /// <summary>
+        /// Occurs when exception is raised.
+        /// </summary>
         public event Action<Exception> OnException;
         // statistics
-        public int NbMessagesToSend { get { return SendingQueue.Count + (UDP?.NbSendingMessages ?? 0); } }
+        /// <summary>
+        /// Gets or sets the nb messages to send value.
+        /// </summary>
+        public int NbMessagesToSend { get { return queuedTcpMessages + (currentSendingTCPMessage != null ? 1 : 0) + (UDP?.NbSendingMessages ?? 0); } }
+        /// <summary>
+        /// Stores the nb messages sended value.
+        /// </summary>
         private int nbMessagesSended;
+        /// <summary>
+        /// Gets or sets the nb messages sended value.
+        /// </summary>
         public int NbMessagesSended { get { return nbMessagesSended + (UDP?.NbMessagesSended ?? 0); } }
+        /// <summary>
+        /// Stores the nb messages dropped value.
+        /// </summary>
+        private long nbMessagesDropped;
+        /// <summary>
+        /// Gets or sets the nb messages dropped value.
+        /// </summary>
+        public long NbMessagesDropped { get { return Interlocked.Read(ref nbMessagesDropped) + (UDP?.NbMessagesDropped ?? 0); } }
+        /// <summary>
+        /// Stores the sended bytes value.
+        /// </summary>
         internal long sendedBytes = 0;
+        /// <summary>
+        /// Stores the received bytes value.
+        /// </summary>
         internal long receivedBytes = 0;
+        /// <summary>
+        /// Gets or sets the sended bytes value.
+        /// </summary>
         public long SendedBytes { get { return sendedBytes + (UDP?.sendedBytes ?? 0); } set { sendedBytes = value; if (UDP != null) UDP.sendedBytes = value; } }
+        /// <summary>
+        /// Gets or sets the received bytes value.
+        /// </summary>
         public long ReceivedBytes { get { return receivedBytes + (UDP?.receivedBytes ?? 0); } set { receivedBytes = value; if (UDP != null) UDP.receivedBytes = value; } }
+        /// <summary>
+        /// Gets or sets the nb messages received value.
+        /// </summary>
         public long NbMessagesReceived { get; internal set; }
         // properties
+        /// <summary>
+        /// Gets or sets the id value.
+        /// </summary>
         public uint ID { get; set; }
+        /// <summary>
+        /// Gets or sets the tcp socket value.
+        /// </summary>
         public Socket TcpSocket { get; private set; }
+        /// <summary>
+        /// Gets or sets the udp enabled value.
+        /// </summary>
         public bool UDPEnabled { get; set; }
-        private ConcurrentQueue<byte[]> SendingQueue;
+        /// <summary>
+        /// Stores the sending queue value.
+        /// </summary>
+        private ConcurrentQueue<PooledByteBuffer> SendingQueue;
+        /// <summary>
+        /// Stores the queued tcp messages value.
+        /// </summary>
+        private int queuedTcpMessages;
+        /// <summary>
+        /// Stores the queued tcp bytes value.
+        /// </summary>
+        private long queuedTcpBytes;
+        /// <summary>
+        /// Stores the receiving message lenght value.
+        /// </summary>
         private int receivingMessageLenght;
+        /// <summary>
+        /// Stores the receiving message received value.
+        /// </summary>
         private int receivingMessageReceived;
+        /// <summary>
+        /// Stores the receiving message buffer value.
+        /// </summary>
         private byte[] receivingMessageBuffer;
+        /// <summary>
+        /// Stores the receiving lenght message buffer value.
+        /// </summary>
         private byte[] receivingLenghtMessageBuffer;
-        private byte[] currentSendingTCPMessage;
+        /// <summary>
+        /// Stores the connection probe buffer value.
+        /// </summary>
+        private readonly byte[] connectionProbeBuffer = new byte[1];
+        /// <summary>
+        /// Stores the current sending tcp message value.
+        /// </summary>
+        private PooledByteBuffer currentSendingTCPMessage;
+        /// <summary>
+        /// Stores the receiving tcp message value.
+        /// </summary>
         private NetworkMessage receivingTCPMessage;
-        private bool isSendingTCPMessage = false;
+        /// <summary>
+        /// Stores the is sending tcp message value.
+        /// </summary>
+        private int isSendingTCPMessage = 0;
+        /// <summary>
+        /// Stores the udp value.
+        /// </summary>
         public UDPConnection UDP;
+        /// <summary>
+        /// Stores the receiving args value.
+        /// </summary>
         private SocketAsyncEventArgs receivingArgs;
+        /// <summary>
+        /// Stores the receiving lenght args value.
+        /// </summary>
         private SocketAsyncEventArgs receivingLenghtArgs;
 
+        /// <summary>
+        /// Initializes a new instance of the connected client class.
+        /// </summary>
         public ConnectedClient()
         {
-            SendingQueue = new ConcurrentQueue<byte[]>();
+            SendingQueue = new ConcurrentQueue<PooledByteBuffer>();
             receivingMessageBuffer = new byte[12];
             receivingLenghtMessageBuffer = new byte[4];
         }
@@ -54,8 +176,7 @@ namespace NetSquare.Core
                 return false;
             if (TcpSocket.Poll(0, SelectMode.SelectRead))
             {
-                byte[] buff = new byte[1];
-                if (TcpSocket.Receive(buff, SocketFlags.Peek) == 0)
+                if (TcpSocket.Receive(connectionProbeBuffer, SocketFlags.Peek) == 0)
                     return false;
             }
             return true;
@@ -68,7 +189,7 @@ namespace NetSquare.Core
         /// <param name="msg">message to send</param>
         public void AddTCPMessage(NetworkMessage msg)
         {
-            AddTCPMessage(msg.Serialize());
+            AddTCPMessage(msg.SerializePooled());
         }
 
         /// <summary>
@@ -77,10 +198,36 @@ namespace NetSquare.Core
         /// <param name="msg">message to send</param>
         public void AddTCPMessage(byte[] msg)
         {
-            if (isSendingTCPMessage)
-                SendingQueue.Enqueue(msg);
-            else
-                SendMessage(msg);
+            if (msg == null || msg.Length == 0)
+                return;
+
+            AddTCPMessage(PooledByteBuffer.Wrap(msg));
+        }
+
+        /// <summary>
+        /// Executes the add tcp message operation.
+        /// </summary>
+        private void AddTCPMessage(PooledByteBuffer msg)
+        {
+            if (msg == null || msg.Buffer == null || msg.Length == 0)
+                return;
+
+            int queuedMessages = Interlocked.Increment(ref queuedTcpMessages);
+            long queuedBytes = Interlocked.Add(ref queuedTcpBytes, msg.Length);
+            if (queuedMessages > MaxTcpQueuedMessages || queuedBytes > MaxTcpQueuedBytes)
+            {
+                Interlocked.Decrement(ref queuedTcpMessages);
+                Interlocked.Add(ref queuedTcpBytes, -msg.Length);
+                Interlocked.Increment(ref nbMessagesDropped);
+                msg.Dispose();
+                OnException?.Invoke(new InvalidOperationException("TCP send queue overflow for client " + ID));
+                try { TcpSocket?.Close(); } catch { }
+                OnDisconected?.Invoke(ID);
+                return;
+            }
+
+            SendingQueue.Enqueue(msg);
+            TryStartSending();
         }
 
         /// <summary>
@@ -138,8 +285,8 @@ namespace NetSquare.Core
             receivingArgs.Completed += MessageDataReceived;
 
             receivingLenghtArgs = new SocketAsyncEventArgs();
-            receivingArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
-            receivingArgs.UserToken = TcpSocket;
+            receivingLenghtArgs.RemoteEndPoint = TcpSocket.RemoteEndPoint;
+            receivingLenghtArgs.UserToken = TcpSocket;
             receivingLenghtArgs.Completed += MessageLenghtReceived;
             receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, 0, 4);
 
@@ -150,35 +297,109 @@ namespace NetSquare.Core
 
         #region TCP
         // ==================================== Send
-        private void SendMessage(byte[] message)
+        /// <summary>
+        /// Executes the try start sending operation.
+        /// </summary>
+        private void TryStartSending()
         {
-            isSendingTCPMessage = true;
+            if (Interlocked.CompareExchange(ref isSendingTCPMessage, 1, 0) != 0)
+                return;
+
+            ThreadPool.QueueUserWorkItem(_ => SendQueuedMessagesLoop());
+        }
+
+        /// <summary>
+        /// Executes the send queued messages loop operation.
+        /// </summary>
+        private void SendQueuedMessagesLoop()
+        {
             try
             {
-                sendedBytes += message.Length;
-                OnMessageSend?.Invoke(message);
-                TcpSocket.BeginSend(message, 0, message.Length, SocketFlags.None, OnMessageSended, null);
+                while (true)
+                {
+                    PooledByteBuffer nextMessage;
+                    if (!SendingQueue.TryDequeue(out nextMessage))
+                    {
+                        Interlocked.Exchange(ref isSendingTCPMessage, 0);
+                        if (SendingQueue.IsEmpty || Interlocked.CompareExchange(ref isSendingTCPMessage, 1, 0) != 0)
+                            return;
+
+                        continue;
+                    }
+
+                    Interlocked.Decrement(ref queuedTcpMessages);
+                    Interlocked.Add(ref queuedTcpBytes, -nextMessage.Length);
+                    SendQueuedMessage(nextMessage);
+                }
             }
             catch (Exception ex)
             {
+                Interlocked.Exchange(ref isSendingTCPMessage, 0);
+                DisposeCurrentSendingMessage();
+                DrainSendingQueue();
                 OnException?.Invoke(ex);
-                // client disconnected
-                if (ex is SocketException)
+                if (ex is SocketException || ex is ObjectDisposedException)
                     OnDisconected?.Invoke(ID);
             }
         }
 
-        private void OnMessageSended(IAsyncResult res)
+        /// <summary>
+        /// Executes the send queued message operation.
+        /// </summary>
+        private void SendQueuedMessage(PooledByteBuffer message)
         {
-            nbMessagesSended++;
-            if (SendingQueue.Count > 0)
+            currentSendingTCPMessage = message;
+            sendedBytes += message.Length;
+
+            Action<byte[]> onMessageSend = OnMessageSend;
+            if (onMessageSend != null)
             {
-                while (!SendingQueue.TryDequeue(out currentSendingTCPMessage))
-                    continue;
-                SendMessage(currentSendingTCPMessage);
+                byte[] sentData = message.Buffer;
+                if (message.Length != sentData.Length)
+                {
+                    sentData = new byte[message.Length];
+                    Buffer.BlockCopy(message.Buffer, 0, sentData, 0, message.Length);
+                }
+                try { onMessageSend(sentData); }
+                catch (Exception ex) { OnException?.Invoke(ex); }
             }
-            else
-                isSendingTCPMessage = false;
+
+            int offset = 0;
+            while (offset < message.Length)
+            {
+                int sent = TcpSocket.Send(message.Buffer, offset, message.Length - offset, SocketFlags.None);
+                if (sent <= 0)
+                    throw new SocketException((int)SocketError.ConnectionReset);
+
+                offset += sent;
+            }
+
+            nbMessagesSended++;
+            DisposeCurrentSendingMessage();
+        }
+
+        /// <summary>
+        /// Executes the dispose current sending message operation.
+        /// </summary>
+        private void DisposeCurrentSendingMessage()
+        {
+            PooledByteBuffer message = currentSendingTCPMessage;
+            currentSendingTCPMessage = null;
+            message?.Dispose();
+        }
+
+        /// <summary>
+        /// Executes the drain sending queue operation.
+        /// </summary>
+        private void DrainSendingQueue()
+        {
+            PooledByteBuffer queuedMessage;
+            while (SendingQueue.TryDequeue(out queuedMessage))
+            {
+                Interlocked.Decrement(ref queuedTcpMessages);
+                Interlocked.Add(ref queuedTcpBytes, -queuedMessage.Length);
+                queuedMessage.Dispose();
+            }
         }
 
         // ====================================== Receive
@@ -199,6 +420,9 @@ namespace NetSquare.Core
           }
 
           // Method to process received data asynchronously
+          /// <summary>
+          /// Executes the process received data operation.
+          /// </summary>
           private void ProcessReceivedData()
           {
               while (true)
@@ -243,6 +467,9 @@ namespace NetSquare.Core
               }
           }
 
+          /// <summary>
+          /// Executes the start receiving data operation.
+          /// </summary>
           private void StartReceivingData()
           {
               try
@@ -272,6 +499,9 @@ namespace NetSquare.Core
               }
           }
 
+          /// <summary>
+          /// Executes the message data received operation.
+          /// </summary>
           private void MessageDataReceived(object sender, SocketAsyncEventArgs e)
           {
               try
@@ -304,45 +534,58 @@ namespace NetSquare.Core
               }
           }*/
 
+        /// <summary>
+        /// Executes the start receiving message lenght operation.
+        /// </summary>
         private void StartReceivingMessageLenght()
         {
             try
             {
-                receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, 0, 4);
+                receivingMessageReceived = 0;
+                receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, 0, receivingLenghtMessageBuffer.Length);
                 if (!TcpSocket.ReceiveAsync(receivingLenghtArgs)) // start receiving message into buffer, check if sync or async
-                    MessageLenghtReceived(this, receivingLenghtArgs);
+                    QueueMessageLenghtReceived();
             }
             catch (Exception ex)
             {
                 OnException?.Invoke(ex);
                 // client disconnected
-                if (ex is SocketException)
+                if (ex is SocketException || ex is ObjectDisposedException)
                     OnDisconected?.Invoke(ID);
             }
         }
 
+        /// <summary>
+        /// Executes the message lenght received operation.
+        /// </summary>
         private void MessageLenghtReceived(object sender, SocketAsyncEventArgs e)
         {
             try
             {
-                receivingMessageLenght = BitConverter.ToInt32(receivingLenghtMessageBuffer, 0);
-                if (receivingMessageLenght < 10)
+                if (e.SocketError != SocketError.Success || e.BytesTransferred <= 0)
                 {
-                    // if sync, check if don't receive anything and if socket is disconnected => check if 0 is because if not, don't need to check connection, and check connection is slow
-                    if (receivingMessageLenght == 0 && !IsConnected())
-                    {
-                        OnDisconected?.Invoke(ID);
-                        OnException?.Invoke(new Exception("msg lenght = " + receivingMessageLenght + ". disconnected"));
-                    }
-                    else
-                    {
-                        StartReceivingMessageLenght();
-                        OnException?.Invoke(new Exception("Unexpected case just happen. msg lenght = " + receivingMessageLenght + " and client is still connected (client : " + ID + ")"));
-                    }
+                    OnDisconected?.Invoke(ID);
                     return;
                 }
 
-                // no encryption, keep lenght into message
+                receivingMessageReceived += e.BytesTransferred;
+                if (receivingMessageReceived < receivingLenghtMessageBuffer.Length)
+                {
+                    receivingLenghtArgs.SetBuffer(receivingLenghtMessageBuffer, receivingMessageReceived, receivingLenghtMessageBuffer.Length - receivingMessageReceived);
+                    if (!TcpSocket.ReceiveAsync(receivingLenghtArgs))
+                        QueueMessageLenghtReceived();
+                    return;
+                }
+
+                receivingMessageLenght = BitConverter.ToInt32(receivingLenghtMessageBuffer, 0);
+                if (receivingMessageLenght < MinTcpMessageSize || receivingMessageLenght > MaxTcpMessageSize)
+                {
+                    OnException?.Invoke(new Exception("Invalid TCP message length " + receivingMessageLenght + " from client " + ID));
+                    OnDisconected?.Invoke(ID);
+                    return;
+                }
+
+                // Keep the 4-byte frame length inside the message buffer.
                 receivingMessageBuffer = new byte[receivingMessageLenght];
                 receivingMessageBuffer[0] = receivingLenghtMessageBuffer[0];
                 receivingMessageBuffer[1] = receivingLenghtMessageBuffer[1];
@@ -351,37 +594,39 @@ namespace NetSquare.Core
                 receivingMessageReceived = 4;
                 receivingArgs.SetBuffer(receivingMessageBuffer, 4, receivingMessageLenght - 4);
                 if (!TcpSocket.ReceiveAsync(receivingArgs))
-                    MessageDataReceived(this, receivingArgs);
+                    QueueMessageDataReceived();
             }
             catch (Exception ex)
             {
                 OnException?.Invoke(ex);
                 // client disconnected
-                if (ex is SocketException)
+                if (ex is SocketException || ex is ObjectDisposedException)
                     OnDisconected?.Invoke(ID);
             }
         }
 
+        /// <summary>
+        /// Executes the message data received operation.
+        /// </summary>
         private void MessageDataReceived(object sender, SocketAsyncEventArgs e)
         {
             try
             {
+                if (e.SocketError != SocketError.Success || e.BytesTransferred <= 0)
+                {
+                    OnDisconected?.Invoke(ID);
+                    return;
+                }
+
                 // message not fully received
                 receivingMessageReceived += e.BytesTransferred;
                 // OnException?.Invoke(new Exception("this block : " + e.BytesTransferred + " , total : " + receivingMessageReceived + " , expected : " + (receivingMessageBuffer.Length - 4) + " | " + receivingMessageLenght));
                 if (receivingMessageBuffer.Length > receivingMessageReceived)
                 {
-                    // we don't received anything, assume we are disconnected
-                    if (receivingMessageReceived == 4)
-                    {
-                        OnDisconected?.Invoke(ID);
-                        return;
-                    }
-
                     // OnException?.Invoke(new Exception("inconsistent message block : " + receivingMessageReceived + " (" + e.BytesTransferred + ") / " + receivingMessageBuffer.Length));
                     receivingArgs.SetBuffer(receivingMessageBuffer, receivingMessageReceived, receivingMessageBuffer.Length - receivingMessageReceived);
                     if (!TcpSocket.ReceiveAsync(receivingArgs))
-                        MessageDataReceived(this, receivingArgs);
+                        QueueMessageDataReceived();
                 }
                 // message fully received
                 else
@@ -391,18 +636,41 @@ namespace NetSquare.Core
                     receivedBytes += receivingMessageBuffer.Length;
                     receivingTCPMessage = new NetworkMessage(receivingMessageBuffer);
                     receivingTCPMessage.Client = this;
-                    OnMessageReceived?.Invoke(receivingTCPMessage);
+                    NetworkMessage receivedMessage = receivingTCPMessage;
                     receivingTCPMessage = null;
                     StartReceivingMessageLenght();
+                    try
+                    {
+                        OnMessageReceived?.Invoke(receivedMessage);
+                    }
+                    catch (Exception ex)
+                    {
+                        OnException?.Invoke(ex);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 OnException?.Invoke(ex);
                 // client disconnected
-                if (ex is SocketException)
-                    OnDisconected?.Invoke(ID);
+                OnDisconected?.Invoke(ID);
             }
+        }
+
+        /// <summary>
+        /// Executes the queue message lenght received operation.
+        /// </summary>
+        private void QueueMessageLenghtReceived()
+        {
+            ThreadPool.QueueUserWorkItem(_ => MessageLenghtReceived(this, receivingLenghtArgs));
+        }
+
+        /// <summary>
+        /// Executes the queue message data received operation.
+        /// </summary>
+        private void QueueMessageDataReceived()
+        {
+            ThreadPool.QueueUserWorkItem(_ => MessageDataReceived(this, receivingArgs));
         }
         #endregion
     }

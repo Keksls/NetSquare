@@ -1,7 +1,11 @@
-﻿using NetSquare.Core;
+using NetSquare.Core;
 
+#region Source
 namespace NetSquare.Core
 {
+    /// <summary>
+    /// Defines the i net square serializable contract.
+    /// </summary>
     public interface INetSquareSerializable
     {
         /// <summary>
@@ -18,6 +22,9 @@ namespace NetSquare.Core
     }
 }
 
+/// <summary>
+/// Represents the net square serializable extensions component.
+/// </summary>
 public static class NetSquareSerializableExtensions
 {
     /// <summary>
@@ -40,3 +47,4 @@ public static class NetSquareSerializableExtensions
         serializable.Deserialize(message.Serializer);
     }
 }
+#endregion

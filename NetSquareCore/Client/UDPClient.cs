@@ -1,30 +1,100 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
-using System.Linq;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 
 namespace NetSquare.Core
 {
+    /// <summary>
+    /// Represents the udp connection component.
+    /// </summary>
     public class UDPConnection
     {
+        /// <summary>
+        /// Stores the connection value.
+        /// </summary>
         public UdpClient connection;
+        /// <summary>
+        /// Stores the remote end point value.
+        /// </summary>
         public IPEndPoint RemoteEndPoint;
+        /// <summary>
+        /// Stores the nb sending messages value.
+        /// </summary>
         public int NbSendingMessages;
+        /// <summary>
+        /// Stores the nb messages sended value.
+        /// </summary>
         public int NbMessagesSended;
+        /// <summary>
+        /// Stores the nb messages dropped value.
+        /// </summary>
+        private long nbMessagesDropped;
+        /// <summary>
+        /// Gets or sets the nb messages dropped value.
+        /// </summary>
+        public long NbMessagesDropped { get { return Interlocked.Read(ref nbMessagesDropped); } }
+        /// <summary>
+        /// Stores the sended bytes value.
+        /// </summary>
         internal long sendedBytes = 0;
+        /// <summary>
+        /// Stores the received bytes value.
+        /// </summary>
         internal long receivedBytes = 0;
-        private ConcurrentDictionary<ushort, byte[]> UDPSendingQueue;
+        /// <summary>
+        /// Stores the udp sending queue value.
+        /// </summary>
+        private Dictionary<ushort, byte[]> UDPSendingQueue;
+        /// <summary>
+        /// Stores the queued udp messages value.
+        /// </summary>
+        private int queuedUdpMessages;
+        /// <summary>
+        /// Stores the related client value.
+        /// </summary>
         private ConnectedClient relatedClient;
+        /// <summary>
+        /// Stores the is sending udp message value.
+        /// </summary>
         private bool isSendingUDPMessage = false;
+        /// <summary>
+        /// Stores the is server value.
+        /// </summary>
         private bool isServer = false;
+        /// <summary>
+        /// Stores the message types array value.
+        /// </summary>
         private ushort[] messageTypesArray;
+        /// <summary>
+        /// Stores the last message type index sended value.
+        /// </summary>
         private int lastMessageTypeIndexSended;
+        /// <summary>
+        /// Stores the current sending message value.
+        /// </summary>
         private byte[] currentSendingMessage = null;
+        /// <summary>
+        /// Stores the send lock value.
+        /// </summary>
+        private readonly object sendLock = new object();
+        /// <summary>
+        /// Stores the server hub value.
+        /// </summary>
+        private ServerUdpHub serverHub;
+        /// <summary>
+        /// Stores the server hubs value.
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, ServerUdpHub> ServerHubs = new ConcurrentDictionary<string, ServerUdpHub>();
 
+        /// <summary>
+        /// Executes the udp connection operation.
+        /// </summary>
         public UDPConnection()
         {
-            UDPSendingQueue = new ConcurrentDictionary<ushort, byte[]>();
+            UDPSendingQueue = new Dictionary<ushort, byte[]>();
             messageTypesArray = new ushort[0];
             lastMessageTypeIndexSended = 0;
         }
@@ -38,8 +108,10 @@ namespace NetSquare.Core
         {
             isServer = false;
             relatedClient = _relatedClient;
-            RemoteEndPoint = new IPEndPoint(((IPEndPoint)relatedTcpClient.LocalEndPoint).Address, ((IPEndPoint)relatedTcpClient.LocalEndPoint).Port + 1);
-            connection = new UdpClient();
+            IPEndPoint localTcpEndPoint = (IPEndPoint)relatedTcpClient.LocalEndPoint;
+            IPEndPoint remoteTcpEndPoint = (IPEndPoint)relatedTcpClient.RemoteEndPoint;
+            RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
+            connection = new UdpClient(new IPEndPoint(localTcpEndPoint.Address, localTcpEndPoint.Port + 1));
             connection.Connect(RemoteEndPoint);
             connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
         }
@@ -53,45 +125,91 @@ namespace NetSquare.Core
         {
             isServer = true;
             relatedClient = _relatedClient;
-            //The RemoteEndPoint identifies the incoming client
-            RemoteEndPoint = new IPEndPoint(((IPEndPoint)relatedTcpClient.RemoteEndPoint).Address, ((IPEndPoint)relatedTcpClient.RemoteEndPoint).Port + 1);
-            //We are using UDP sockets
-            connection = new UdpClient(RemoteEndPoint);
-            //Start receiving data
-            connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
+            IPEndPoint localTcpEndPoint = (IPEndPoint)relatedTcpClient.LocalEndPoint;
+            IPEndPoint remoteTcpEndPoint = (IPEndPoint)relatedTcpClient.RemoteEndPoint;
+            RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
+            IPEndPoint localUdpEndPoint = new IPEndPoint(localTcpEndPoint.Address, localTcpEndPoint.Port + 1);
+            serverHub = GetServerHub(localUdpEndPoint);
+            connection = serverHub.Connection;
+            RegisterServerClient();
         }
 
+        /// <summary>
+        /// Executes the register server client operation.
+        /// </summary>
+        public void RegisterServerClient()
+        {
+            if (isServer && serverHub != null && relatedClient.ID != 0)
+                serverHub.Register(this);
+        }
+
+        /// <summary>
+        /// Executes the unregister server client operation.
+        /// </summary>
+        public void UnregisterServerClient()
+        {
+            if (isServer && serverHub != null && relatedClient.ID != 0)
+                serverHub.Unregister(relatedClient.ID);
+        }
+
+        /// <summary>
+        /// Executes the send message operation.
+        /// </summary>
         public void SendMessage(NetworkMessage msg)
         {
             SendMessage(msg.HeadID, msg.Serialize());
         }
 
+        /// <summary>
+        /// Executes the send message operation.
+        /// </summary>
         public void SendMessage(ushort headID, byte[] msg)
         {
-            // add message index for HeadID
-            if (!UDPSendingQueue.ContainsKey(headID))
+            if (msg == null || msg.Length == 0)
+                return;
+
+            bool shouldStartSend = false;
+            lock (sendLock)
             {
-                while (!UDPSendingQueue.TryAdd(headID, null))
-                    continue;
-                // add headID in message type array
-                var messageTypesList = messageTypesArray.ToList();
-                // converting as list to grow because it will be called very few times
-                messageTypesList.Add(headID);
-                // save it as array because it's faster and smaller for GC
-                messageTypesArray = messageTypesList.ToArray();
+                // add message index for HeadID
+                if (!UDPSendingQueue.ContainsKey(headID))
+                {
+                    UDPSendingQueue.Add(headID, null);
+                    Array.Resize(ref messageTypesArray, messageTypesArray.Length + 1);
+                    messageTypesArray[messageTypesArray.Length - 1] = headID;
+                }
+
+                // already sending datagram, so let's save it for furture send
+                if (isSendingUDPMessage)
+                {
+                    if (UDPSendingQueue[headID] != null)
+                    {
+                        Interlocked.Increment(ref nbMessagesDropped);
+                    }
+                    else
+                    {
+                        queuedUdpMessages++;
+                    }
+                    // set current message as last for this headID in the  sending queue
+                    UDPSendingQueue[headID] = msg;
+                }
+                else
+                {
+                    isSendingUDPMessage = true;
+                    currentSendingMessage = msg;
+                    shouldStartSend = true;
+                }
+                RefreshSendingCountLocked();
             }
 
-            // already sending datagram, so let's save it for furture send
-            if (isSendingUDPMessage)
-            {
-                // set current message as last for this headID in the  sending queue
-                UDPSendingQueue[headID] = msg;
-            }
-            else
+            if (shouldStartSend)
                 BeginSendMessage(msg);
         }
 
         #region UDP
+        /// <summary>
+        /// Executes the on receive udp operation.
+        /// </summary>
         private void OnReceiveUDP(IAsyncResult res)
         {
             try
@@ -110,44 +228,108 @@ namespace NetSquare.Core
                 //Start over receiving data
                 connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
             }
+            catch (ObjectDisposedException) { }
             catch (SocketException) { }
         }
 
+        /// <summary>
+        /// Executes the begin send message operation.
+        /// </summary>
         private void BeginSendMessage(byte[] message)
         {
-            isSendingUDPMessage = true;
-            sendedBytes += message.Length;
-            if (isServer)
-                connection.BeginSend(message, message.Length, RemoteEndPoint, MessageSended, null);
-            else
-                connection.BeginSend(message, message.Length, MessageSended, null);
+            try
+            {
+                sendedBytes += message.Length;
+                if (isServer)
+                    connection.BeginSend(message, message.Length, RemoteEndPoint, MessageSended, null);
+                else
+                    connection.BeginSend(message, message.Length, MessageSended, null);
+            }
+            catch (SocketException)
+            {
+                lock (sendLock)
+                {
+                    currentSendingMessage = null;
+                    isSendingUDPMessage = false;
+                    queuedUdpMessages = 0;
+                    ClearQueuedMessagesLocked();
+                    RefreshSendingCountLocked();
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                lock (sendLock)
+                {
+                    currentSendingMessage = null;
+                    isSendingUDPMessage = false;
+                    queuedUdpMessages = 0;
+                    ClearQueuedMessagesLocked();
+                    RefreshSendingCountLocked();
+                }
+            }
         }
 
+        /// <summary>
+        /// Executes the message sended operation.
+        /// </summary>
         private void MessageSended(IAsyncResult res)
         {
             try
             {
                 connection.EndSend(res);
-                currentSendingMessage = null;
                 NbMessagesSended++;
 
                 // send other message if there is some
-                if (GetNextSendingMessage(ref currentSendingMessage))
+                byte[] nextMessage = null;
+                lock (sendLock)
                 {
-                    isSendingUDPMessage = true;
-                    if (isServer)
-                        connection.BeginSend(currentSendingMessage, currentSendingMessage.Length, RemoteEndPoint, MessageSended, null);
+                    currentSendingMessage = null;
+                    if (GetNextSendingMessage(ref nextMessage))
+                    {
+                        currentSendingMessage = nextMessage;
+                    }
                     else
-                        connection.BeginSend(currentSendingMessage, currentSendingMessage.Length, MessageSended, null);
+                    {
+                        isSendingUDPMessage = false;
+                    }
+                    RefreshSendingCountLocked();
                 }
-                else
-                    isSendingUDPMessage = false;
+
+                if (nextMessage != null)
+                    BeginSendMessage(nextMessage);
             }
-            catch (SocketException) { }
+            catch (SocketException)
+            {
+                lock (sendLock)
+                {
+                    currentSendingMessage = null;
+                    isSendingUDPMessage = false;
+                    queuedUdpMessages = 0;
+                    ClearQueuedMessagesLocked();
+                    RefreshSendingCountLocked();
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                lock (sendLock)
+                {
+                    currentSendingMessage = null;
+                    isSendingUDPMessage = false;
+                    queuedUdpMessages = 0;
+                    ClearQueuedMessagesLocked();
+                    RefreshSendingCountLocked();
+                }
+            }
         }
 
+        /// <summary>
+        /// Executes the get next sending message operation.
+        /// </summary>
         private bool GetNextSendingMessage(ref byte[] message)
         {
+            if (messageTypesArray.Length == 0)
+                return false;
+
             // switch to next index
             lastMessageTypeIndexSended++;
             lastMessageTypeIndexSended %= messageTypesArray.Length;
@@ -159,6 +341,7 @@ namespace NetSquare.Core
                 {
                     message = UDPSendingQueue[messageTypesArray[lastMessageTypeIndexSended]];
                     UDPSendingQueue[messageTypesArray[lastMessageTypeIndexSended]] = null;
+                    queuedUdpMessages--;
                     return true;
                 }
                 // switch to next index
@@ -168,6 +351,114 @@ namespace NetSquare.Core
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Executes the refresh sending count locked operation.
+        /// </summary>
+        private void RefreshSendingCountLocked()
+        {
+            NbSendingMessages = queuedUdpMessages + (isSendingUDPMessage ? 1 : 0);
+        }
+
+        /// <summary>
+        /// Executes the clear queued messages locked operation.
+        /// </summary>
+        private void ClearQueuedMessagesLocked()
+        {
+            for (int i = 0; i < messageTypesArray.Length; i++)
+                UDPSendingQueue[messageTypesArray[i]] = null;
+        }
+
+        /// <summary>
+        /// Executes the get server hub operation.
+        /// </summary>
+        private static ServerUdpHub GetServerHub(IPEndPoint localEndPoint)
+        {
+            return ServerHubs.GetOrAdd(localEndPoint.ToString(), key => new ServerUdpHub(localEndPoint));
+        }
+
+        /// <summary>
+        /// Represents the server udp hub component.
+        /// </summary>
+        private class ServerUdpHub
+        {
+            /// <summary>
+            /// Gets or sets the connection value.
+            /// </summary>
+            public UdpClient Connection { get; private set; }
+            /// <summary>
+            /// Stores the clients value.
+            /// </summary>
+            private ConcurrentDictionary<uint, UDPConnection> clients = new ConcurrentDictionary<uint, UDPConnection>();
+
+            /// <summary>
+            /// Executes the server udp hub operation.
+            /// </summary>
+            public ServerUdpHub(IPEndPoint localEndPoint)
+            {
+                Connection = new UdpClient(localEndPoint);
+                StartReceive();
+            }
+
+            /// <summary>
+            /// Executes the register operation.
+            /// </summary>
+            public void Register(UDPConnection connection)
+            {
+                clients[connection.relatedClient.ID] = connection;
+            }
+
+            /// <summary>
+            /// Executes the unregister operation.
+            /// </summary>
+            public void Unregister(uint clientID)
+            {
+                UDPConnection removed;
+                clients.TryRemove(clientID, out removed);
+            }
+
+            /// <summary>
+            /// Executes the start receive operation.
+            /// </summary>
+            private void StartReceive()
+            {
+                Connection.BeginReceive(OnReceiveUDP, null);
+            }
+
+            /// <summary>
+            /// Executes the on receive udp operation.
+            /// </summary>
+            private void OnReceiveUDP(IAsyncResult res)
+            {
+                try
+                {
+                    IPEndPoint remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
+                    byte[] datagram = Connection.EndReceive(res, ref remoteEndPoint);
+                    NetworkMessage message = new NetworkMessage();
+                    if (message.SafeSetDatagram(datagram))
+                    {
+                        UDPConnection clientConnection;
+                        if (clients.TryGetValue(message.ClientID, out clientConnection))
+                        {
+                            clientConnection.RemoteEndPoint = remoteEndPoint;
+                            clientConnection.receivedBytes += datagram.Length;
+                            clientConnection.relatedClient.NbMessagesReceived++;
+                            message.Client = clientConnection.relatedClient;
+                            clientConnection.relatedClient.Fire_OnMessageReceived(message);
+                        }
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (SocketException) { }
+                finally
+                {
+                    try { StartReceive(); } catch { }
+                }
+            }
         }
         #endregion
     }

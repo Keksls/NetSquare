@@ -1,12 +1,16 @@
-﻿using NetSquare.Client;
+using NetSquare.Client;
 using NetSquare.Core;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 
+#region Source
 namespace Client_Test
 {
+    /// <summary>
+    /// Represents the program component.
+    /// </summary>
     internal class Program
     {
         static ClientsMonitor.Form1 monitor;
@@ -121,3 +125,4 @@ namespace Client_Test
         }
     }
 }
+#endregion

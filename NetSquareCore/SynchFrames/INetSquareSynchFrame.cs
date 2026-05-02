@@ -1,5 +1,9 @@
-﻿namespace NetSquare.Core
+#region Source
+namespace NetSquare.Core
 {
+    /// <summary>
+    /// Defines the i net square synch frame contract.
+    /// </summary>
     public interface INetSquareSynchFrame
     {
         float Time { get; set; }
@@ -15,3 +19,4 @@
         unsafe void Deserialize(NetworkMessage message);
     }
 }
+#endregion

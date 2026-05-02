@@ -1,8 +1,12 @@
-﻿using System;
+using System;
 using System.Windows.Forms;
 
+#region Source
 namespace ClientsMonitor
 {
+    /// <summary>
+    /// Represents the program component.
+    /// </summary>
     internal static class Program
     {
         /// <summary>
@@ -17,3 +21,4 @@ namespace ClientsMonitor
         }
     }
 }
+#endregion

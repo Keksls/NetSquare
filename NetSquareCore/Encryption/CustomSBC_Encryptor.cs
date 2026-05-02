@@ -1,10 +1,17 @@
-﻿using System;
+using System;
 using System.Text;
 
+#region Source
 namespace NetSquare.Core.Encryption
 {
+    /// <summary>
+    /// Represents the custom sbc encryptor component.
+    /// </summary>
     public class CustomSBC_Encryptor : Encryptor
     {
+        /// <summary>
+        /// Executes the decrypt operation.
+        /// </summary>
         public override byte[] Decrypt(byte[] data)
         {
             int passwordShiftIndex = 0;
@@ -16,6 +23,9 @@ namespace NetSquare.Core.Encryption
             return data;
         }
 
+        /// <summary>
+        /// Executes the encrypt operation.
+        /// </summary>
         public override byte[] Encrypt(byte[] data)
         {
             int passwordShiftIndex = 0;
@@ -27,6 +37,9 @@ namespace NetSquare.Core.Encryption
             return data;
         }
 
+        /// <summary>
+        /// Executes the post set key operation.
+        /// </summary>
         internal override void PostSetKey()
         {
             if (string.IsNullOrEmpty(password))
@@ -36,3 +49,4 @@ namespace NetSquare.Core.Encryption
         }
     }
 }
+#endregion

@@ -1,0 +1,61 @@
+﻿{
+  "timestamp": "2026-05-02T18:35:54.1267686+02:00",
+  "machine": "DESKTOP-FJUJ9O6",
+  "git": "c460ff1",
+  "benchmarks": [
+    {
+      "name": "serialize+deserialize",
+      "operations": 50000,
+      "clients": 0,
+      "payload_bytes": 0,
+      "elapsed_ms": 11.482,
+      "ops_per_second": 4354566.198,
+      "kib_per_second": 123322.676,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "gc0": 10,
+      "gc1": 0,
+      "gc2": 0,
+      "memory_before": 64600,
+      "memory_after": 4976136,
+      "failures": 0
+    },
+    {
+      "name": "tcp send pump",
+      "operations": 2000,
+      "clients": 0,
+      "payload_bytes": 0,
+      "elapsed_ms": 26.654,
+      "ops_per_second": 75036.486,
+      "kib_per_second": 1025.889,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "gc0": 1,
+      "gc1": 0,
+      "gc2": 0,
+      "memory_before": 4976136,
+      "memory_after": 4404872,
+      "failures": 0
+    },
+    {
+      "name": "real server TCP roundtrip",
+      "operations": 320,
+      "clients": 16,
+      "payload_bytes": 96,
+      "elapsed_ms": 21.791,
+      "ops_per_second": 14685.299,
+      "kib_per_second": 3312.797,
+      "p50_ms": 16.968,
+      "p95_ms": 20.692,
+      "p99_ms": 20.788,
+      "gc0": 1,
+      "gc1": 1,
+      "gc2": 0,
+      "memory_before": 4404872,
+      "memory_after": 1536584,
+      "failures": 0
+    }
+  ]
+}
