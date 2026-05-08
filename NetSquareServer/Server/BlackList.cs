@@ -3,8 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
-using System.Web.Script.Serialization;
 
 #region Source
 namespace NetSquare.Server
@@ -18,6 +18,10 @@ namespace NetSquare.Server
         /// Stores the ip black list value.
         /// </summary>
         public static HashSet<string> IPBlackList = new HashSet<string>();
+        /// <summary>
+        /// Stores the HTTP client used for external blacklist checks.
+        /// </summary>
+        private static readonly HttpClient HttpClient = CreateHttpClient();
 
         /// <summary>
         /// Executes the initialize operation.
@@ -99,15 +103,8 @@ namespace NetSquare.Server
         {
             try
             {
-                WebClient client = new WebClient();
-                // set client user agent
-                client.Headers.Add("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3");
-                // set client referer
-                client.Headers.Add("Referer", "https://www.abuseipdb.com/");
-                // set client accept
-                client.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
                 string findedString = IP + "</span></b> was found in our database!";
-                string rep = client.DownloadString("https://www.abuseipdb.com/check/" + IP);
+                string rep = HttpClient.GetStringAsync("https://www.abuseipdb.com/check/" + IP).GetAwaiter().GetResult();
                 return rep.Contains(findedString);
             }
             catch (Exception ex)
@@ -135,11 +132,23 @@ namespace NetSquare.Server
         }
 
         /// <summary>
+        /// Creates the HTTP client used for AbuseIPDB lookups.
+        /// </summary>
+        private static HttpClient CreateHttpClient()
+        {
+            HttpClient client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) NetSquare/1.1");
+            client.DefaultRequestHeaders.Referrer = new Uri("https://www.abuseipdb.com/");
+            client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+            return client;
+        }
+
+        /// <summary>
         /// Executes the serialize black list operation.
         /// </summary>
         private static string SerializeBlackList(HashSet<string> blackList)
         {
-            return new JavaScriptSerializer().Serialize(blackList);
+            return NetSquareJson.Serialize(blackList);
         }
 
         /// <summary>
@@ -147,7 +156,7 @@ namespace NetSquare.Server
         /// </summary>
         private static HashSet<string> DeserializeBlackList(string json)
         {
-            string[] addresses = new JavaScriptSerializer().Deserialize<string[]>(json);
+            string[] addresses = NetSquareJson.Deserialize<string[]>(json);
             return new HashSet<string>(addresses ?? new string[0]);
         }
     }

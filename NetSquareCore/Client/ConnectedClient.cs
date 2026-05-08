@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace NetSquare.Core
 {
@@ -148,6 +149,14 @@ namespace NetSquare.Core
         /// </summary>
         private int isSendingTCPMessage = 0;
         /// <summary>
+        /// Signals the persistent TCP send pump when queued work is available.
+        /// </summary>
+        private readonly SemaphoreSlim tcpSendSignal = new SemaphoreSlim(0);
+        /// <summary>
+        /// Stores whether the TCP send pump has been started for this connection.
+        /// </summary>
+        private int tcpSendPumpStarted;
+        /// <summary>
         /// Stores the udp value.
         /// </summary>
         public UDPConnection UDP;
@@ -288,7 +297,9 @@ namespace NetSquare.Core
             }
 
             SendingQueue.Enqueue(msg);
-            TryStartSending();
+            EnsureTcpSendPumpStarted();
+            if (queuedMessages == 1)
+                tcpSendSignal.Release();
         }
 
         /// <summary>
@@ -361,36 +372,38 @@ namespace NetSquare.Core
         /// <summary>
         /// Executes the try start sending operation.
         /// </summary>
-        private void TryStartSending()
+        private void EnsureTcpSendPumpStarted()
         {
-            if (Interlocked.CompareExchange(ref isSendingTCPMessage, 1, 0) != 0)
-                return;
-
-            ThreadPool.QueueUserWorkItem(_ => SendQueuedMessagesLoop());
+            if (Interlocked.CompareExchange(ref tcpSendPumpStarted, 1, 0) == 0)
+                _ = Task.Run(SendQueuedMessagesLoopAsync);
         }
 
         /// <summary>
         /// Executes the send queued messages loop operation.
         /// </summary>
-        private void SendQueuedMessagesLoop()
+        private async Task SendQueuedMessagesLoopAsync()
         {
             try
             {
-                while (true)
+                while (TcpSocket != null)
                 {
-                    PooledByteBuffer nextMessage;
-                    if (!SendingQueue.TryDequeue(out nextMessage))
+                    await tcpSendSignal.WaitAsync().ConfigureAwait(false);
+
+                    while (true)
                     {
-                        Interlocked.Exchange(ref isSendingTCPMessage, 0);
-                        if (SendingQueue.IsEmpty || Interlocked.CompareExchange(ref isSendingTCPMessage, 1, 0) != 0)
-                            return;
+                        PooledByteBuffer nextMessage;
+                        if (!SendingQueue.TryDequeue(out nextMessage))
+                        {
+                            Interlocked.Exchange(ref isSendingTCPMessage, 0);
+                            break;
+                        }
 
-                        continue;
+                        Interlocked.Exchange(ref isSendingTCPMessage, 1);
+
+                        Interlocked.Decrement(ref queuedTcpMessages);
+                        Interlocked.Add(ref queuedTcpBytes, -nextMessage.Length);
+                        await SendQueuedMessageAsync(nextMessage).ConfigureAwait(false);
                     }
-
-                    Interlocked.Decrement(ref queuedTcpMessages);
-                    Interlocked.Add(ref queuedTcpBytes, -nextMessage.Length);
-                    SendQueuedMessage(nextMessage);
                 }
             }
             catch (Exception ex)
@@ -407,7 +420,7 @@ namespace NetSquare.Core
         /// <summary>
         /// Executes the send queued message operation.
         /// </summary>
-        private void SendQueuedMessage(PooledByteBuffer message)
+        private async Task SendQueuedMessageAsync(PooledByteBuffer message)
         {
             currentSendingTCPMessage = message;
             sendedBytes += message.Length;
@@ -428,7 +441,7 @@ namespace NetSquare.Core
             int offset = 0;
             while (offset < message.Length)
             {
-                int sent = TcpSocket.Send(message.Buffer, offset, message.Length - offset, SocketFlags.None);
+                int sent = await TcpSocket.SendAsync(new ArraySegment<byte>(message.Buffer, offset, message.Length - offset), SocketFlags.None).ConfigureAwait(false);
                 if (sent <= 0)
                     throw new SocketException((int)SocketError.ConnectionReset);
 

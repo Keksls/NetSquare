@@ -250,6 +250,16 @@ namespace NetSquare.Server.Worlds
         /// <returns>World debug snapshot.</returns>
         public NetSquareWorldSnapshot CreateSnapshot()
         {
+            return CreateSnapshot(true);
+        }
+
+        /// <summary>
+        /// Creates a thread-safe debug snapshot of this world.
+        /// </summary>
+        /// <param name="includeDetails">Whether to include per-client and visibility details.</param>
+        /// <returns>World debug snapshot.</returns>
+        public NetSquareWorldSnapshot CreateSnapshot(bool includeDetails)
+        {
             NetSquareWorldSnapshot snapshot = new NetSquareWorldSnapshot
             {
                 ID = ID,
@@ -260,22 +270,26 @@ namespace NetSquare.Server.Worlds
                 UseSpatializer = UseSpatializer
             };
 
-            foreach (var pair in Clients)
+            if (includeDetails)
             {
-                NetsquareTransformFrame transform = pair.Value;
-                snapshot.Clients.Add(new NetSquareWorldClientSnapshot
+                foreach (var pair in Clients)
                 {
-                    ClientID = pair.Key,
-                    X = transform.x,
-                    Y = transform.y,
-                    Z = transform.z
-                });
+                    NetsquareTransformFrame transform = pair.Value;
+                    snapshot.Clients.Add(new NetSquareWorldClientSnapshot
+                    {
+                        ClientID = pair.Key,
+                        X = transform.x,
+                        Y = transform.y,
+                        Z = transform.z
+                    });
+                }
             }
 
             if (UseSpatializer && Spatializer != null)
             {
-                snapshot.Spatializer = Spatializer.CreateSnapshot();
-                ApplySpatializerClientData(snapshot);
+                snapshot.Spatializer = Spatializer.CreateSnapshot(includeDetails);
+                if (includeDetails)
+                    ApplySpatializerClientData(snapshot);
             }
 
             return snapshot;

@@ -1,0 +1,10 @@
+{
+  "Port": 5050,
+  "LockConsole": false,
+  "BlackListFilePath": "D:\\NetSquare\\blackList.bl",
+  "NbQueueThreads": 4,
+  "ReceivingBufferSize": 1024,
+  "NbSendingThreads": 4,
+  "SynchronizingFrequency": 10,
+  "UpdateFrequencyHz": 10
+}

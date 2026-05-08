@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
 using System;
+#if !NETFRAMEWORK
+using System.Buffers;
+#endif
 
 #region Source
 namespace NetSquare.Core
@@ -79,6 +82,9 @@ namespace NetSquare.Core
         /// </summary>
         public static byte[] Rent(int minimumLength)
         {
+#if !NETFRAMEWORK
+            return ArrayPool<byte>.Shared.Rent(minimumLength);
+#else
             int size = GetBucketSize(minimumLength);
             if (size > MaxPooledBufferSize)
                 return new byte[minimumLength];
@@ -89,6 +95,7 @@ namespace NetSquare.Core
                 return buffer;
 
             return new byte[size];
+#endif
         }
 
         /// <summary>
@@ -99,11 +106,15 @@ namespace NetSquare.Core
             if (buffer == null || buffer.Length > MaxPooledBufferSize)
                 return;
 
+#if !NETFRAMEWORK
+            ArrayPool<byte>.Shared.Return(buffer);
+#else
             int size = GetBucketSize(buffer.Length);
             if (size != buffer.Length)
                 return;
 
             Buckets.GetOrAdd(size, _ => new ConcurrentBag<byte[]>()).Add(buffer);
+#endif
         }
 
         /// <summary>

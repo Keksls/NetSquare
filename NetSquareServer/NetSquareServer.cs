@@ -12,7 +12,9 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Reflection;
+#if NETFRAMEWORK
 using System.Runtime.InteropServices;
+#endif
 using System.Threading;
 
 namespace NetSquare.Server
@@ -23,6 +25,7 @@ namespace NetSquare.Server
     public class NetSquareServer
     {
         #region DllImport
+#if NETFRAMEWORK
         [DllImport("kernel32.dll")]
         static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
         [DllImport("kernel32.dll")]
@@ -31,6 +34,7 @@ namespace NetSquare.Server
         static extern IntPtr GetConsoleWindow();
         [DllImport("kernel32.dll")]
         static extern IntPtr GetStdHandle(int nStdHandle);
+#endif
         #endregion
 
         #region Events
@@ -170,16 +174,7 @@ namespace NetSquare.Server
                 // Lock console if wanted to prevent selection thread sleep
                 if (NetSquareConfigurationManager.Configuration.LockConsole)
                 {
-                    try
-                    {
-                        const uint ENABLE_QUICK_EDIT = 0x0040;
-                        IntPtr consoleHandle = GetStdHandle(-10);
-                        uint consoleMode;
-                        GetConsoleMode(consoleHandle, out consoleMode);
-                        consoleMode &= ~ENABLE_QUICK_EDIT;
-                        SetConsoleMode(consoleHandle, consoleMode);
-                    }
-                    catch { Writer.Write("Fail to set Console unselectable. Don't worry, everything is OK.", ConsoleColor.DarkGray); }
+                    TryDisableConsoleQuickEdit();
                 }
 
                 Writer.Write("OK", ConsoleColor.Green);
@@ -237,16 +232,22 @@ namespace NetSquare.Server
         {
             Stopwatch sw = new Stopwatch();
             sw.Start();
-            float lastTime = Time;
+            double nextTickTime = 0d;
             while (IsStarted)
             {
-                Time = sw.ElapsedMilliseconds / 1000f;
-                if (Time - lastTime >= serverTickRate)
+                double elapsedSeconds = sw.Elapsed.TotalSeconds;
+                Time = (float)elapsedSeconds;
+
+                if (elapsedSeconds >= nextTickTime)
                 {
-                    lastTime = Time;
                     OnTimeLoop?.Invoke(Time);
+                    nextTickTime += serverTickRate;
+                    if (nextTickTime <= elapsedSeconds)
+                        nextTickTime = elapsedSeconds + serverTickRate;
                 }
-                Thread.Sleep(1);
+
+                int sleepMs = (int)Math.Max(1d, Math.Min(50d, (nextTickTime - sw.Elapsed.TotalSeconds) * 1000d));
+                Thread.Sleep(sleepMs);
             }
             sw.Stop();
         }
@@ -912,6 +913,28 @@ namespace NetSquare.Server
         #endregion
 
         #region private Utils
+        /// <summary>
+        /// Tries to disable Windows console quick edit mode when the platform supports it.
+        /// </summary>
+        private static void TryDisableConsoleQuickEdit()
+        {
+#if NETFRAMEWORK
+            try
+            {
+                const uint ENABLE_QUICK_EDIT = 0x0040;
+                IntPtr consoleHandle = GetStdHandle(-10);
+                uint consoleMode;
+                GetConsoleMode(consoleHandle, out consoleMode);
+                consoleMode &= ~ENABLE_QUICK_EDIT;
+                SetConsoleMode(consoleHandle, consoleMode);
+            }
+            catch
+            {
+                Writer.Write("Fail to set Console unselectable. Don't worry, everything is OK.", ConsoleColor.DarkGray);
+            }
+#endif
+        }
+
         /// <summary>
         /// Draw the header of the server in the console
         /// </summary>

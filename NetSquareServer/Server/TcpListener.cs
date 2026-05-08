@@ -4,6 +4,7 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 
 #region Source
 namespace NetSquare.Server
@@ -66,8 +67,8 @@ namespace NetSquare.Server
             Port = port;
             _listener = new TcpListenerEx(ipAddress, port);
             _listener.Start(ListenBacklog);
-            ThreadPool.QueueUserWorkItem((sender) => { HandleConnection(); });
-            ThreadPool.QueueUserWorkItem((sender) => { HandleDisconnection(); });
+            _ = Task.Run(HandleConnectionAsync);
+            _ = Task.Run(HandleDisconnectionAsync);
         }
 
         /// <summary>
@@ -82,15 +83,15 @@ namespace NetSquare.Server
         /// <summary>
         /// Loop to handle new clients Connection
         /// </summary>
-        private void HandleConnection()
+        private async Task HandleConnectionAsync()
         {
             while (Started)
             {
                 try
                 {
-                    Socket newClient = _listener.AcceptTcpClient().Client;
+                    Socket newClient = await _listener.AcceptSocketAsync().ConfigureAwait(false);
                     newClient.NoDelay = true;
-                    ThreadPool.QueueUserWorkItem((sender) => { AcceptConnection(newClient); });
+                    _ = Task.Run(() => AcceptConnectionAsync(newClient));
                 }
                 catch (SocketException ex)
                 {
@@ -108,19 +109,18 @@ namespace NetSquare.Server
         /// Accept a new connection
         /// </summary>
         /// <param name="sender"> The sender </param>
-        private void AcceptConnection(object sender)
+        private async Task AcceptConnectionAsync(Socket newClient)
         {
-            Socket newClient = (Socket)sender;
             if (CheckBlackList && BlackListManager.IsBlackListed(newClient))
                 newClient.Close();
             else
-                ValidateClient(newClient);
+                await ValidateClientAsync(newClient).ConfigureAwait(false);
         }
 
         /// <summary>
         /// Loop to handle clients Disconnection
         /// </summary>
-        private void HandleDisconnection()
+        private async Task HandleDisconnectionAsync()
         {
             while (Started)
             {
@@ -140,7 +140,7 @@ namespace NetSquare.Server
                     }
                 }
 
-                Thread.Sleep(1000);
+                await Task.Delay(1000).ConfigureAwait(false);
             }
         }
 
@@ -148,47 +148,31 @@ namespace NetSquare.Server
         /// Validate a new client that want to connect
         /// </summary>
         /// <param name="client"> The client </param>
-        private void ValidateClient(Socket client)
+        private async Task ValidateClientAsync(Socket client)
         {
             try
             {
-                long timeEnd = DateTime.Now.AddSeconds(30).Ticks;
                 VerifyingClients++;
                 // send handShake
                 int rnd1 = 0;
                 int rnd2 = 0;
                 int key = 0;
                 byte[] handShake = HandShake.GetRandomHandShake(out rnd1, out rnd2, out key);
-                client.Send(handShake, 0, handShake.Length, SocketFlags.None);
+                await SendAllAsync(client, handShake, 0, handShake.Length).ConfigureAwait(false);
                 bool isClientOK = false;
                 //Writer.Write("HandShake client " + rnd1 + " " + rnd2 + " " + key, ConsoleColor.Cyan);
 
                 // wait for client renspond correct hash
-                while (client.Connected && DateTime.Now.Ticks < timeEnd)
+                byte[] array = new byte[4];
+                if (await ReceiveExactAsync(client, array, 0, array.Length, 30000).ConfigureAwait(false))
                 {
-                    // client disconnect
-                    if (!client.Connected)
+                    int clientKey = BitConverter.ToInt32(array, 0);
+                    if (clientKey == key)
                     {
-                        Writer.Write("Client disconected before end handshake. Close his connection", ConsoleColor.Red);
-                        break;
+                        isClientOK = true;
                     }
-
-                    // get awnser
-                    if (client.Available >= 4)
-                    {
-                        byte[] array = new byte[4];
-                        client.Receive(array, 0, 4, SocketFlags.None);
-                        int clientKey = BitConverter.ToInt32(array, 0);
-                        if (clientKey == key)
-                        {
-                            isClientOK = true;
-                        }
-                        else
-                            Writer.Write("Client awnser wrong handshake key.", ConsoleColor.Red);
-                        break;
-                    }
-
-                    Thread.Sleep(1);
+                    else
+                        Writer.Write("Client awnser wrong handshake key.", ConsoleColor.Red);
                 }
 
                 // client awnser good
@@ -209,7 +193,8 @@ namespace NetSquare.Server
                     }
 
                     VerifyingClients--;
-                    client.Send(new UInt24(clientID).GetBytes(), 0, 3, SocketFlags.None);
+                    byte[] idBytes = new UInt24(clientID).GetBytes();
+                    await SendAllAsync(client, idBytes, 0, idBytes.Length).ConfigureAwait(false);
                     server.Server_ClientConnected(server.GetClient(clientID), clientID);
                 }
                 // no awnser, awnser error, disconnected or timeout
@@ -223,6 +208,54 @@ namespace NetSquare.Server
             catch (Exception ex)
             {
                 Writer.Write("Fail to HandShake client : " + ex.ToString(), ConsoleColor.Red);
+            }
+        }
+
+        /// <summary>
+        /// Receives the requested number of bytes or returns false on timeout/disconnect.
+        /// </summary>
+        private static async Task<bool> ReceiveExactAsync(Socket socket, byte[] buffer, int offset, int count, int timeoutMs)
+        {
+            int receivedTotal = 0;
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (receivedTotal < count)
+            {
+                int remainingTimeout = (int)(deadline - DateTime.UtcNow).TotalMilliseconds;
+                if (remainingTimeout <= 0)
+                    return false;
+
+                Task<int> receiveTask = socket.ReceiveAsync(new ArraySegment<byte>(buffer, offset + receivedTotal, count - receivedTotal), SocketFlags.None);
+                Task completed = await Task.WhenAny(receiveTask, Task.Delay(remainingTimeout)).ConfigureAwait(false);
+                if (completed != receiveTask)
+                {
+                    try { socket.Close(); } catch { }
+                    try { await receiveTask.ConfigureAwait(false); } catch { }
+                    return false;
+                }
+
+                int received = await receiveTask.ConfigureAwait(false);
+                if (received <= 0)
+                    return false;
+
+                receivedTotal += received;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Sends the requested number of bytes.
+        /// </summary>
+        private static async Task SendAllAsync(Socket socket, byte[] buffer, int offset, int count)
+        {
+            int sentTotal = 0;
+            while (sentTotal < count)
+            {
+                int sent = await socket.SendAsync(new ArraySegment<byte>(buffer, offset + sentTotal, count - sentTotal), SocketFlags.None).ConfigureAwait(false);
+                if (sent <= 0)
+                    throw new SocketException((int)SocketError.ConnectionReset);
+
+                sentTotal += sent;
             }
         }
     }

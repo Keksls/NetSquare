@@ -280,8 +280,8 @@ namespace NetSquare.Core
         {
             if (IsRunning)
             {
-                actionThread.Abort();
                 IsRunning = false;
+                try { actionThread?.Interrupt(); } catch { }
                 return true;
             }
             else
@@ -296,15 +296,23 @@ namespace NetSquare.Core
             Stopwatch sw = new Stopwatch();
             while (IsRunning)
             {
-                sw.Restart();
-                Action.Callback();
-                OnDoAction?.Invoke();
-                sw.Stop();
-                int ms = (int)(Action.Frequency - sw.ElapsedMilliseconds);
-                if (ms < 1)
-                    ms = 1;
-                Thread.Sleep(ms);
+                try
+                {
+                    sw.Restart();
+                    Action.Callback();
+                    OnDoAction?.Invoke();
+                    sw.Stop();
+                    int ms = (int)(Action.Frequency - sw.ElapsedMilliseconds);
+                    if (ms < 1)
+                        ms = 1;
+                    Thread.Sleep(ms);
+                }
+                catch (ThreadInterruptedException)
+                {
+                    break;
+                }
             }
+            IsRunning = false;
         }
 
         /// <summary>
@@ -314,10 +322,18 @@ namespace NetSquare.Core
         {
             while (IsRunning)
             {
-                Action.Callback();
-                OnDoAction?.Invoke();
-                Thread.Sleep(Action.Frequency);
+                try
+                {
+                    Action.Callback();
+                    OnDoAction?.Invoke();
+                    Thread.Sleep(Action.Frequency);
+                }
+                catch (ThreadInterruptedException)
+                {
+                    break;
+                }
             }
+            IsRunning = false;
         }
     }
 }

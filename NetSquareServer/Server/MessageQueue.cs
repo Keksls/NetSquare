@@ -3,6 +3,7 @@ using NetSquare.Server.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
+using System.Threading.Tasks;
 
 #region Source
 namespace NetSquare.Server.Server
@@ -32,6 +33,10 @@ namespace NetSquare.Server.Server
         /// Gets or sets the process queue thread value.
         /// </summary>
         public Thread ProcessQueueThread { get; private set; }
+        /// <summary>
+        /// Gets or sets the process queue task value.
+        /// </summary>
+        public Task ProcessQueueTask { get; private set; }
         /// <summary>
         /// Stores the server value.
         /// </summary>
@@ -88,13 +93,13 @@ namespace NetSquare.Server.Server
         public void StartQueue()
         {
             Started = true;
-            ProcessQueueThread = new Thread(() =>
+            ProcessQueueTask = Task.Run(async () =>
             {
                 while (Started)
                 {
                     try
                     {
-                        queueSignal.Wait(100);
+                        await queueSignal.WaitAsync(100).ConfigureAwait(false);
                         while (Queue.TryDequeue(out currentMessage))
                         {
                             if (currentMessage == null)
@@ -142,8 +147,6 @@ namespace NetSquare.Server.Server
                     }
                 }
             });
-            ProcessQueueThread.IsBackground = true;
-            ProcessQueueThread.Start();
         }
     }
 

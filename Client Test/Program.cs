@@ -16,12 +16,23 @@ namespace Client_Test
         static ClientsMonitor.Form1 monitor = null;
         static void Main(string[] args)
         {
-            Console.WriteLine("How many clients ? : ");
             int numPoints = 6;
-            int.TryParse(Console.ReadLine(), out numPoints);
-            Console.WriteLine("radius ? : ");
             float radius = 1;
-            float.TryParse(Console.ReadLine(), out radius);
+            bool interactive = args == null || args.Length == 0;
+            if (interactive)
+            {
+                Console.WriteLine("How many clients ? : ");
+                int.TryParse(Console.ReadLine(), out numPoints);
+                Console.WriteLine("radius ? : ");
+                float.TryParse(Console.ReadLine(), out radius);
+            }
+            else
+            {
+                int.TryParse(args[0], out numPoints);
+                if (args.Length > 1)
+                    float.TryParse(args[1], out radius);
+            }
+
             List<ClientRoutine> clients = new List<ClientRoutine>();
             float oscilation = radius * 0.8f;
             radius *= 0.01f;
@@ -119,7 +130,10 @@ namespace Client_Test
             //monitor = new ClientsMonitor.Form1();
             //Application.Run(monitor);
 
-            Console.ReadKey();
+            if (interactive && !Console.IsInputRedirected)
+                Console.ReadKey();
+            else
+                Thread.Sleep(Timeout.Infinite);
         }
     }
 }

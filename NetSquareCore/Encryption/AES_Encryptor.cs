@@ -63,9 +63,11 @@ namespace NetSquare.Core.Encryption
         private static byte[] GenerateRandomSalt()
         {
             byte[] data = new byte[32];
-            RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider();
-            for (int i = 0; i < 10; i++)
-                rng.GetBytes(data);
+            using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
+            {
+                for (int i = 0; i < 10; i++)
+                    rng.GetBytes(data);
+            }
             return data;
         }
 
@@ -74,17 +76,27 @@ namespace NetSquare.Core.Encryption
         /// </summary>
         internal override void PostSetKey()
         {
-            var key = new Rfc2898DeriveBytes(Encoding.UTF8.GetBytes(password), GenerateRandomSalt(), 52768);
-            AesManaged aes = new AesManaged();
-            aes.KeySize = 256;
-            aes.Key = key.GetBytes(aes.KeySize / 8);
-            aes.IV = key.GetBytes(aes.BlockSize / 8);
-            aes.Padding = PaddingMode.PKCS7;
-            aes.Mode = CipherMode.CBC;
-            KeyIV.Key = aes.Key;
-            KeyIV.IV = aes.IV;
-            encryptor = aes.CreateEncryptor(KeyIV.Key, KeyIV.IV);
-            decryptor = aes.CreateDecryptor(KeyIV.Key, KeyIV.IV);
+            using (Aes aes = Aes.Create())
+            {
+                aes.KeySize = 256;
+#if NET8_0_OR_GREATER
+                byte[] derivedKey = Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), GenerateRandomSalt(), 52768, HashAlgorithmName.SHA256, (aes.KeySize / 8) + (aes.BlockSize / 8));
+                aes.Key = new byte[aes.KeySize / 8];
+                aes.IV = new byte[aes.BlockSize / 8];
+                System.Buffer.BlockCopy(derivedKey, 0, aes.Key, 0, aes.Key.Length);
+                System.Buffer.BlockCopy(derivedKey, aes.Key.Length, aes.IV, 0, aes.IV.Length);
+#else
+                var key = new Rfc2898DeriveBytes(Encoding.UTF8.GetBytes(password), GenerateRandomSalt(), 52768);
+                aes.Key = key.GetBytes(aes.KeySize / 8);
+                aes.IV = key.GetBytes(aes.BlockSize / 8);
+#endif
+                aes.Padding = PaddingMode.PKCS7;
+                aes.Mode = CipherMode.CBC;
+                KeyIV.Key = aes.Key;
+                KeyIV.IV = aes.IV;
+                encryptor = aes.CreateEncryptor(KeyIV.Key, KeyIV.IV);
+                decryptor = aes.CreateDecryptor(KeyIV.Key, KeyIV.IV);
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 
 #region Source
 namespace NetSquare.Server.Worlds
@@ -61,9 +62,7 @@ namespace NetSquare.Server.Worlds
                 frequency = 30;
             Frequency = (int)((1f / (float)frequency) * 1000f);
             Synchronizing = true;
-            Thread syncThread = new Thread(SyncronizationLoop);
-            syncThread.IsBackground = true;
-            syncThread.Start();
+            Task.Run(SyncronizationLoopAsync);
         }
 
         /// <summary>
@@ -99,7 +98,7 @@ namespace NetSquare.Server.Worlds
         /// <summary>
         /// Executes the syncronization loop operation.
         /// </summary>
-        private void SyncronizationLoop()
+        private async Task SyncronizationLoopAsync()
         {
             while (Synchronizing)
             {
@@ -161,7 +160,7 @@ namespace NetSquare.Server.Worlds
                 int freq = Frequency - (int)syncWatch.ElapsedMilliseconds;
                 if (freq <= 0)
                     freq = 1;
-                Thread.Sleep(freq);
+                await Task.Delay(freq).ConfigureAwait(false);
             }
         }
     }

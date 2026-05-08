@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.IO;
-using System.Web.Script.Serialization;
 using NetSquare.Core;
 using NetSquare.Server.Worlds;
 
@@ -51,8 +50,7 @@ namespace NetSquare.Server
         /// <returns>Generated JSON.</returns>
         public static string GenerateDefaultJson()
         {
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
-            return FormatJson(serializer.Serialize(CreateDefault()));
+            return NetSquareJson.Serialize(CreateDefault());
         }
 
         /// <summary>

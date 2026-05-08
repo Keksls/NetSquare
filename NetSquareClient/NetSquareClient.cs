@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace NetSquare.Client
 {
@@ -208,11 +209,12 @@ namespace NetSquare.Client
                 tcpClient.Connect(hostNameOrIpAddress, port);
 
                 // start routine that will validate server connection
-                ThreadPool.QueueUserWorkItem((e) => { ValidateConnection(tcpClient); });
+                Task.Run(() => ValidateConnectionAsync(tcpClient));
             }
             catch (Exception ex)
             {
-                throw ex;
+                OnException?.Invoke(ex);
+                OnConnectionFail?.Invoke();
             }
         }
 
@@ -242,50 +244,101 @@ namespace NetSquare.Client
         /// <summary>
         /// Validate NetSquare handShake to server. Ensure that we are connected to a netSquare server
         /// </summary>
-        private void ValidateConnection(TcpClient tcpClient)
+        private async Task ValidateConnectionAsync(TcpClient tcpClient)
         {
-            long timeEnd = DateTime.Now.AddSeconds(30).Ticks;
-            int step = 0;
-            int key = 0;
-            while (tcpClient != null && tcpClient.Connected && DateTime.Now.Ticks < timeEnd)
+            try
             {
-                // Handle Byte Avaliable
-                if (step == 0 && tcpClient.Available >= 8)
+                if (tcpClient == null || !tcpClient.Connected)
                 {
-                    byte[] array = new byte[8];
-                    tcpClient.Client.Receive(array, 0, 8, SocketFlags.None);
-                    int rnd1 = BitConverter.ToInt32(array, 0);
-                    int rnd2 = BitConverter.ToInt32(array, 4);
-                    key = HandShake.GetKey(rnd1, rnd2);
-                    byte[] rep = BitConverter.GetBytes(key);
-                    tcpClient.Client.Send(rep, 0, rep.Length, SocketFlags.None);
-                    step = 1;
+                    OnConnectionFail?.Invoke();
+                    return;
                 }
-                else if (step == 1 && tcpClient.Available >= 3)
+
+                byte[] handshake = new byte[8];
+                if (!await ReceiveExactAsync(tcpClient.Client, handshake, 0, handshake.Length, 30000).ConfigureAwait(false))
                 {
-                    byte[] array = new byte[3];
-                    tcpClient.Client.Receive(array, 0, 3, SocketFlags.None);
-                    // let's reply server same ID as validation
-                    Client = new ConnectedClient()
-                    {
-                        ID = UInt24.GetUInt(array)
-                    };
-                    Client.SetClient(tcpClient.Client, true, ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP);
-                    Client.OnMessageReceived += Client_OnMessageReceived;
-                    Client.OnDisconected += Client_OnDisconected;
-                    Interlocked.Exchange(ref disconnectStarted, 0);
-                    isStarted = true;
-                    // start processing message loop
-                    Thread processingThread = new Thread(ProcessMessagesLoop);
-                    processingThread.IsBackground = true;
-                    processingThread.Start();
-                    OnConnected?.Invoke(ClientID);
-                    break;
+                    OnConnectionFail?.Invoke();
+                    return;
                 }
-                Thread.Sleep(1);
+
+                int rnd1 = BitConverter.ToInt32(handshake, 0);
+                int rnd2 = BitConverter.ToInt32(handshake, 4);
+                int key = HandShake.GetKey(rnd1, rnd2);
+                byte[] reply = BitConverter.GetBytes(key);
+                await SendAllAsync(tcpClient.Client, reply, 0, reply.Length).ConfigureAwait(false);
+
+                byte[] idBuffer = new byte[3];
+                if (!await ReceiveExactAsync(tcpClient.Client, idBuffer, 0, idBuffer.Length, 30000).ConfigureAwait(false))
+                {
+                    OnConnectionFail?.Invoke();
+                    return;
+                }
+
+                Client = new ConnectedClient()
+                {
+                    ID = UInt24.GetUInt(idBuffer)
+                };
+                Client.SetClient(tcpClient.Client, true, ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP);
+                Client.OnMessageReceived += Client_OnMessageReceived;
+                Client.OnDisconected += Client_OnDisconected;
+                Interlocked.Exchange(ref disconnectStarted, 0);
+                isStarted = true;
+                _ = Task.Run(ProcessMessagesLoop);
+                OnConnected?.Invoke(ClientID);
             }
-            if (Client == null)
+            catch (Exception ex)
+            {
+                OnException?.Invoke(ex);
                 OnConnectionFail?.Invoke();
+            }
+        }
+
+        /// <summary>
+        /// Receives the requested number of bytes or returns false on timeout/disconnect.
+        /// </summary>
+        private static async Task<bool> ReceiveExactAsync(Socket socket, byte[] buffer, int offset, int count, int timeoutMs)
+        {
+            int receivedTotal = 0;
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (receivedTotal < count)
+            {
+                int remainingTimeout = (int)(deadline - DateTime.UtcNow).TotalMilliseconds;
+                if (remainingTimeout <= 0)
+                    return false;
+
+                Task<int> receiveTask = socket.ReceiveAsync(new ArraySegment<byte>(buffer, offset + receivedTotal, count - receivedTotal), SocketFlags.None);
+                Task completed = await Task.WhenAny(receiveTask, Task.Delay(remainingTimeout)).ConfigureAwait(false);
+                if (completed != receiveTask)
+                {
+                    try { socket.Close(); } catch { }
+                    try { await receiveTask.ConfigureAwait(false); } catch { }
+                    return false;
+                }
+
+                int received = await receiveTask.ConfigureAwait(false);
+                if (received <= 0)
+                    return false;
+
+                receivedTotal += received;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Sends the requested number of bytes.
+        /// </summary>
+        private static async Task SendAllAsync(Socket socket, byte[] buffer, int offset, int count)
+        {
+            int sentTotal = 0;
+            while (sentTotal < count)
+            {
+                int sent = await socket.SendAsync(new ArraySegment<byte>(buffer, offset + sentTotal, count - sentTotal), SocketFlags.None).ConfigureAwait(false);
+                if (sent <= 0)
+                    throw new SocketException((int)SocketError.ConnectionReset);
+
+                sentTotal += sent;
+            }
         }
 
         /// <summary>

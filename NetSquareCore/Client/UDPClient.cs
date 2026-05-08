@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace NetSquare.Core
 {
@@ -81,6 +82,14 @@ namespace NetSquare.Core
         /// </summary>
         private readonly object sendLock = new object();
         /// <summary>
+        /// Signals the UDP send pump when a connection has queued work.
+        /// </summary>
+        private readonly SemaphoreSlim sendSignal = new SemaphoreSlim(0);
+        /// <summary>
+        /// Stores whether the UDP send pump has been started.
+        /// </summary>
+        private int sendPumpStarted;
+        /// <summary>
         /// Stores the server hub value.
         /// </summary>
         private ServerUdpHub serverHub;
@@ -113,7 +122,7 @@ namespace NetSquare.Core
             RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
             connection = new UdpClient(new IPEndPoint(localTcpEndPoint.Address, localTcpEndPoint.Port + 1));
             connection.Connect(RemoteEndPoint);
-            connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
+            StartClientReceiveLoop();
         }
 
         /// <summary>
@@ -208,6 +217,47 @@ namespace NetSquare.Core
 
         #region UDP
         /// <summary>
+        /// Starts the client receive loop.
+        /// </summary>
+        private void StartClientReceiveLoop()
+        {
+            _ = Task.Run(ClientReceiveLoopAsync);
+        }
+
+        /// <summary>
+        /// Receives UDP datagrams asynchronously on the client side.
+        /// </summary>
+        private async Task ClientReceiveLoopAsync()
+        {
+            while (connection != null)
+            {
+                try
+                {
+                    UdpReceiveResult result = await connection.ReceiveAsync().ConfigureAwait(false);
+                    byte[] datagram = result.Buffer;
+                    RemoteEndPoint = result.RemoteEndPoint;
+                    receivedBytes += datagram.Length;
+
+                    NetworkMessage message = new NetworkMessage();
+                    if (message.SafeSetDatagram(datagram))
+                    {
+                        relatedClient.NbMessagesReceived++;
+                        message.Client = relatedClient;
+                        relatedClient.Fire_OnMessageReceived(message);
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (SocketException)
+                {
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
         /// Executes the on receive udp operation.
         /// </summary>
         private void OnReceiveUDP(IAsyncResult res)
@@ -226,7 +276,7 @@ namespace NetSquare.Core
                 }
 
                 //Start over receiving data
-                connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
+                connection.BeginReceive(OnReceiveUDP, null);
             }
             catch (ObjectDisposedException) { }
             catch (SocketException) { }
@@ -237,34 +287,83 @@ namespace NetSquare.Core
         /// </summary>
         private void BeginSendMessage(byte[] message)
         {
-            try
+            EnsureSendPumpStarted();
+            sendSignal.Release();
+        }
+
+        /// <summary>
+        /// Starts the UDP send pump once for this connection.
+        /// </summary>
+        private void EnsureSendPumpStarted()
+        {
+            if (Interlocked.CompareExchange(ref sendPumpStarted, 1, 0) == 0)
+                _ = Task.Run(SendPumpAsync);
+        }
+
+        /// <summary>
+        /// Sends UDP messages through one async pump instead of creating one task per datagram.
+        /// </summary>
+        private async Task SendPumpAsync()
+        {
+            while (connection != null)
             {
-                sendedBytes += message.Length;
-                if (isServer)
-                    connection.BeginSend(message, message.Length, RemoteEndPoint, MessageSended, null);
-                else
-                    connection.BeginSend(message, message.Length, MessageSended, null);
-            }
-            catch (SocketException)
-            {
-                lock (sendLock)
+                try
                 {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
+                    await sendSignal.WaitAsync().ConfigureAwait(false);
+
+                    while (true)
+                    {
+                        byte[] message;
+                        lock (sendLock)
+                            message = currentSendingMessage;
+
+                        if (message == null)
+                        {
+                            lock (sendLock)
+                            {
+                                if (currentSendingMessage == null)
+                                {
+                                    isSendingUDPMessage = false;
+                                    RefreshSendingCountLocked();
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
+
+                        sendedBytes += message.Length;
+                        if (isServer)
+                            await connection.SendAsync(message, message.Length, RemoteEndPoint).ConfigureAwait(false);
+                        else
+                            await connection.SendAsync(message, message.Length).ConfigureAwait(false);
+
+                        NbMessagesSended++;
+
+                        byte[] nextMessage = null;
+                        lock (sendLock)
+                        {
+                            currentSendingMessage = null;
+                            if (GetNextSendingMessage(ref nextMessage))
+                                currentSendingMessage = nextMessage;
+                            else
+                                isSendingUDPMessage = false;
+
+                            RefreshSendingCountLocked();
+                        }
+
+                        if (nextMessage == null)
+                            break;
+                    }
                 }
-            }
-            catch (ObjectDisposedException)
-            {
-                lock (sendLock)
+                catch (SocketException)
                 {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
+                    ResetSendingState();
+                    return;
+                }
+                catch (ObjectDisposedException)
+                {
+                    ResetSendingState();
+                    return;
                 }
             }
         }
@@ -300,25 +399,26 @@ namespace NetSquare.Core
             }
             catch (SocketException)
             {
-                lock (sendLock)
-                {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
-                }
+                ResetSendingState();
             }
             catch (ObjectDisposedException)
             {
-                lock (sendLock)
-                {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
-                }
+                ResetSendingState();
+            }
+        }
+
+        /// <summary>
+        /// Resets the UDP send state after socket failure.
+        /// </summary>
+        private void ResetSendingState()
+        {
+            lock (sendLock)
+            {
+                currentSendingMessage = null;
+                isSendingUDPMessage = false;
+                queuedUdpMessages = 0;
+                ClearQueuedMessagesLocked();
+                RefreshSendingCountLocked();
             }
         }
 
@@ -423,7 +523,43 @@ namespace NetSquare.Core
             /// </summary>
             private void StartReceive()
             {
-                Connection.BeginReceive(OnReceiveUDP, null);
+                _ = Task.Run(ReceiveLoopAsync);
+            }
+
+            /// <summary>
+            /// Receives UDP datagrams asynchronously on the server shared socket.
+            /// </summary>
+            private async Task ReceiveLoopAsync()
+            {
+                while (true)
+                {
+                    try
+                    {
+                        UdpReceiveResult result = await Connection.ReceiveAsync().ConfigureAwait(false);
+                        byte[] datagram = result.Buffer;
+                        NetworkMessage message = new NetworkMessage();
+                        if (message.SafeSetDatagram(datagram))
+                        {
+                            UDPConnection clientConnection;
+                            if (clients.TryGetValue(message.ClientID, out clientConnection))
+                            {
+                                clientConnection.RemoteEndPoint = result.RemoteEndPoint;
+                                clientConnection.receivedBytes += datagram.Length;
+                                clientConnection.relatedClient.NbMessagesReceived++;
+                                message.Client = clientConnection.relatedClient;
+                                clientConnection.relatedClient.Fire_OnMessageReceived(message);
+                            }
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return;
+                    }
+                    catch (SocketException)
+                    {
+                        return;
+                    }
+                }
             }
 
             /// <summary>

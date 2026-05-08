@@ -4,6 +4,7 @@ using NetSquare.Server.Server;
 using NetSquare.Server.Utils;
 using NetSquare.Server.Worlds;
 using System;
+using System.Threading;
 using System.Windows;
 
 namespace Server_Test
@@ -19,6 +20,8 @@ namespace Server_Test
         [STAThread]
         static unsafe void Main(string[] args)
         {
+            bool runMonitor = !HasArg(args, "--no-monitor") && false;
+
             // Set configuration
             NetSquareConfiguration config = NetSquareConfigurationManager.Configuration;
             config.BlackListFilePath = @"[current]\blackList.bl";
@@ -52,6 +55,18 @@ namespace Server_Test
             //Writer.StopRecordingLog();
             Writer.StartDisplayTitle();
 
+            if (!runMonitor)
+            {
+                Console.WriteLine("Server Test running without monitor. Press Enter to stop.");
+                if (Console.IsInputRedirected)
+                    Thread.Sleep(Timeout.Infinite);
+                else
+                    Console.ReadLine();
+
+                server.Stop();
+                return;
+            }
+
             // Start Server Monitor
             monitor = new ServerMonitor.Form1();
             monitor.Initialize(600, 10);
@@ -60,6 +75,18 @@ namespace Server_Test
                 ShutdownMode = ShutdownMode.OnMainWindowClose
             };
             application.Run(monitor);
+        }
+
+        private static bool HasArg(string[] args, string name)
+        {
+            if (args == null)
+                return false;
+
+            for (int i = 0; i < args.Length; i++)
+                if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+            return false;
         }
 
         /// <summary>

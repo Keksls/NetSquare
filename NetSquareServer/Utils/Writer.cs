@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Concurrent;
+#if NETFRAMEWORK
 using System.Drawing;
+#endif
 using System.IO;
 using System.Threading;
+#if NETFRAMEWORK
 using System.Windows.Forms;
+#endif
 
 #region Source
 namespace NetSquare.Server.Utils
@@ -45,11 +49,11 @@ namespace NetSquare.Server.Utils
         /// <summary>
         /// Stores the log path value.
         /// </summary>
-        private static string logPath = Environment.CurrentDirectory + @"\server.log";
+        private static string logPath = Path.Combine(Environment.CurrentDirectory, "server.log");
         /// <summary>
         /// Stores the log prev path value.
         /// </summary>
-        private static string logPrevPath = Environment.CurrentDirectory + @"\server_prev.log";
+        private static string logPrevPath = Path.Combine(Environment.CurrentDirectory, "server_prev.log");
         /// <summary>
         /// Stores the log file stream value.
         /// </summary>
@@ -147,6 +151,7 @@ namespace NetSquare.Server.Utils
         /// <summary>
         /// Executes the set output as rich text box operation.
         /// </summary>
+#if NETFRAMEWORK
         public static void SetOutputAsRichTextBox(RichTextBox tb)
         {
             SetOutput(tb == null ? null : new TextBoxWriterOutput(tb));
@@ -159,6 +164,7 @@ namespace NetSquare.Server.Utils
         {
             SetOutput(tb == null ? null : new TextBoxWriterOutput(tb));
         }
+#endif
 
         /// <summary>
         /// Executes the set output as null operation.
@@ -243,6 +249,7 @@ namespace NetSquare.Server.Utils
         /// <summary>
         /// Executes the from color operation.
         /// </summary>
+#if NETFRAMEWORK
         private static Color FromColor(ConsoleColor c)
         {
             int cInt = (int)c;
@@ -254,6 +261,7 @@ namespace NetSquare.Server.Utils
 
             return Color.FromArgb(r, g, b);
         }
+#endif
 
         /// <summary>
         /// Executes the write operation.
@@ -412,6 +420,7 @@ namespace NetSquare.Server.Utils
         /// <summary>
         /// Represents the text box writer output component.
         /// </summary>
+#if NETFRAMEWORK
         private sealed class TextBoxWriterOutput : INetSquareWriterOutput
         {
             /// <summary>
@@ -474,6 +483,7 @@ namespace NetSquare.Server.Utils
                 textBox.AppendText(text);
             }
         }
+#endif
 
         /// <summary>
         /// Represents the delegate writer output component.

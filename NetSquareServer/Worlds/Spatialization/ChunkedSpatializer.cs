@@ -147,12 +147,14 @@ namespace NetSquare.Server.Worlds
                 return;
 
             syncStopWatch.Restart();
-            foreach (ChunkedClient client in GetClientsSnapshot())
+            Dictionary<int, ChunkSyncGroup> syncGroups = GetChunkSyncGroups();
+            foreach (ChunkSyncGroup group in syncGroups.Values)
             {
-                HashSet<uint> visibleIDs;
-                lock (client.SyncRoot)
-                    visibleIDs = new HashSet<uint>(client.VisibleIDs);
+                SpatialChunk chunk = GetChunk(group.ChunkX, group.ChunkY);
+                if (chunk == null || group.ClientIDs.Count == 0)
+                    continue;
 
+                ICollection<uint> visibleIDs = chunk.Clients.Keys;
                 if (visibleIDs.Count == 0)
                     continue;
 
@@ -165,10 +167,51 @@ namespace NetSquare.Server.Worlds
                 }
 
                 if (synchMessage.HasWriteData)
-                    World.server.SendToClient(synchMessage, client.ClientID);
+                    World.server.SendToClients(synchMessage, group.ClientIDs);
             }
             syncStopWatch.Stop();
             UpdateSynchFrequency((int)syncStopWatch.ElapsedMilliseconds);
+        }
+
+        /// <summary>
+        /// Groups receiver clients by current chunk so synchronization frames are packed once per visibility set.
+        /// </summary>
+        private Dictionary<int, ChunkSyncGroup> GetChunkSyncGroups()
+        {
+            Dictionary<int, ChunkSyncGroup> groups = new Dictionary<int, ChunkSyncGroup>();
+            foreach (ChunkedClient client in GetClientsSnapshot())
+            {
+                if (!HasChunk(client.ChunkX, client.ChunkY))
+                    continue;
+
+                int key = ((int)client.ChunkX << 16) ^ (ushort)client.ChunkY;
+                ChunkSyncGroup group;
+                if (!groups.TryGetValue(key, out group))
+                {
+                    group = new ChunkSyncGroup(client.ChunkX, client.ChunkY);
+                    groups.Add(key, group);
+                }
+
+                group.ClientIDs.Add(client.ClientID);
+            }
+
+            return groups;
+        }
+
+        /// <summary>
+        /// Receivers that share the same chunk visibility set.
+        /// </summary>
+        private sealed class ChunkSyncGroup
+        {
+            public readonly short ChunkX;
+            public readonly short ChunkY;
+            public readonly List<uint> ClientIDs = new List<uint>();
+
+            public ChunkSyncGroup(short chunkX, short chunkY)
+            {
+                ChunkX = chunkX;
+                ChunkY = chunkY;
+            }
         }
 
         /// <summary>
@@ -466,9 +509,9 @@ namespace NetSquare.Server.Worlds
         /// Creates a debug snapshot of this chunked spatializer.
         /// </summary>
         /// <returns>Spatializer debug snapshot.</returns>
-        public override NetSquareSpatializerSnapshot CreateSnapshot()
+        public override NetSquareSpatializerSnapshot CreateSnapshot(bool includeDetails)
         {
-            NetSquareSpatializerSnapshot snapshot = base.CreateSnapshot();
+            NetSquareSpatializerSnapshot snapshot = base.CreateSnapshot(includeDetails);
             snapshot.ChunkSize = ChunkSize;
             snapshot.ChunkHysteresis = ChunkHysteresis;
             snapshot.MinX = Bounds.MinX;
@@ -477,6 +520,9 @@ namespace NetSquare.Server.Worlds
             snapshot.MaxY = Bounds.MaxY;
             snapshot.ChunkWidth = Width;
             snapshot.ChunkHeight = Height;
+
+            if (!includeDetails)
+                return snapshot;
 
             for (short x = 0; x < Width; x++)
                 for (short y = 0; y < Height; y++)

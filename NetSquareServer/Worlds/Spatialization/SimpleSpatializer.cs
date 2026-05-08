@@ -147,9 +147,9 @@ namespace NetSquare.Server.Worlds
         /// Creates a debug snapshot of this simple spatializer.
         /// </summary>
         /// <returns>Spatializer debug snapshot.</returns>
-        public override NetSquareSpatializerSnapshot CreateSnapshot()
+        public override NetSquareSpatializerSnapshot CreateSnapshot(bool includeDetails)
         {
-            NetSquareSpatializerSnapshot snapshot = base.CreateSnapshot();
+            NetSquareSpatializerSnapshot snapshot = base.CreateSnapshot(includeDetails);
             snapshot.MaxViewDistance = MaxViewDistance;
             snapshot.VisibilityHysteresis = VisibilityHysteresis;
             return snapshot;

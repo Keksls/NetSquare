@@ -1,44 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<package >
+<package>
   <metadata>
     <id>NetSquare.Server</id>
-    <version>1.0.1</version>
+    <version>1.1.0</version>
     <title>NetSquare.Server</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <license type="expression">MIT</license>
     <icon>images\NetSquareIcon.png</icon>
+    <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
-    <description>NetSquare as a verry fast and easy to use .NET Tcp/Udp solution for Server/client developpment. Unity compatible</description>
-    <releaseNotes>incrase synchronization and spatialization performances.</releaseNotes>
-    <copyright>Copyright © 2022</copyright>
+    <description>NetSquare.Server is a fast and easy-to-use multi-target .NET TCP/UDP server networking package for Unity and standalone C# applications.</description>
+    <releaseNotes>Migrates to SDK-style multi-target builds for net48, netstandard2.0, net8.0 and net10.0. Modernizes TCP/UDP paths with async socket operations, pooled buffers, cross-platform paths and BinaryFormatter-free key storage.</releaseNotes>
+    <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
     <dependencies>
-      <group targetFramework=".NETFramework4.6.1" />
+      <group targetFramework=".NETFramework4.8">
+        <dependency id="System.Text.Json" version="9.0.6" />
+      </group>
+      <group targetFramework=".NETStandard2.0">
+        <dependency id="System.Buffers" version="4.5.1" />
+        <dependency id="System.Text.Json" version="9.0.6" />
+      </group>
+      <group targetFramework="net8.0" />
+      <group targetFramework="net10.0" />
     </dependencies>
-    <references>
-      <reference file="Wire.dll" />
-      <reference file="System.Runtime.CompilerServices.Unsafe.dll" />
-      <reference file="System.Numerics.Vectors.dll" />
-      <reference file="System.Memory.dll" />
-      <reference file="System.Buffers.dll" />
-      <reference file="Newtonsoft.Json.dll" />
-      <reference file="NetSquareCore.dll" />
-      <reference file="NetSquare_Server.dll" />
-      <reference file="K4os.Compression.LZ4.dll" />
-    </references>
   </metadata>
-    <files>
-      <file src="bin\Debug\Wire.dll" target="lib\net461"/>
-      <file src="bin\Debug\System.Runtime.CompilerServices.Unsafe.dll" target="lib\net461"/>
-      <file src="bin\Debug\System.Numerics.Vectors.dll" target="lib\net461"/>
-      <file src="bin\Debug\System.Memory.dll" target="lib\net461"/>
-      <file src="bin\Debug\System.Buffers.dll" target="lib\net461"/>
-      <file src="bin\Debug\Newtonsoft.Json.dll" target="lib\net461"/>
-      <file src="bin\Debug\NetSquareCore.dll" target="lib\net461"/>
-      <file src="bin\Debug\NetSquare_Server.dll" target="lib\net461"/>
-      <file src="bin\Debug\K4os.Compression.LZ4.dll" target="lib\net461"/>
-      <file src="NetSquareIcon.png" target="images\" />
-
-    </files>
+  <files>
+    <file src="bin\Release\net48\NetSquareCore.dll" target="lib\net48" />
+    <file src="bin\Release\net48\NetSquare_Server.dll" target="lib\net48" />
+    <file src="bin\Release\netstandard2.0\NetSquareCore.dll" target="lib\netstandard2.0" />
+    <file src="bin\Release\netstandard2.0\NetSquare_Server.dll" target="lib\netstandard2.0" />
+    <file src="bin\Release\net8.0\NetSquareCore.dll" target="lib\net8.0" />
+    <file src="bin\Release\net8.0\NetSquare_Server.dll" target="lib\net8.0" />
+    <file src="bin\Release\net10.0\NetSquareCore.dll" target="lib\net10.0" />
+    <file src="bin\Release\net10.0\NetSquare_Server.dll" target="lib\net10.0" />
+    <file src="NetSquareIcon.png" target="images\" />
+    <file src="README.md" target="\" />
+  </files>
 </package>

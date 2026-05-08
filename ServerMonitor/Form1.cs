@@ -409,7 +409,7 @@ namespace ServerMonitor
                 }
 
                 currentWorld = world;
-                NetSquareWorldSnapshot snapshot = world.CreateSnapshot();
+                NetSquareWorldSnapshot snapshot = world.CreateSnapshot(false);
                 worldTitle.Text = "World " + snapshot.ID + " - " + snapshot.Name;
                 worldHealth.Text = GetWorldHealth(snapshot);
                 worldHealth.Foreground = snapshot.UseSpatializer ? BrushFromHex("#287271") : BrushFromHex("#9C6644");

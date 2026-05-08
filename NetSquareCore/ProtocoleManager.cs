@@ -1,7 +1,6 @@
 using NetSquare.Core.Compression;
 using NetSquare.Core.Encryption;
 using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
 
 namespace NetSquare.Core
 {
@@ -146,13 +145,7 @@ namespace NetSquare.Core
         {
             if (File.Exists(path))
                 File.Delete(path);
-            using (MemoryStream stream = new MemoryStream())
-            {
-                var binaryFormatter = new BinaryFormatter();
-                binaryFormatter.Serialize(stream, encryptor.KeyIV);
-                File.WriteAllBytes(path, new OneToZeroBit_Encryptor().Encrypt(stream.ToArray()));
-                stream.Close();
-            }
+            File.WriteAllBytes(path, new OneToZeroBit_Encryptor().Encrypt(encryptor.KeyIV.ToBinary()));
         }
 
         /// <summary>
@@ -162,8 +155,7 @@ namespace NetSquare.Core
         /// <returns>The KeyIV INstance from the file</returns>
         public static KeyIV GetKeyFromFile(string path)
         {
-            using (MemoryStream stream = new MemoryStream(new OneToZeroBit_Encryptor().Decrypt(File.ReadAllBytes(path))))
-                return (KeyIV)new BinaryFormatter().Deserialize(stream);
+            return KeyIV.FromBinary(new OneToZeroBit_Encryptor().Decrypt(File.ReadAllBytes(path)));
         }
 
         /// <summary>

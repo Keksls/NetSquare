@@ -332,6 +332,16 @@ namespace NetSquare.Server.Worlds
         /// <returns>Spatializer debug snapshot.</returns>
         public virtual NetSquareSpatializerSnapshot CreateSnapshot()
         {
+            return CreateSnapshot(true);
+        }
+
+        /// <summary>
+        /// Creates a debug snapshot of this spatializer.
+        /// </summary>
+        /// <param name="includeDetails">Whether to include per-client visibility details.</param>
+        /// <returns>Spatializer debug snapshot.</returns>
+        public virtual NetSquareSpatializerSnapshot CreateSnapshot(bool includeDetails)
+        {
             NetSquareSpatializerSnapshot snapshot = new NetSquareSpatializerSnapshot
             {
                 Type = GetType().Name,
@@ -351,10 +361,13 @@ namespace NetSquare.Server.Worlds
                 snapshot.PendingFrameCount += pendingFrames;
             }
 
-            ForEach(delegate (uint clientID, IEnumerable<uint> visibleClients)
+            if (includeDetails)
             {
-                snapshot.VisibleClientsByClientID[clientID] = visibleClients != null ? new List<uint>(visibleClients) : new List<uint>();
-            });
+                ForEach(delegate (uint clientID, IEnumerable<uint> visibleClients)
+                {
+                    snapshot.VisibleClientsByClientID[clientID] = visibleClients != null ? new List<uint>(visibleClients) : new List<uint>();
+                });
+            }
 
             return snapshot;
         }
