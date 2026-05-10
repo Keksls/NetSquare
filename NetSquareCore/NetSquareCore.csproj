@@ -39,20 +39,6 @@
     <Reference Include="System.ValueTuple">
       <HintPath>..\packages\System.ValueTuple.4.5.0\lib\net461\System.ValueTuple.dll</HintPath>
     </Reference>
-    <Reference Include="Utf8Json">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Utf8Json.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
-  <ItemGroup Condition=" '$(TargetFramework)' != 'net48' ">
-    <Reference Include="LiteDB">
-      <HintPath>..\packages\LiteDB.4.1.4\lib\netstandard2.0\LiteDB.dll</HintPath>
-    </Reference>
-    <Reference Include="Utf8Json">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\Utf8Json.1.3.7\lib\netstandard2.0\Utf8Json.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
   <ItemGroup>

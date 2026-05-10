@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Client</id>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
     <title>NetSquare.Client</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>

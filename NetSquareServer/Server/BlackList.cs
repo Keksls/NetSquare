@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Web.Script.Serialization;
 
 #region Source
 namespace NetSquare.Server
@@ -139,7 +138,9 @@ namespace NetSquare.Server
         /// </summary>
         private static string SerializeBlackList(HashSet<string> blackList)
         {
-            return new JavaScriptSerializer().Serialize(blackList);
+            string[] addresses = new string[blackList.Count];
+            blackList.CopyTo(addresses);
+            return NetSquareJsonSerializer.Serialize(addresses);
         }
 
         /// <summary>
@@ -147,7 +148,7 @@ namespace NetSquare.Server
         /// </summary>
         private static HashSet<string> DeserializeBlackList(string json)
         {
-            string[] addresses = new JavaScriptSerializer().Deserialize<string[]>(json);
+            string[] addresses = NetSquareJsonSerializer.Deserialize<string[]>(json);
             return new HashSet<string>(addresses ?? new string[0]);
         }
     }

@@ -1,8 +1,8 @@
-using System.Web.Script.Serialization;
 using System;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using NetSquare.Server.Utils;
 
 #region Source
 namespace NetSquare.Server
@@ -95,7 +95,7 @@ namespace NetSquare.Server
             configurationPath = Environment.CurrentDirectory + @"\config.json";
             if (File.Exists(configurationPath))
             {
-                Configuration = new JavaScriptSerializer().Deserialize<NetSquareConfiguration>(File.ReadAllText(configurationPath));
+                Configuration = NetSquareJsonSerializer.Deserialize<NetSquareConfiguration>(File.ReadAllText(configurationPath));
                 Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
             }
             else
@@ -184,7 +184,7 @@ namespace NetSquare.Server
         {
             Configuration = configuration;
             Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
-            File.WriteAllText(configurationPath, new JavaScriptSerializer().Serialize(configuration));
+            File.WriteAllText(configurationPath, NetSquareJsonSerializer.Serialize(configuration));
         }
     }
 }
