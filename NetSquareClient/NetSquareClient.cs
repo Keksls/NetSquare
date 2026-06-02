@@ -3,7 +3,7 @@ using NetSquare.Core.Messages;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -87,9 +87,13 @@ namespace NetSquare.Client
         /// </summary>
         public bool IsTimeSynchronized { get { return hasServerTimeOffset; } }
         /// <summary>
+        /// Gets whether automatic server time synchronization is enabled.
+        /// </summary>
+        public bool IsAutoTimeSynchronizationEnabled { get { return isAutoSynchronizingTime; } }
+        /// <summary>
         /// Stores the is synchronizing time value.
         /// </summary>
-        private bool isSynchronizingTime = false;
+        private volatile bool isSynchronizingTime = false;
         /// <summary>
         /// Gets or sets the server time offset value.
         /// </summary>
@@ -107,6 +111,22 @@ namespace NetSquare.Client
         /// </summary>
         public float ServerTimeOffsetSmoothingSpeed { get; set; }
         /// <summary>
+        /// Gets or sets the timeout for one time synchronization request.
+        /// </summary>
+        public int TimeSynchronizationRequestTimeoutMs { get; set; }
+        /// <summary>
+        /// Gets or sets the maximum request attempts for one synchronization. Use 0 to derive it from precision.
+        /// </summary>
+        public int TimeSynchronizationMaxAttempts { get; set; }
+        /// <summary>
+        /// Gets the current automatic time synchronization interval.
+        /// </summary>
+        public int AutoTimeSynchronizationIntervalMs { get; private set; }
+        /// <summary>
+        /// Gets when the server time offset was last synchronized.
+        /// </summary>
+        public DateTime LastServerTimeSynchronizationUtc { get; private set; }
+        /// <summary>
         /// Stores whether server time was synchronized at least once.
         /// </summary>
         private bool hasServerTimeOffset;
@@ -114,6 +134,42 @@ namespace NetSquare.Client
         /// Stores the last server time offset update timestamp.
         /// </summary>
         private DateTime lastServerTimeOffsetUpdateUtc;
+        /// <summary>
+        /// Stores the time synchronization lock value.
+        /// </summary>
+        private readonly object timeSynchronizationLock = new object();
+        /// <summary>
+        /// Stores the active time synchronization generation value.
+        /// </summary>
+        private volatile int timeSynchronizationGeneration;
+        /// <summary>
+        /// Stores the automatic time synchronization lock value.
+        /// </summary>
+        private readonly object autoTimeSynchronizationLock = new object();
+        /// <summary>
+        /// Stores whether automatic server time synchronization is running.
+        /// </summary>
+        private volatile bool isAutoSynchronizingTime;
+        /// <summary>
+        /// Stores the automatic time synchronization thread.
+        /// </summary>
+        private Thread autoTimeSynchronizationThread;
+        /// <summary>
+        /// Signals the automatic time synchronization thread to stop.
+        /// </summary>
+        private ManualResetEventSlim autoTimeSynchronizationStopSignal = new ManualResetEventSlim(false);
+        /// <summary>
+        /// Stores the high precision time synchronization protocol version.
+        /// </summary>
+        private const byte HighPrecisionTimeSynchronizationVersion = 1;
+        /// <summary>
+        /// Represents one server time synchronization sample.
+        /// </summary>
+        private struct TimeSynchronizationSample
+        {
+            public float Offset;
+            public float RoundTrip;
+        }
         /// <summary>
         /// Stores the nb reply asked value.
         /// </summary>
@@ -139,6 +195,10 @@ namespace NetSquare.Client
         /// </summary>
         private ConcurrentDictionary<uint, NetSquareAction> replyCallBack = new ConcurrentDictionary<uint, NetSquareAction>();
         /// <summary>
+        /// Stores reply callbacks that must run directly from the network processing thread.
+        /// </summary>
+        private ConcurrentDictionary<uint, bool> replyCallBackInlineExecution = new ConcurrentDictionary<uint, bool>();
+        /// <summary>
         /// Stores the disconnect started value.
         /// </summary>
         private int disconnectStarted = 1;
@@ -161,7 +221,11 @@ namespace NetSquare.Client
             Dispatcher = new NetSquareDispatcher();
             SmoothServerTimeOffset = true;
             ServerTimeOffsetSmoothingSpeed = 8f;
+            TimeSynchronizationRequestTimeoutMs = 1500;
+            TimeSynchronizationMaxAttempts = 0;
+            AutoTimeSynchronizationIntervalMs = 30000;
             lastServerTimeOffsetUpdateUtc = DateTime.UtcNow;
+            LastServerTimeSynchronizationUtc = DateTime.MinValue;
             if (autoBindNetsquareActions)
                 Dispatcher.AutoBindHeadActionsFromAttributes();
             Dispatcher.AddHeadAction(NetSquareMessageID.Disconnecting, "ServerDisconnecting", ServerDisconnecting);
@@ -174,6 +238,7 @@ namespace NetSquare.Client
                 { typeof(int), (message, item) => { message.Set((int)Convert.ChangeType(item, typeof(int))); } },
                 { typeof(long), (message, item) => { message.Set((long)Convert.ChangeType(item, typeof(long))); } },
                 { typeof(float), (message, item) => { message.Set((float)Convert.ChangeType(item, typeof(float))); } },
+                { typeof(double), (message, item) => { message.Set((double)Convert.ChangeType(item, typeof(double))); } },
                 { typeof(ushort), (message, item) => { message.Set((ushort)Convert.ChangeType(item, typeof(ushort))); } },
                 { typeof(uint), (message, item) => { message.Set((uint)Convert.ChangeType(item, typeof(uint))); } },
                 { typeof(ulong), (message, item) => { message.Set((ulong)Convert.ChangeType(item, typeof(ulong))); } },
@@ -325,6 +390,9 @@ namespace NetSquare.Client
             if (Interlocked.Exchange(ref disconnectStarted, 1) != 0)
                 return;
 
+            StopAutoSyncTime(false);
+            CancelTimeSynchronization();
+
             ConnectedClient client = Client;
             if (notifyRemote)
                 TryNotifyServerDisconnecting(client);
@@ -390,7 +458,12 @@ namespace NetSquare.Client
                                 NetSquareAction callback;
                                 if (replyCallBack.TryRemove(message.ReplyID, out callback))
                                 {
-                                    Dispatcher.ExecuteinMainThread(callback, message);
+                                    bool executeInline;
+                                    replyCallBackInlineExecution.TryRemove(message.ReplyID, out executeInline);
+                                    if (executeInline)
+                                        callback?.Invoke(message);
+                                    else
+                                        Dispatcher.ExecuteinMainThread(callback, message);
                                 }
                                 break;
 
@@ -471,10 +544,7 @@ namespace NetSquare.Client
         /// <param name="callback">callback to invoke when server respond</param>
         public void SendMessage(NetworkMessage msg, NetSquareAction callback)
         {
-            uint rplID = GetNextReplyID();
-            msg.ReplyTo(rplID);
-            replyCallBack[rplID] = callback;
-            SendMessage(msg);
+            SendMessageWithReply(msg, callback, false);
         }
 
         /// <summary>
@@ -484,11 +554,7 @@ namespace NetSquare.Client
         /// <param name="callback">callback to invoke when server respond</param>
         public void SendMessage(ushort headID, NetSquareAction callback)
         {
-            NetworkMessage msg = new NetworkMessage(headID);
-            uint rplID = GetNextReplyID();
-            msg.ReplyTo(rplID);
-            replyCallBack[rplID] = callback;
-            SendMessage(msg);
+            SendMessageWithReply(new NetworkMessage(headID), callback, false);
         }
 
         /// <summary>
@@ -498,11 +564,41 @@ namespace NetSquare.Client
         /// <param name="callback">callback to invoke when server respond</param>
         public void SendMessage(Enum headID, NetSquareAction callback)
         {
-            NetworkMessage msg = new NetworkMessage(headID);
+            SendMessageWithReply(new NetworkMessage(headID), callback, false);
+        }
+
+        /// <summary>
+        /// Send a message to server and invoke callback when server responds.
+        /// </summary>
+        private uint SendMessageWithReply(NetworkMessage msg, NetSquareAction callback, bool executeReplyInline)
+        {
             uint rplID = GetNextReplyID();
             msg.ReplyTo(rplID);
             replyCallBack[rplID] = callback;
-            SendMessage(msg);
+            if (executeReplyInline)
+                replyCallBackInlineExecution[rplID] = true;
+
+            try
+            {
+                SendMessage(msg);
+                return rplID;
+            }
+            catch
+            {
+                RemoveReplyCallback(rplID);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Removes a pending reply callback.
+        /// </summary>
+        private void RemoveReplyCallback(uint replyID)
+        {
+            NetSquareAction callback;
+            bool executeInline;
+            replyCallBack.TryRemove(replyID, out callback);
+            replyCallBackInlineExecution.TryRemove(replyID, out executeInline);
         }
 
         /// <summary>
@@ -598,103 +694,432 @@ namespace NetSquare.Client
         /// <param name="onServerTimeGet">Callback</param>
         public void SyncTime(Func<float> getClientTime, int precision = 5, int timeBetweenSyncs = 1000, Action<float> onServerTimeGet = null, Action<string> onLog = null)
         {
-            // clamp precision between 1 and 10
+            int generation;
+            TryStartTimeSynchronization(getClientTime, precision, timeBetweenSyncs, onServerTimeGet, onLog, true, out generation);
+        }
+
+        /// <summary>
+        /// Starts automatic server time synchronization.
+        /// </summary>
+        /// <param name="getClientTime">Monotonic local client time source.</param>
+        /// <param name="precision">Samples per synchronization.</param>
+        /// <param name="timeBetweenSyncs">Time between samples in milliseconds.</param>
+        /// <param name="intervalMs">Time between synchronization rounds in milliseconds.</param>
+        /// <param name="onServerTimeGet">Callback invoked when server time is updated.</param>
+        /// <param name="onLog">Optional log callback.</param>
+        public void StartAutoSyncTime(Func<float> getClientTime, int precision = 3, int timeBetweenSyncs = 50, int intervalMs = 30000, Action<float> onServerTimeGet = null, Action<string> onLog = null)
+        {
+            if (getClientTime == null)
+                throw new ArgumentNullException(nameof(getClientTime));
+
             precision = Math.Max(1, Math.Min(10, precision));
+            timeBetweenSyncs = Math.Max(0, timeBetweenSyncs);
+            intervalMs = Math.Max(1000, intervalMs);
 
-            // if already synchronizing, stop it
-            if (isSynchronizingTime)
+            StopAutoSyncTime();
+
+            lock (autoTimeSynchronizationLock)
             {
-                isSynchronizingTime = false;
-                return;
+                AutoTimeSynchronizationIntervalMs = intervalMs;
+                autoTimeSynchronizationStopSignal.Reset();
+                isAutoSynchronizingTime = true;
+                autoTimeSynchronizationThread = new Thread(() =>
+                {
+                    AutoTimeSynchronizationLoop(getClientTime, precision, timeBetweenSyncs, intervalMs, onServerTimeGet, onLog);
+                });
+                autoTimeSynchronizationThread.IsBackground = true;
+                autoTimeSynchronizationThread.Start();
             }
-            isSynchronizingTime = true;
+        }
 
-            // create array to store received times
-            float[] clientTimeOffsets = new float[precision];
-            bool[] receivedOffsets = new bool[precision];
-            DateTime[] sendTimes = new DateTime[precision];
+        /// <summary>
+        /// Stops automatic server time synchronization.
+        /// </summary>
+        public void StopAutoSyncTime()
+        {
+            StopAutoSyncTime(true);
+        }
 
-            // reset server time offset
-            ServerTimeOffset = 0;
-            TargetServerTimeOffset = 0;
-            hasServerTimeOffset = false;
+        /// <summary>
+        /// Returns whether the server time synchronization was refreshed within the given age.
+        /// </summary>
+        /// <param name="maxAgeMs">Maximum synchronization age in milliseconds.</param>
+        /// <returns>true when the current server time offset is recent enough.</returns>
+        public bool IsServerTimeSynchronizationFresh(int maxAgeMs)
+        {
+            if (!hasServerTimeOffset)
+                return false;
 
-            // start sync thread
+            maxAgeMs = Math.Max(0, maxAgeMs);
+            return (DateTime.UtcNow - LastServerTimeSynchronizationUtc).TotalMilliseconds <= maxAgeMs;
+        }
+
+        /// <summary>
+        /// Starts one server time synchronization round.
+        /// </summary>
+        private bool TryStartTimeSynchronization(Func<float> getClientTime, int precision, int timeBetweenSyncs, Action<float> onServerTimeGet, Action<string> onLog, bool cancelIfAlreadySynchronizing, out int generation)
+        {
+            generation = 0;
+            if (getClientTime == null)
+                throw new ArgumentNullException(nameof(getClientTime));
+
+            precision = Math.Max(1, Math.Min(10, precision));
+            timeBetweenSyncs = Math.Max(0, timeBetweenSyncs);
+
+            lock (timeSynchronizationLock)
+            {
+                if (isSynchronizingTime)
+                {
+                    if (cancelIfAlreadySynchronizing)
+                    {
+                        isSynchronizingTime = false;
+                        timeSynchronizationGeneration++;
+                    }
+                    return false;
+                }
+
+                isSynchronizingTime = true;
+                generation = ++timeSynchronizationGeneration;
+            }
+
+            int requestTimeoutMs = Math.Max(100, Math.Min(30000, TimeSynchronizationRequestTimeoutMs));
+            int maxAttempts = TimeSynchronizationMaxAttempts > 0
+                ? Math.Max(precision, TimeSynchronizationMaxAttempts)
+                : Math.Max(precision, precision * 2);
+
+            int syncGeneration = generation;
             Thread syncThread = new Thread(() =>
             {
-                // iterate precision times
-                for (int i = 0; i < precision; i++)
+                List<TimeSynchronizationSample> samples = new List<TimeSynchronizationSample>(precision);
+                int attemptsDone = 0;
+
+                try
                 {
-                    int index = i;
-                    sendTimes[index] = DateTime.Now;
-                    // send sync message
-                    SendMessage(new NetworkMessage(NetSquareMessageID.ClientSynchronizeTime, ClientID), (reply) =>
+                    for (int attempt = 0; attempt < maxAttempts && samples.Count < precision; attempt++)
                     {
-                        // get receive time
-                        DateTime receiveTime = DateTime.Now;
-                        float pingDuration = (float)(receiveTime - sendTimes[index]).TotalSeconds / 2f;
+                        if (!IsTimeSynchronizationActive(syncGeneration))
+                            return;
 
-                        // get server time
-                        float serverTime = reply.Serializer.GetFloat() + pingDuration;
-
-                        // get client time
-                        float clientTime = getClientTime();
-
-                        // get client server time offset
-                        float timeOffset = serverTime - clientTime;
-
-                        // store time offset
-                        clientTimeOffsets[index] = timeOffset;
-                        receivedOffsets[index] = true;
-
-                        // log everything
-                        onLog?.Invoke($"Client time : {clientTime} | Server time : {serverTime} | Time offset : {timeOffset} | Ping : {pingDuration}");
-
-                        // set time if first time
-                        if (index == 0)
+                        attemptsDone++;
+                        TimeSynchronizationSample sample;
+                        if (TryRequestServerTimeSample(getClientTime, requestTimeoutMs, syncGeneration, onLog, out sample))
                         {
-                            SetServerTimeOffset(clientTimeOffsets[0], true);
-                            // invoke callback
-                            onServerTimeGet?.Invoke(GetServerTime(getClientTime.Invoke()));
+                            samples.Add(sample);
+                            onLog?.Invoke($"Time sync sample {samples.Count}/{precision} | Offset : {sample.Offset} | RTT : {(sample.RoundTrip * 1000f):F1} ms");
+
+                            if (samples.Count == 1 && !hasServerTimeOffset)
+                            {
+                                SetServerTimeOffset(sample.Offset, true);
+                                onServerTimeGet?.Invoke(GetServerTime(getClientTime()));
+                            }
                         }
-                    });
 
-                    // wait for next sync
-                    Thread.Sleep(timeBetweenSyncs);
+                        if (samples.Count < precision && attempt + 1 < maxAttempts && !SleepDuringTimeSynchronization(syncGeneration, timeBetweenSyncs))
+                            return;
+                    }
+
+                    if (!IsTimeSynchronizationActive(syncGeneration))
+                        return;
+
+                    if (samples.Count == 0)
+                    {
+                        onLog?.Invoke("Time sync failed: no server response received.");
+                        return;
+                    }
+
+                    float offset = GetFilteredServerTimeOffset(samples);
+                    SetServerTimeOffset(offset, false);
+
+                    onLog?.Invoke($"Time sync offset : {offset} | Samples : {samples.Count}/{precision} | Attempts : {attemptsDone}/{maxAttempts}");
+                    onLog?.Invoke($"Client time : {getClientTime()} | Server time : {GetServerTime(getClientTime())}");
+                    onServerTimeGet?.Invoke(GetServerTime(getClientTime()));
                 }
-
-                // wait for all time to be received
-                while (receivedOffsets.Any(e => !e))
+                finally
                 {
-                    Thread.Sleep(10);
+                    FinishTimeSynchronization(syncGeneration);
                 }
-
-                // calculate average time
-                float avgTime = 0;
-                for (int j = 0; j < precision; j++)
-                    avgTime += clientTimeOffsets[j];
-                onLog?.Invoke($"Cumul time offset : {avgTime}");
-                avgTime /= precision;
-                SetServerTimeOffset(avgTime, false);
-
-                // log all clientTimeOffsets
-                onLog?.Invoke($"Time offsets : {string.Join(" | ", clientTimeOffsets)}");
-
-                // log average time
-                onLog?.Invoke($"Average time offset : {avgTime}");
-                // log client time
-                onLog?.Invoke($"Client time : {getClientTime()} | Server time : {GetServerTime(getClientTime())}");
-
-                // invoke callback
-                onServerTimeGet?.Invoke(GetServerTime(getClientTime.Invoke()));
-
-                // stop synchronizing
-                isSynchronizingTime = false;
             });
 
-            // start sync thread
             syncThread.IsBackground = true;
             syncThread.Start();
+            return true;
+        }
+
+        /// <summary>
+        /// Runs automatic time synchronization while enabled.
+        /// </summary>
+        private void AutoTimeSynchronizationLoop(Func<float> getClientTime, int precision, int timeBetweenSyncs, int intervalMs, Action<float> onServerTimeGet, Action<string> onLog)
+        {
+            try
+            {
+                while (isAutoSynchronizingTime)
+                {
+                    if (IsConnected)
+                    {
+                        int generation;
+                        if (TryStartTimeSynchronization(getClientTime, precision, timeBetweenSyncs, onServerTimeGet, onLog, false, out generation))
+                            WaitForTimeSynchronizationCompletion(generation);
+                    }
+
+                    int waitMs = IsConnected ? intervalMs : 1000;
+                    if (autoTimeSynchronizationStopSignal.Wait(waitMs))
+                        return;
+                }
+            }
+            catch (Exception ex)
+            {
+                OnException?.Invoke(ex);
+            }
+            finally
+            {
+                lock (autoTimeSynchronizationLock)
+                {
+                    if (autoTimeSynchronizationThread == Thread.CurrentThread)
+                    {
+                        isAutoSynchronizingTime = false;
+                        autoTimeSynchronizationThread = null;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stops automatic server time synchronization.
+        /// </summary>
+        private void StopAutoSyncTime(bool waitForStop)
+        {
+            Thread threadToWait = null;
+            lock (autoTimeSynchronizationLock)
+            {
+                if (!isAutoSynchronizingTime)
+                    return;
+
+                isAutoSynchronizingTime = false;
+                autoTimeSynchronizationStopSignal.Set();
+                threadToWait = autoTimeSynchronizationThread;
+                autoTimeSynchronizationThread = null;
+            }
+
+            CancelTimeSynchronization();
+
+            if (waitForStop && threadToWait != null && threadToWait != Thread.CurrentThread && threadToWait.IsAlive)
+                threadToWait.Join(Math.Max(1000, TimeSynchronizationRequestTimeoutMs + 250));
+        }
+
+        /// <summary>
+        /// Waits until one time synchronization generation completes or auto sync stops.
+        /// </summary>
+        private void WaitForTimeSynchronizationCompletion(int generation)
+        {
+            while (IsTimeSynchronizationActive(generation) && isAutoSynchronizingTime)
+            {
+                if (autoTimeSynchronizationStopSignal.Wait(25))
+                {
+                    CancelTimeSynchronization();
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Cancels the active time synchronization generation.
+        /// </summary>
+        private void CancelTimeSynchronization()
+        {
+            lock (timeSynchronizationLock)
+            {
+                if (isSynchronizingTime)
+                {
+                    isSynchronizingTime = false;
+                    timeSynchronizationGeneration++;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Requests one server time sample.
+        /// </summary>
+        private bool TryRequestServerTimeSample(Func<float> getClientTime, int requestTimeoutMs, int generation, Action<string> onLog, out TimeSynchronizationSample sample)
+        {
+            sample = new TimeSynchronizationSample();
+            if (Client == null || !IsConnected)
+            {
+                onLog?.Invoke("Time sync skipped: client is not connected.");
+                return false;
+            }
+
+            using (ManualResetEventSlim received = new ManualResetEventSlim(false))
+            {
+                TimeSynchronizationSample receivedSample = new TimeSynchronizationSample();
+                bool hasSample = false;
+                Exception callbackException = null;
+                float clientSendTime = getClientTime();
+                Stopwatch roundTripWatch = Stopwatch.StartNew();
+                uint replyID = 0;
+
+                try
+                {
+                    NetworkMessage message = new NetworkMessage(NetSquareMessageID.ClientSynchronizeTime, ClientID)
+                        .Set(HighPrecisionTimeSynchronizationVersion);
+                    replyID = SendMessageWithReply(message, (reply) =>
+                    {
+                        try
+                        {
+                            double serverTime;
+                            if (!TryReadServerTime(reply, out serverTime))
+                            {
+                                callbackException = new Exception("Invalid time synchronization reply.");
+                                return;
+                            }
+
+                            float clientReceiveTime = getClientTime();
+                            float measuredRoundTrip = (float)roundTripWatch.Elapsed.TotalSeconds;
+                            float clientRoundTrip = clientReceiveTime - clientSendTime;
+                            float midpointRoundTrip = clientRoundTrip > 0f ? clientRoundTrip : measuredRoundTrip;
+
+                            receivedSample.Offset = (float)serverTime - (clientSendTime + midpointRoundTrip * 0.5f);
+                            receivedSample.RoundTrip = measuredRoundTrip;
+                            hasSample = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            callbackException = ex;
+                        }
+                        finally
+                        {
+                            received.Set();
+                        }
+                    }, true);
+                }
+                catch (Exception ex)
+                {
+                    roundTripWatch.Stop();
+                    callbackException = ex;
+                    OnException?.Invoke(ex);
+                    onLog?.Invoke("Time sync request failed: " + ex.Message);
+                    return false;
+                }
+
+                Stopwatch waitWatch = Stopwatch.StartNew();
+                bool replyReceived = false;
+                while (waitWatch.ElapsedMilliseconds < requestTimeoutMs)
+                {
+                    if (received.Wait(25))
+                    {
+                        replyReceived = true;
+                        break;
+                    }
+
+                    if (!IsTimeSynchronizationActive(generation))
+                        break;
+                }
+
+                if (!replyReceived)
+                {
+                    roundTripWatch.Stop();
+                    RemoveReplyCallback(replyID);
+                    if (IsTimeSynchronizationActive(generation))
+                        onLog?.Invoke("Time sync request timed out after " + requestTimeoutMs + " ms.");
+                    return false;
+                }
+
+                roundTripWatch.Stop();
+                if (!IsTimeSynchronizationActive(generation))
+                    return false;
+
+                if (callbackException != null)
+                {
+                    OnException?.Invoke(callbackException);
+                    onLog?.Invoke("Time sync reply failed: " + callbackException.Message);
+                    return false;
+                }
+
+                if (!hasSample)
+                    return false;
+
+                sample = receivedSample;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Reads server time from a time synchronization reply.
+        /// </summary>
+        private static bool TryReadServerTime(NetworkMessage reply, out double serverTime)
+        {
+            if (reply.Serializer.CanGetDouble())
+            {
+                serverTime = reply.Serializer.GetDouble();
+                return true;
+            }
+
+            if (reply.Serializer.CanGetFloat())
+            {
+                serverTime = reply.Serializer.GetFloat();
+                return true;
+            }
+
+            serverTime = 0d;
+            return false;
+        }
+
+        /// <summary>
+        /// Gets a stable offset from the lowest-latency samples.
+        /// </summary>
+        private static float GetFilteredServerTimeOffset(List<TimeSynchronizationSample> samples)
+        {
+            samples.Sort((a, b) => a.RoundTrip.CompareTo(b.RoundTrip));
+
+            int count = Math.Max(1, (samples.Count + 1) / 2);
+            float weightedOffset = 0f;
+            float totalWeight = 0f;
+            for (int i = 0; i < count; i++)
+            {
+                float weight = 1f / Math.Max(samples[i].RoundTrip, 0.0001f);
+                weightedOffset += samples[i].Offset * weight;
+                totalWeight += weight;
+            }
+
+            return weightedOffset / totalWeight;
+        }
+
+        /// <summary>
+        /// Sleeps while allowing synchronization cancellation to be observed quickly.
+        /// </summary>
+        private bool SleepDuringTimeSynchronization(int generation, int delayMs)
+        {
+            int remainingMs = delayMs;
+            while (remainingMs > 0)
+            {
+                if (!IsTimeSynchronizationActive(generation))
+                    return false;
+
+                int sleepMs = Math.Min(remainingMs, 25);
+                Thread.Sleep(sleepMs);
+                remainingMs -= sleepMs;
+            }
+
+            return IsTimeSynchronizationActive(generation);
+        }
+
+        /// <summary>
+        /// Checks whether the current synchronization generation is still active.
+        /// </summary>
+        private bool IsTimeSynchronizationActive(int generation)
+        {
+            return isSynchronizingTime && generation == timeSynchronizationGeneration;
+        }
+
+        /// <summary>
+        /// Finishes the active time synchronization generation.
+        /// </summary>
+        private void FinishTimeSynchronization(int generation)
+        {
+            lock (timeSynchronizationLock)
+            {
+                if (generation == timeSynchronizationGeneration)
+                    isSynchronizingTime = false;
+            }
         }
 
         /// <summary>
@@ -708,8 +1133,10 @@ namespace NetSquare.Client
             if (immediate || !SmoothServerTimeOffset || !hasServerTimeOffset)
                 ServerTimeOffset = offset;
 
+            DateTime now = DateTime.UtcNow;
             hasServerTimeOffset = true;
-            lastServerTimeOffsetUpdateUtc = DateTime.UtcNow;
+            lastServerTimeOffsetUpdateUtc = now;
+            LastServerTimeSynchronizationUtc = now;
         }
 
         /// <summary>

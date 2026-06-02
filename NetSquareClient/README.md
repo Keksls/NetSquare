@@ -2,18 +2,18 @@
 
 `NetSquare.Client` is the client-side package for NetSquare. It provides a TCP client with optional UDP messaging, request/reply callbacks, dispatcher-based message routing, server time synchronization, and world synchronization helpers.
 
-The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It includes `NetSquareClient.dll` plus `NetSquareCore.dll`.
+The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It includes `NetSquareClient.dll` and depends on `NetSquare.Core`.
 
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Client -Version 1.0.4
+NuGet\Install-Package NetSquare.Client -Version 1.0.7
 ```
 
 or:
 
 ```bash
-dotnet add package NetSquare.Client --version 1.0.4
+dotnet add package NetSquare.Client --version 1.0.7
 ```
 
 ## Basic Client
@@ -183,20 +183,38 @@ while (mainThreadQueue.TryDequeue(out Action callback))
 
 ## Server Time Synchronization
 
-`SyncTime` estimates server time from client time and round-trip delay.
+`SyncTime` estimates server time from a monotonic client clock and round-trip delay. Use an unscaled `Stopwatch` time source so local clock changes do not affect synchronization.
 
 ```csharp
+using System.Diagnostics;
+
+Stopwatch stopwatch = Stopwatch.StartNew();
+
 client.SyncTime(
-    getClientTime: () => (float)DateTime.UtcNow.TimeOfDay.TotalSeconds,
+    getClientTime: () => (float)stopwatch.Elapsed.TotalSeconds,
     precision: 5,
     timeBetweenSyncs: 1000,
     onServerTimeGet: serverTime => Console.WriteLine("Server time: " + serverTime),
     onLog: Console.WriteLine);
 
-float synchronizedTime = client.GetServerTime((float)DateTime.UtcNow.TimeOfDay.TotalSeconds);
+float synchronizedTime = client.GetServerTime((float)stopwatch.Elapsed.TotalSeconds);
 ```
 
-`SmoothServerTimeOffset` is enabled by default so offset changes are applied gradually.
+`SmoothServerTimeOffset` is enabled by default so offset changes are applied gradually. `TimeSynchronizationRequestTimeoutMs` bounds each request, and `TimeSynchronizationMaxAttempts` can cap retries when packets or replies are lost.
+
+For long sessions, keep time synchronized automatically with a low-rate background refresh:
+
+```csharp
+client.StartAutoSyncTime(
+    getClientTime: () => (float)stopwatch.Elapsed.TotalSeconds,
+    precision: 3,
+    timeBetweenSyncs: 50,
+    intervalMs: 30000);
+
+bool fresh = client.IsServerTimeSynchronizationFresh(45000);
+
+client.StopAutoSyncTime();
+```
 
 ## World Synchronization
 

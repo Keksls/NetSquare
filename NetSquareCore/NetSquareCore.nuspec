@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package>
+  <metadata>
+    <id>NetSquare.Core</id>
+    <version>1.0.7</version>
+    <title>NetSquare.Core</title>
+    <authors>VRDTMStudio</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <icon>images\NetSquareIcon.png</icon>
+    <readme>README.md</readme>
+    <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
+    <description>Core message, serialization, dispatcher, compression, encryption and synchronization primitives for NetSquare.</description>
+    <releaseNotes>Adds double payload helpers for high precision server time synchronization.</releaseNotes>
+    <copyright>Copyright (c) 2022</copyright>
+    <tags>TCP UDP Server Client Network MMORPG URPG Unity Core</tags>
+    <dependencies>
+      <group targetFramework="netstandard2.0" />
+      <group targetFramework="net8.0" />
+      <group targetFramework="net48">
+        <dependency id="System.Threading.Tasks.Extensions" version="4.4.0" />
+        <dependency id="System.ValueTuple" version="4.5.0" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="bin\Release\netstandard2.0\NetSquareCore.dll" target="lib\netstandard2.0" />
+    <file src="bin\Release\net8.0\NetSquareCore.dll" target="lib\net8.0" />
+    <file src="bin\Release\net48\NetSquareCore.dll" target="lib\net48" />
+    <file src="..\NetSquareIcon.png" target="images\NetSquareIcon.png" />
+    <file src="README.md" target="" />
+  </files>
+</package>

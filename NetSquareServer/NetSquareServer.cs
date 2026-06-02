@@ -78,6 +78,10 @@ namespace NetSquare.Server
         /// </summary>
         public float Time { get; private set; }
         /// <summary>
+        /// Stores the monotonic server clock value.
+        /// </summary>
+        private readonly Stopwatch serverClock = new Stopwatch();
+        /// <summary>
         /// Stores the server tick rate value.
         /// </summary>
         private float serverTickRate = 1f / 60f;
@@ -142,7 +146,13 @@ namespace NetSquare.Server
             // register client sync time
             Dispatcher.AddHeadAction(NetSquareMessageID.ClientSynchronizeTime, "ClientSyncTime", (message) =>
             {
-                message.Reply(new NetworkMessage().Set(Time));
+                double serverTime = GetCurrentServerTimeSeconds();
+                NetworkMessage reply = new NetworkMessage();
+                if (ClientWantsHighPrecisionServerTime(message))
+                    reply.Set(serverTime);
+                else
+                    reply.Set((float)serverTime);
+                message.Reply(reply);
             });
             Dispatcher.AddHeadAction(NetSquareMessageID.Disconnecting, "ClientDisconnecting", ClientDisconnecting);
             // set default client ID generator, can be override later by user
@@ -210,6 +220,8 @@ namespace NetSquare.Server
                 // start update loop
                 Writer.Write_Server("Starting Update Loop...", ConsoleColor.DarkYellow, false);
                 serverTickRate = 1f / NetSquareConfigurationManager.Configuration.UpdateFrequencyHz;
+                serverClock.Restart();
+                Time = 0f;
                 Thread updateThread = new Thread(UpdateLoop);
                 updateThread.Start();
                 Writer.Write("Started", ConsoleColor.Green);
@@ -235,20 +247,45 @@ namespace NetSquare.Server
         /// </summary>
         private void UpdateLoop()
         {
-            Stopwatch sw = new Stopwatch();
-            sw.Start();
+            if (!serverClock.IsRunning)
+                serverClock.Restart();
+
             float lastTime = Time;
-            while (IsStarted)
+            try
             {
-                Time = sw.ElapsedMilliseconds / 1000f;
-                if (Time - lastTime >= serverTickRate)
+                while (IsStarted)
                 {
-                    lastTime = Time;
-                    OnTimeLoop?.Invoke(Time);
+                    Time = (float)GetCurrentServerTimeSeconds();
+                    if (Time - lastTime >= serverTickRate)
+                    {
+                        lastTime = Time;
+                        OnTimeLoop?.Invoke(Time);
+                    }
+                    Thread.Sleep(1);
                 }
-                Thread.Sleep(1);
             }
-            sw.Stop();
+            finally
+            {
+                serverClock.Stop();
+            }
+        }
+        #endregion
+
+        #region Time Synchronization
+        /// <summary>
+        /// Gets the current monotonic server time in seconds.
+        /// </summary>
+        private double GetCurrentServerTimeSeconds()
+        {
+            return serverClock.IsRunning ? serverClock.Elapsed.TotalSeconds : Time;
+        }
+
+        /// <summary>
+        /// Returns whether the client asked for the high precision time synchronization payload.
+        /// </summary>
+        private static bool ClientWantsHighPrecisionServerTime(NetworkMessage message)
+        {
+            return message.Serializer.CanGetByte() && message.Serializer.GetByte() >= 1;
         }
         #endregion
 

@@ -190,6 +190,8 @@ namespace NetSquareDiagnostics
             RunTest("NetworkMessage packing", TestPackingRoundtrip);
             RunTest("server/client settings", TestServerClientSettings);
             RunTest("TCP client/server message", TestTcpClientServerMessage);
+            RunTest("client/server time synchronization", TestClientServerTimeSynchronization);
+            RunTest("automatic client/server time synchronization", TestAutomaticClientServerTimeSynchronization);
             RunTest("UDP client/server message", TestUdpClientServerMessage);
             RunTest("world join broadcast sync leave", TestWorldJoinBroadcastSyncLeave);
             RunTest("world transform cache updates from frames", TestWorldTransformCacheUpdatesFromFrames);
@@ -224,6 +226,7 @@ namespace NetSquareDiagnostics
             NetworkMessage message = new NetworkMessage(42, 7)
                 .Set(123456)
                 .Set(12.5f)
+                .Set(42.25d)
                 .Set("hello")
                 .Set(new byte[] { 1, 2, 3, 4 })
                 .Set(new int[] { 10, 20, 30 })
@@ -236,6 +239,7 @@ namespace NetSquareDiagnostics
             Assert(copy.ClientID == 7, "client id mismatch");
             Assert(copy.Serializer.GetInt() == 123456, "int mismatch");
             Assert(Math.Abs(copy.Serializer.GetFloat() - 12.5f) < 0.0001f, "float mismatch");
+            Assert(Math.Abs(copy.Serializer.GetDouble() - 42.25d) < 0.0001d, "double mismatch");
             Assert(copy.Serializer.GetString() == "hello", "string mismatch");
             byte[] bytes = copy.Serializer.GetByteArray();
             Assert(bytes.Length == 4 && bytes[0] == 1 && bytes[3] == 4, "byte array mismatch");
@@ -535,6 +539,74 @@ namespace NetSquareDiagnostics
 
                 Assert(replyReceived.Wait(5000), "TCP reply was not received");
                 Assert(replyValue == 42 && replyText == "ping-pong", "TCP reply payload mismatch");
+            }
+        }
+
+        /// <summary>
+        /// Executes the test client server time synchronization operation.
+        /// </summary>
+        private static void TestClientServerTimeSynchronization()
+        {
+            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP, false))
+            {
+                NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP, false);
+                Stopwatch stopwatch = Stopwatch.StartNew();
+                ManualResetEventSlim synchronized = new ManualResetEventSlim(false);
+                int callbackCount = 0;
+
+                client.TimeSynchronizationRequestTimeoutMs = 1000;
+                client.TimeSynchronizationMaxAttempts = 6;
+                client.SyncTime(
+                    delegate { return (float)stopwatch.Elapsed.TotalSeconds; },
+                    3,
+                    20,
+                    delegate
+                    {
+                        if (Interlocked.Increment(ref callbackCount) >= 2)
+                            synchronized.Set();
+                    });
+
+                Assert(synchronized.Wait(5000), "time synchronization did not complete");
+                Assert(client.IsTimeSynchronized, "client did not mark time synchronized");
+                Assert(client.IsServerTimeSynchronizationFresh(1000), "time synchronization was not fresh");
+
+                float estimatedServerTime = client.GetServerTime((float)stopwatch.Elapsed.TotalSeconds);
+                float actualServerTime = server.Server.Time;
+                Assert(Math.Abs(estimatedServerTime - actualServerTime) < 0.25f, "server time estimate drifted too far");
+            }
+        }
+
+        /// <summary>
+        /// Executes the test automatic client server time synchronization operation.
+        /// </summary>
+        private static void TestAutomaticClientServerTimeSynchronization()
+        {
+            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP, false))
+            {
+                NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP, false);
+                Stopwatch stopwatch = Stopwatch.StartNew();
+                ManualResetEventSlim secondRefresh = new ManualResetEventSlim(false);
+                int updateCount = 0;
+
+                client.TimeSynchronizationRequestTimeoutMs = 1000;
+                client.TimeSynchronizationMaxAttempts = 4;
+                client.StartAutoSyncTime(
+                    delegate { return (float)stopwatch.Elapsed.TotalSeconds; },
+                    2,
+                    10,
+                    1000,
+                    delegate
+                    {
+                        if (Interlocked.Increment(ref updateCount) >= 3)
+                            secondRefresh.Set();
+                    });
+
+                Assert(client.IsAutoTimeSynchronizationEnabled, "auto time synchronization was not enabled");
+                Assert(secondRefresh.Wait(5000), "auto time synchronization did not refresh");
+                Assert(client.IsServerTimeSynchronizationFresh(1500), "auto time synchronization was not fresh");
+
+                client.StopAutoSyncTime();
+                Assert(!client.IsAutoTimeSynchronizationEnabled, "auto time synchronization did not stop");
             }
         }
 

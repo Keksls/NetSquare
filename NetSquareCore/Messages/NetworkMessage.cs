@@ -474,6 +474,15 @@ namespace NetSquare.Core
         /// <summary>
         /// Executes the set operation.
         /// </summary>
+        public NetworkMessage Set(double val)
+        {
+            Serializer.Set(val);
+            return this;
+        }
+
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
         public NetworkMessage Set(bool val)
         {
             Serializer.Set(val);
@@ -583,6 +592,15 @@ namespace NetSquare.Core
         /// Executes the set operation.
         /// </summary>
         public NetworkMessage Set(float[] val, bool writeLength = true)
+        {
+            Serializer.Set(val, writeLength);
+            return this;
+        }
+
+        /// <summary>
+        /// Executes the set operation.
+        /// </summary>
+        public NetworkMessage Set(double[] val, bool writeLength = true)
         {
             Serializer.Set(val, writeLength);
             return this;

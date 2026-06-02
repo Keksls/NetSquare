@@ -2,18 +2,18 @@
 
 `NetSquare.Server` is the server-side package for NetSquare. It provides a TCP server with optional UDP messaging, client ID management, message dispatching, request/reply support, broadcast helpers, runtime configuration, and basic world synchronization.
 
-The package targets .NET Standard 2.0, .NET 8 for Windows, and .NET Framework 4.8. It includes `NetSquare_Server.dll` plus `NetSquareCore.dll`.
+The package targets .NET Standard 2.0, .NET 8 for Windows, and .NET Framework 4.8. It includes `NetSquare_Server.dll` and depends on `NetSquare.Core`.
 
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Server -Version 1.0.4
+NuGet\Install-Package NetSquare.Server -Version 1.0.7
 ```
 
 or:
 
 ```bash
-dotnet add package NetSquare.Server --version 1.0.4
+dotnet add package NetSquare.Server --version 1.0.7
 ```
 
 ## Basic Server
