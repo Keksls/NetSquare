@@ -635,13 +635,13 @@ namespace NetSquare.Server
         /// </summary>
         /// <param name="message"> The message </param>
         /// <param name="clients"> The clients </param>
-        public void SendToClientsUDP(NetworkMessage message, IEnumerable<uint> clients)
+        public void SendToClientsUnreliable(NetworkMessage message, IEnumerable<uint> clients)
         {
             lock (clients)
             {
                 foreach (uint clientID in clients)
                     if (Clients.ContainsKey(clientID))
-                        SendToClientUDP(message, Clients[clientID]);
+                        SendToClientUnreliable(message, Clients[clientID]);
             }
         }
 
@@ -650,10 +650,10 @@ namespace NetSquare.Server
         /// </summary>
         /// <param name="message"> The message </param>
         /// <param name="client"> The client </param>
-        public void SendToClientUDP(NetworkMessage message, ConnectedClient client)
+        public void SendToClientUnreliable(NetworkMessage message, ConnectedClient client)
         {
             message.Client = client;
-            client.AddUDPMessage(message);
+            client.AddUnreliableMessage(message);
         }
 
         /// <summary>
@@ -662,10 +662,10 @@ namespace NetSquare.Server
         /// <param name="headID"> The head ID </param>
         /// <param name="message"> The message </param>
         /// <param name="clientID"> The client ID </param>
-        public void SendToClientUDP(ushort headID, byte[] message, uint clientID)
+        public void SendToClientUnreliable(ushort headID, byte[] message, uint clientID)
         {
             if (Clients.ContainsKey(clientID))
-                GetClient(clientID).AddUDPMessage(headID, message);
+                GetClient(clientID).AddUnreliableMessage(headID, message);
         }
 
         /// <summary>
@@ -673,11 +673,11 @@ namespace NetSquare.Server
         /// </summary>
         /// <param name="message"> The message </param>
         /// <param name="clientID"> The client ID </param>
-        public void SendToClientUDP(NetworkMessage message, uint clientID)
+        public void SendToClientUnreliable(NetworkMessage message, uint clientID)
         {
             message.Client = GetClient(clientID);
             if (message.Client != null)
-                message.Client.AddUDPMessage(message);
+                message.Client.AddUnreliableMessage(message);
         }
 
         /// <summary>
@@ -685,9 +685,9 @@ namespace NetSquare.Server
         /// </summary>
         /// <param name="message"> The message </param>
         /// <param name="clientID"> The client ID </param>
-        public void SendToClientUDP(NetworkMessage message, UInt24 clientID)
+        public void SendToClientUnreliable(NetworkMessage message, UInt24 clientID)
         {
-            SendToClientUDP(message, clientID.UInt32);
+            SendToClientUnreliable(message, clientID.UInt32);
         }
 
         /// <summary>
@@ -696,13 +696,13 @@ namespace NetSquare.Server
         /// <param name="headID"> The head ID </param>
         /// <param name="message"> The message </param>
         /// <param name="clients"> The clients </param>
-        public void SendToClientsUDP(ushort headID, byte[] message, IEnumerable<uint> clients)
+        public void SendToClientsUnreliable(ushort headID, byte[] message, IEnumerable<uint> clients)
         {
             lock (clients)
             {
                 foreach (uint clientID in clients)
                     if (Clients.ContainsKey(clientID))
-                        SendToClientUDP(headID, message, Clients[clientID]);
+                        SendToClientUnreliable(headID, message, Clients[clientID]);
             }
         }
 
@@ -712,9 +712,9 @@ namespace NetSquare.Server
         /// <param name="headID"> The head ID </param>
         /// <param name="message"> The message </param>
         /// <param name="client"> The client </param>
-        public void SendToClientUDP(ushort headID, byte[] message, ConnectedClient client)
+        public void SendToClientUnreliable(ushort headID, byte[] message, ConnectedClient client)
         {
-            client.AddUDPMessage(headID, message);
+            client.AddUnreliableMessage(headID, message);
         }
         #endregion
 
@@ -817,9 +817,11 @@ namespace NetSquare.Server
             if (Clients.ContainsKey(oldID) && !Clients.ContainsKey(newID))
             {
                 ConnectedClient client = Clients[oldID];
+                client.UDP?.UnregisterServerClient();
                 client.ID = newID;
                 Clients.TryAdd(newID, client);
                 Clients.TryRemove(oldID, out ConnectedClient oldClient);
+                client.UDP?.RegisterServerClient();
                 return true;
             }
             return false;

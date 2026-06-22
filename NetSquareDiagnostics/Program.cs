@@ -193,6 +193,8 @@ namespace NetSquareDiagnostics
             RunTest("client/server time synchronization", TestClientServerTimeSynchronization);
             RunTest("automatic client/server time synchronization", TestAutomaticClientServerTimeSynchronization);
             RunTest("UDP client/server message", TestUdpClientServerMessage);
+            RunTest("UDP client local port conflict", TestUdpClientLocalPortConflict);
+            RunTest("UDP replace client ID routing", TestUdpReplaceClientIdRouting);
             RunTest("world join broadcast sync leave", TestWorldJoinBroadcastSyncLeave);
             RunTest("world transform cache updates from frames", TestWorldTransformCacheUpdatesFromFrames);
             RunTest("simple spatializer visibility", TestSimpleSpatializerVisibility);
@@ -624,7 +626,7 @@ namespace NetSquareDiagnostics
                         serverReceived.Set();
 
                     NetworkMessage ack = new NetworkMessage(UdpSmokeHeadId, message.ClientID).Set(5678);
-                    server.Server.SendToClientUDP(UdpSmokeHeadId, ack.Serialize(), message.Client);
+                    server.Server.SendToClientUnreliable(UdpSmokeHeadId, ack.Serialize(), message.Client);
                 });
 
                 NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP_AND_UDP, true);
@@ -641,6 +643,102 @@ namespace NetSquareDiagnostics
                 Assert(serverReceived.Wait(5000), "server did not receive UDP message");
                 Assert(clientReceived.Wait(5000), "client did not receive UDP ack");
                 Assert(ackValue == 5678, "UDP ack payload mismatch");
+            }
+        }
+
+        /// <summary>
+        /// Executes the test udp client local port conflict operation.
+        /// </summary>
+        private static void TestUdpClientLocalPortConflict()
+        {
+            System.Net.Sockets.TcpListener listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            TcpClient tcpClient = null;
+            Socket serverSocket = null;
+            ConnectedClient connected = null;
+            UdpClient blockedUdp = null;
+
+            try
+            {
+                listener.Start();
+                int serverPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+                int clientLocalPort = 0;
+                for (int i = 0; i < 20 && blockedUdp == null; i++)
+                {
+                    int candidate = GetFreeTcpPort();
+                    if (candidate >= ushort.MaxValue)
+                        continue;
+
+                    try
+                    {
+                        blockedUdp = new UdpClient(new IPEndPoint(IPAddress.Loopback, candidate + 1));
+                        clientLocalPort = candidate;
+                    }
+                    catch (SocketException) { }
+                }
+
+                Assert(blockedUdp != null, "could not reserve UDP conflict port");
+
+                Task<Socket> acceptTask = Task.Factory.StartNew(delegate { return listener.AcceptSocket(); });
+                tcpClient = new TcpClient(new IPEndPoint(IPAddress.Loopback, clientLocalPort));
+                tcpClient.NoDelay = true;
+                tcpClient.Connect(IPAddress.Loopback, serverPort);
+                serverSocket = acceptTask.Result;
+
+                connected = new ConnectedClient();
+                connected.ID = 123;
+                connected.SetClient(tcpClient.Client, true, true);
+
+                IPEndPoint udpLocalEndPoint = (IPEndPoint)connected.UDP.connection.Client.LocalEndPoint;
+                Assert(connected.UDPEnabled, "UDP was not enabled");
+                Assert(udpLocalEndPoint.Port != clientLocalPort + 1, "client UDP still used TCP local port + 1");
+            }
+            finally
+            {
+                try { connected?.UDP?.connection?.Close(); } catch { }
+                try { tcpClient?.Close(); } catch { }
+                try { serverSocket?.Close(); } catch { }
+                try { blockedUdp?.Close(); } catch { }
+                try { listener.Stop(); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// Executes the test udp replace client id routing operation.
+        /// </summary>
+        private static void TestUdpReplaceClientIdRouting()
+        {
+            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP_AND_UDP, false))
+            {
+                NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP_AND_UDP, true);
+                uint oldClientID = client.ClientID;
+                uint newClientID = oldClientID + 1000;
+                if (newClientID > UInt24.MaxValue)
+                    newClientID = oldClientID - 1;
+
+                Assert(server.Server.ReplaceClientID(oldClientID, newClientID), "server failed to replace client ID");
+                client.ReplaceClientID(newClientID);
+
+                ManualResetEventSlim serverReceived = new ManualResetEventSlim(false);
+                ManualResetEventSlim clientReceived = new ManualResetEventSlim(false);
+                int clientValue = 0;
+                server.Server.Dispatcher.AddHeadAction(UdpSmokeHeadId, "UdpReplaceIdSmoke", delegate (NetworkMessage message)
+                {
+                    if (message.ClientID == newClientID && message.Serializer.GetInt() == 2468)
+                        serverReceived.Set();
+                });
+                client.Dispatcher.AddHeadAction(UdpSmokeHeadId, "UdpReplaceIdAck", delegate (NetworkMessage message)
+                {
+                    clientValue = message.Serializer.GetInt();
+                    clientReceived.Set();
+                });
+
+                client.SendMessageUDP(new NetworkMessage(UdpSmokeHeadId).Set(2468));
+                Assert(serverReceived.Wait(5000), "server did not receive UDP after client ID replacement");
+
+                server.Server.SendToClientUnreliable(new NetworkMessage(UdpSmokeHeadId, newClientID).Set(1357), newClientID);
+                Assert(clientReceived.Wait(5000), "client did not receive UDP after client ID replacement");
+                Assert(clientValue == 1357, "client UDP after replace payload mismatch");
             }
         }
 

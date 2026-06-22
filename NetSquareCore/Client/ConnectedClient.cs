@@ -295,7 +295,7 @@ namespace NetSquare.Core
         /// enqueue an UDP message to send
         /// </summary>
         /// <param name="msg">message to send</param>
-        public void AddUDPMessage(NetworkMessage msg)
+        public void AddUnreliableMessage(NetworkMessage msg)
         {
             UDP?.SendMessage(msg);
         }
@@ -305,7 +305,7 @@ namespace NetSquare.Core
         /// </summary>
         /// <param name="headID">headID of the message to send</param>
         /// <param name="msg">message to send</param>
-        public void AddUDPMessage(ushort headID, byte[] msg)
+        public void AddUnreliableMessage(ushort headID, byte[] msg)
         {
             UDP?.SendMessage(headID, msg);
         }

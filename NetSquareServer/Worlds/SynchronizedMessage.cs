@@ -90,9 +90,33 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public NetworkMessage GetPackedMessage(Dictionary<uint, NetworkMessage> snapshot)
         {
+            return GetPackedMessage(snapshot.Values);
+        }
+
+        /// <summary>
+        /// Executes the get packed message operation while excluding one sender.
+        /// </summary>
+        public NetworkMessage GetPackedMessage(Dictionary<uint, NetworkMessage> snapshot, uint excludedClientID)
+        {
+            List<NetworkMessage> messages = new List<NetworkMessage>();
+            foreach (var pair in snapshot)
+                if (pair.Key != excludedClientID)
+                    messages.Add(pair.Value);
+
+            if (messages.Count == 0)
+                return null;
+
+            return GetPackedMessage(messages);
+        }
+
+        /// <summary>
+        /// Executes the get packed message operation.
+        /// </summary>
+        private NetworkMessage GetPackedMessage(IEnumerable<NetworkMessage> messages)
+        {
             NetworkMessage packed = new NetworkMessage(HeadID);
             packed.HeadID = HeadID;
-            packed.Pack(snapshot.Values, true);
+            packed.Pack(messages, true);
             return packed;
         }
 
@@ -114,6 +138,9 @@ namespace NetSquare.Server.Worlds
             List<NetworkMessage> messages = new List<NetworkMessage>();
             foreach (uint visibleID in visivleClientsID)
             {
+                if (visibleID == clientID)
+                    continue;
+
                 NetworkMessage message;
                 if (snapshot.TryGetValue(visibleID, out message))
                     messages.Add(message);

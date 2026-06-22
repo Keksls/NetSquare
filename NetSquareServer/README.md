@@ -7,13 +7,13 @@ The package targets .NET Standard 2.0, .NET 8 for Windows, and .NET Framework 4.
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Server -Version 1.0.7
+NuGet\Install-Package NetSquare.Server -Version 1.0.9
 ```
 
 or:
 
 ```bash
-dotnet add package NetSquare.Server --version 1.0.7
+dotnet add package NetSquare.Server --version 1.0.9
 ```
 
 ## Basic Server

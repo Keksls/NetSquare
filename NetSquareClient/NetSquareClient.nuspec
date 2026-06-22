@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Client</id>
-    <version>1.0.7</version>
+    <version>1.0.9</version>
     <title>NetSquare.Client</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -11,18 +11,18 @@
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
     <description>NetSquare as a verry fast and easy to use .NET Tcp/Udp solution for Server/client developpment. Unity compatible</description>
-    <releaseNotes>Adds robust server time synchronization with timeout-bounded samples, RTT filtering, and automatic low-rate refresh.</releaseNotes>
+    <releaseNotes>Adds UDP world broadcast relay support.</releaseNotes>
     <copyright>Copyright © 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
     <dependencies>
       <group targetFramework="netstandard2.0">
-        <dependency id="NetSquare.Core" version="[1.0.7]" />
+        <dependency id="NetSquare.Core" version="[1.0.9]" />
       </group>
       <group targetFramework="net8.0">
-        <dependency id="NetSquare.Core" version="[1.0.7]" />
+        <dependency id="NetSquare.Core" version="[1.0.9]" />
       </group>
       <group targetFramework="net48">
-        <dependency id="NetSquare.Core" version="[1.0.7]" />
+        <dependency id="NetSquare.Core" version="[1.0.9]" />
       </group>
     </dependencies>
   </metadata>

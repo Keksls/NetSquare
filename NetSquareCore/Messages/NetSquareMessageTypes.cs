@@ -9,8 +9,9 @@ namespace NetSquare.Core
         Default = 0,
         Reply = 1,
         BroadcastCurrentWorld = 2,
-        SynchronizeMessageCurrentWorld = 3,
-        MAX = 3
+        BroadcastCurrentWorldUnreliable = 3,
+        SynchronizeMessageCurrentWorld = 4,
+        MAX = 4
     }
 }
 #endregion

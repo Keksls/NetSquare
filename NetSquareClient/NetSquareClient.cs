@@ -629,7 +629,7 @@ namespace NetSquare.Client
         public void SendMessageUDP(NetworkMessage msg)
         {
             msg.ClientID = Client.ID;
-            Client.AddUDPMessage(msg.HeadID, msg.Serialize());
+            Client.AddUnreliableMessage(msg.HeadID, msg.Serialize());
         }
 
         /// <summary>
@@ -640,7 +640,7 @@ namespace NetSquare.Client
         {
             NetworkMessage msg = new NetworkMessage(HeadID);
             msg.ClientID = Client.ID;
-            Client.AddUDPMessage(HeadID, msg.Serialize());
+            Client.AddUnreliableMessage(HeadID, msg.Serialize());
         }
 
         /// <summary>
@@ -651,7 +651,7 @@ namespace NetSquare.Client
         {
             NetworkMessage msg = new NetworkMessage(HeadID);
             msg.ClientID = Client.ID;
-            Client.AddUDPMessage(msg.HeadID, msg.Serialize());
+            Client.AddUnreliableMessage(msg.HeadID, msg.Serialize());
         }
 
         /// <summary>
@@ -1169,6 +1169,7 @@ namespace NetSquare.Client
         public void ReplaceClientID(uint newID)
         {
             Client.ID = newID;
+            Client.UDP?.SendRegistration();
         }
         #endregion
     }

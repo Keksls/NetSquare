@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using NetSquare.Core.Messages;
 
 namespace NetSquare.Core
 {
@@ -85,6 +86,10 @@ namespace NetSquare.Core
         /// </summary>
         private ServerUdpHub serverHub;
         /// <summary>
+        /// Stores the local UDP endpoint used by the server hub.
+        /// </summary>
+        private IPEndPoint serverLocalEndPoint;
+        /// <summary>
         /// Stores the server hubs value.
         /// </summary>
         private static readonly ConcurrentDictionary<string, ServerUdpHub> ServerHubs = new ConcurrentDictionary<string, ServerUdpHub>();
@@ -111,9 +116,10 @@ namespace NetSquare.Core
             IPEndPoint localTcpEndPoint = (IPEndPoint)relatedTcpClient.LocalEndPoint;
             IPEndPoint remoteTcpEndPoint = (IPEndPoint)relatedTcpClient.RemoteEndPoint;
             RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
-            connection = new UdpClient(new IPEndPoint(localTcpEndPoint.Address, localTcpEndPoint.Port + 1));
+            connection = new UdpClient(new IPEndPoint(localTcpEndPoint.Address, 0));
             connection.Connect(RemoteEndPoint);
             connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
+            SendRegistration();
         }
 
         /// <summary>
@@ -128,8 +134,8 @@ namespace NetSquare.Core
             IPEndPoint localTcpEndPoint = (IPEndPoint)relatedTcpClient.LocalEndPoint;
             IPEndPoint remoteTcpEndPoint = (IPEndPoint)relatedTcpClient.RemoteEndPoint;
             RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
-            IPEndPoint localUdpEndPoint = new IPEndPoint(localTcpEndPoint.Address, localTcpEndPoint.Port + 1);
-            serverHub = GetServerHub(localUdpEndPoint);
+            serverLocalEndPoint = new IPEndPoint(localTcpEndPoint.Address, localTcpEndPoint.Port + 1);
+            serverHub = GetServerHub(serverLocalEndPoint);
             connection = serverHub.Connection;
             RegisterServerClient();
         }
@@ -139,8 +145,19 @@ namespace NetSquare.Core
         /// </summary>
         public void RegisterServerClient()
         {
-            if (isServer && serverHub != null && relatedClient.ID != 0)
-                serverHub.Register(this);
+            if (!isServer || relatedClient == null || relatedClient.ID == 0)
+                return;
+
+            if (serverHub == null)
+            {
+                if (serverLocalEndPoint == null)
+                    serverLocalEndPoint = (IPEndPoint)connection.Client.LocalEndPoint;
+
+                serverHub = GetServerHub(serverLocalEndPoint);
+                connection = serverHub.Connection;
+            }
+
+            serverHub.Register(this);
         }
 
         /// <summary>
@@ -148,8 +165,22 @@ namespace NetSquare.Core
         /// </summary>
         public void UnregisterServerClient()
         {
-            if (isServer && serverHub != null && relatedClient.ID != 0)
-                serverHub.Unregister(relatedClient.ID);
+            if (!isServer || serverHub == null || relatedClient == null || relatedClient.ID == 0)
+                return;
+
+            serverHub.Unregister(relatedClient.ID);
+            serverHub = null;
+        }
+
+        /// <summary>
+        /// Sends an internal UDP endpoint registration datagram.
+        /// </summary>
+        public void SendRegistration()
+        {
+            if (isServer || relatedClient == null || relatedClient.ID == 0)
+                return;
+
+            SendMessage(new NetworkMessage(NetSquareMessageID.UdpRegister, relatedClient.ID));
         }
 
         /// <summary>
@@ -375,7 +406,7 @@ namespace NetSquare.Core
         /// </summary>
         private static ServerUdpHub GetServerHub(IPEndPoint localEndPoint)
         {
-            return ServerHubs.GetOrAdd(localEndPoint.ToString(), key => new ServerUdpHub(localEndPoint));
+            return ServerHubs.GetOrAdd(localEndPoint.ToString(), key => new ServerUdpHub(key, localEndPoint));
         }
 
         /// <summary>
@@ -388,6 +419,10 @@ namespace NetSquare.Core
             /// </summary>
             public UdpClient Connection { get; private set; }
             /// <summary>
+            /// Stores the hub key value.
+            /// </summary>
+            private readonly string key;
+            /// <summary>
             /// Stores the clients value.
             /// </summary>
             private ConcurrentDictionary<uint, UDPConnection> clients = new ConcurrentDictionary<uint, UDPConnection>();
@@ -395,8 +430,9 @@ namespace NetSquare.Core
             /// <summary>
             /// Executes the server udp hub operation.
             /// </summary>
-            public ServerUdpHub(IPEndPoint localEndPoint)
+            public ServerUdpHub(string key, IPEndPoint localEndPoint)
             {
+                this.key = key;
                 Connection = new UdpClient(localEndPoint);
                 StartReceive();
             }
@@ -416,6 +452,27 @@ namespace NetSquare.Core
             {
                 UDPConnection removed;
                 clients.TryRemove(clientID, out removed);
+                if (clients.IsEmpty)
+                    DisposeIfUnused();
+            }
+
+            /// <summary>
+            /// Disposes the shared UDP socket when no server clients still use it.
+            /// </summary>
+            private void DisposeIfUnused()
+            {
+                if (!clients.IsEmpty)
+                    return;
+
+                ServerUdpHub removed;
+                if (ServerHubs.TryRemove(key, out removed) && object.ReferenceEquals(removed, this))
+                {
+                    try { Connection.Close(); } catch { }
+                }
+                else if (removed != null)
+                {
+                    ServerHubs.TryAdd(key, removed);
+                }
             }
 
             /// <summary>
@@ -443,6 +500,9 @@ namespace NetSquare.Core
                         {
                             clientConnection.RemoteEndPoint = remoteEndPoint;
                             clientConnection.receivedBytes += datagram.Length;
+                            if (message.HeadID == (ushort)NetSquareMessageID.UdpRegister)
+                                return;
+
                             clientConnection.relatedClient.NbMessagesReceived++;
                             message.Client = clientConnection.relatedClient;
                             clientConnection.relatedClient.Fire_OnMessageReceived(message);

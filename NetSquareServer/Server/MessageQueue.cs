@@ -128,6 +128,11 @@ namespace NetSquare.Server.Server
                                     server.Worlds.BroadcastToWorld(currentMessage);
                                     break;
 
+                                // It's a broadcast message, we need to broadcast it to all clients in the current world
+                                case NetSquareMessageType.BroadcastCurrentWorldUnreliable:
+                                    server.Worlds.BroadcastToWorldUnreliable(currentMessage);
+                                    break;
+
                                 // It's a synchronization message, we need to synchronize it to all clients in the current world
                                 case NetSquareMessageType.SynchronizeMessageCurrentWorld:
                                     server.Worlds.ReceiveSyncronizationMessage(currentMessage);

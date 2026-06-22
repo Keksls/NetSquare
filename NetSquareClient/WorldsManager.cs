@@ -172,6 +172,19 @@ namespace NetSquare.Client
         }
 
         /// <summary>
+        /// Send a networkMessage to any client in the same world I am using UDP. Must be in a world
+        /// </summary>
+        /// <param name="message">message to send</param>
+        public void BroadcastUnreliable(NetworkMessage message)
+        {
+            if (!IsInWorld)
+                return;
+            // set TypeID as broadcast
+            message.SetType(NetSquareMessageType.BroadcastCurrentWorldUnreliable);
+            client.SendMessageUDP(message);
+        }
+
+        /// <summary>
         /// Synchronize message Data with other client in this world. 
         /// Server will pack clients message and send to anyone in the world at regular interval
         /// Must be in a world

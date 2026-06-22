@@ -7,13 +7,13 @@ The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It is ins
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Core -Version 1.0.7
+NuGet\Install-Package NetSquare.Core -Version 1.0.9
 ```
 
 or:
 
 ```bash
-dotnet add package NetSquare.Core --version 1.0.7
+dotnet add package NetSquare.Core --version 1.0.9
 ```
 
 ## Network Messages

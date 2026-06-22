@@ -230,7 +230,12 @@ namespace NetSquare.Server.Worlds
             ushort worldID;
             NetSquareWorld world;
             if (TryGetClientWorld(message.ClientID, out worldID, out world))
-                world.Synchronizer?.AddMessage(message);
+            {
+                if (world.UseSynchronizer)
+                    world.Synchronizer?.AddMessage(message);
+                else
+                    world.BroadcastUDP(message, world.UseSpatializer, true);
+            }
         }
 
         /// <summary>
@@ -319,12 +324,28 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="message">message we want to broadcast</param>
         /// <param name="useSpatialization">if this client's world use spatialization, broadcast to anyone visible only</param>
-        public void BroadcastToWorld(NetworkMessage message, bool useSpatialization = true)
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void BroadcastToWorld(NetworkMessage message, bool useSpatialization = true, bool excludeSender = true)
         {
             ushort worldID;
             NetSquareWorld world;
             if (TryGetClientWorld(message.ClientID, out worldID, out world))
-                world.Broadcast(message, useSpatialization);
+                world.Broadcast(message, useSpatialization, excludeSender);
+        }
+
+
+        /// <summary>
+        /// broadcast message from client to any client in the same world using UDP
+        /// </summary>
+        /// <param name="message">message we want to broadcast</param>
+        /// <param name="useSpatialization">if this client's world use spatialization, broadcast to anyone visible only</param>
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void BroadcastToWorldUnreliable(NetworkMessage message, bool useSpatialization = true, bool excludeSender = true)
+        {
+            ushort worldID;
+            NetSquareWorld world;
+            if (TryGetClientWorld(message.ClientID, out worldID, out world))
+                world.BroadcastUnreliable(message, useSpatialization, excludeSender);
         }
 
         /// <summary>
@@ -332,12 +353,13 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="message">message we want to broadcast</param>
         /// <param name="useSpatialization">if this client's world use spatialization, broadcast to anyone visible only</param>
-        public void BroadcastToWorld(byte[] message, uint clientID, bool useSpatialization = true)
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void BroadcastToWorld(byte[] message, uint clientID, bool useSpatialization = true, bool excludeSender = true)
         {
             ushort worldID;
             NetSquareWorld world;
             if (TryGetClientWorld(clientID, out worldID, out world))
-                world.Broadcast(message, clientID, useSpatialization);
+                world.Broadcast(message, clientID, useSpatialization, excludeSender);
         }
 
         /// <summary>
@@ -410,7 +432,7 @@ namespace NetSquare.Server.Worlds
                     else
                     {
                         ApplyLatestTransformFrame(world, message.ClientID, frame);
-                        world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
+                        world.Broadcast(message.Serializer.Buffer, message.ClientID, true, true);
                     }
                     message.RestartRead();
                 }
@@ -443,7 +465,7 @@ namespace NetSquare.Server.Worlds
                     else
                     {
                         ApplyLatestTransformFrame(world, message.ClientID, frames);
-                        world.Broadcast(message.Serializer.Buffer, message.ClientID, true);
+                        world.Broadcast(message.Serializer.Buffer, message.ClientID, true, true);
                     }
                     message.RestartRead();
                 }

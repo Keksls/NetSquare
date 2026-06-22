@@ -27,7 +27,11 @@ namespace NetSquare.Core.Messages
         /// <summary>
         ///    A peer is about to close the connection.
         /// </summary>
-        Disconnecting = 65527
+        Disconnecting = 65527,
+        /// <summary>
+        ///    Internal UDP endpoint registration datagram.
+        /// </summary>
+        UdpRegister = 65526
     }
 }
 #endregion

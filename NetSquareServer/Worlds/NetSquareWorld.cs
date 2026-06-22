@@ -308,12 +308,19 @@ namespace NetSquare.Server.Worlds
         /// <summary>
         /// Executes the get broadcast targets operation.
         /// </summary>
-        private HashSet<uint> GetBroadcastTargets(uint clientID, bool useSpatialization)
+        private HashSet<uint> GetBroadcastTargets(uint clientID, bool useSpatialization, bool excludeSelf)
         {
-            if (UseSpatializer && useSpatialization && Spatializer != null)
-                return Spatializer.GetVisibleClients(clientID);
+            HashSet<uint> clients = null;
 
-            return new HashSet<uint>(Clients.Keys);
+            if (UseSpatializer && useSpatialization && Spatializer != null && clientID != 0)
+                clients = Spatializer.GetVisibleClients(clientID);
+            else
+                clients = new HashSet<uint>(Clients.Keys);
+
+            if (excludeSelf)
+                clients.Remove(clientID);
+
+            return clients;
         }
 
         /// <summary>
@@ -333,9 +340,21 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="message">message to send</param>
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
-        public void Broadcast(NetworkMessage message, bool useSpatialization = true)
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void Broadcast(NetworkMessage message, bool useSpatialization = true, bool excludeSender = false)
         {
-            server.SendToClients(message, GetBroadcastTargets(message.ClientID, useSpatialization));
+            server.SendToClients(message, GetBroadcastTargets(message.ClientID, useSpatialization, excludeSender));
+        }
+
+        /// <summary>
+        /// Send message to anyone in this world using UDP
+        /// </summary>
+        /// <param name="message">message to send</param>
+        /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void BroadcastUnreliable(NetworkMessage message, bool useSpatialization = true, bool excludeSender = false)
+        {
+            server.SendToClientsUnreliable(message, GetBroadcastTargets(message.ClientID, useSpatialization, excludeSender));
         }
 
         /// <summary>
@@ -343,9 +362,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="message">message to send</param>
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
-        public void Broadcast(NetworkMessage message, uint excludedClientID, bool useSpatialization = true)
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void Broadcast(NetworkMessage message, uint excludedClientID, bool useSpatialization = true, bool excludeSender = false)
         {
-            HashSet<uint> clients = GetBroadcastTargets(message.ClientID, useSpatialization);
+            HashSet<uint> clients = GetBroadcastTargets(message.ClientID, useSpatialization, excludeSender);
             clients.Remove(excludedClientID);
             server.SendToClients(message, clients);
         }
@@ -355,9 +375,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="message">message to send</param>
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
-        public void Broadcast(NetworkMessage message, IEnumerable<uint> excludedClientIDs, bool useSpatialization = true)
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void Broadcast(NetworkMessage message, IEnumerable<uint> excludedClientIDs, bool useSpatialization = true, bool excludeSender = false)
         {
-            HashSet<uint> clients = GetBroadcastTargets(message.ClientID, useSpatialization);
+            HashSet<uint> clients = GetBroadcastTargets(message.ClientID, useSpatialization, excludeSender);
             RemoveExcludedClients(clients, excludedClientIDs);
             server.SendToClients(message, clients);
         }
@@ -367,9 +388,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="message">message to send</param>
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
-        public void Broadcast(byte[] message, uint clientID, bool useSpatialization = true)
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void Broadcast(byte[] message, uint clientID, bool useSpatialization = true, bool excludeSender = false)
         {
-            server.SendToClients(message, GetBroadcastTargets(clientID, useSpatialization));
+            server.SendToClients(message, GetBroadcastTargets(clientID, useSpatialization, excludeSender));
         }
 
         /// <summary>
@@ -377,9 +399,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         /// <param name="message">message to send</param>
         /// <param name="useSpatialization">if this world use spatialization, broadcast to anyone visible only</param>
-        public void BroadcastUDP(NetworkMessage message, bool useSpatialization = true)
+        /// <param name="excludeSender">if true, the sender will not receive the message</param>
+        public void BroadcastUDP(NetworkMessage message, bool useSpatialization = true, bool excludeSender = false)
         {
-            server.SendToClientsUDP(message, GetBroadcastTargets(message.ClientID, useSpatialization));
+            server.SendToClientsUnreliable(message, GetBroadcastTargets(message.ClientID, useSpatialization, excludeSender));
         }
         #endregion
     }

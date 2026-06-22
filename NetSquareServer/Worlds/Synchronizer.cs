@@ -125,7 +125,7 @@ namespace NetSquare.Server.Worlds
                         if (SynchronizeUsingUDP)
                         {
                             foreach (var packed in packedMessages)
-                                server.SafeGetClient(packed.ClientID)?.AddUDPMessage(packed);
+                                server.SafeGetClient(packed.ClientID)?.AddUnreliableMessage(packed);
                         }
                         else
                         {
@@ -143,16 +143,23 @@ namespace NetSquare.Server.Worlds
                         if (snapshot.Count == 0)
                             continue;
 
-                        NetworkMessage packed = message.GetPackedMessage(snapshot);
                         if (SynchronizeUsingUDP)
                         {
                             foreach (uint clientID in World.Clients.Keys)
-                                server.SafeGetClient(clientID)?.AddUDPMessage(packed);
+                            {
+                                NetworkMessage packed = message.GetPackedMessage(snapshot, clientID);
+                                if (packed != null)
+                                    server.SafeGetClient(clientID)?.AddUnreliableMessage(packed);
+                            }
                         }
                         else
                         {
                             foreach (uint clientID in World.Clients.Keys)
-                                server.SafeGetClient(clientID)?.AddTCPMessage(packed);
+                            {
+                                NetworkMessage packed = message.GetPackedMessage(snapshot, clientID);
+                                if (packed != null)
+                                    server.SafeGetClient(clientID)?.AddTCPMessage(packed);
+                            }
                         }
                         message.RemoveSnapshot(snapshot);
                     }
