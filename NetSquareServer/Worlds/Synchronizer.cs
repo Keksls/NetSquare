@@ -2,7 +2,6 @@ using NetSquare.Core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 
 #region Source
@@ -14,10 +13,13 @@ namespace NetSquare.Server.Worlds
     public class Synchronizer
     {
         #region Fields
+        private static long nextSchedulerInstanceID;
         private readonly object lifecycleLock = new object();
         private readonly NetSquareServer server;
-        private CancellationTokenSource stopCancellation;
-        private Thread synchronizationThread;
+        private readonly string schedulerActionName;
+        private readonly Action<uint, uint[]> spatializedSnapshotSender;
+        private SynchronizedMessage currentSpatializedMessage;
+        private Dictionary<uint, NetworkMessage> currentSpatializedSnapshot;
         private int synchronizing;
         #endregion
 
@@ -65,6 +67,9 @@ namespace NetSquare.Server.Worlds
             World = world;
             SynchronizeUsingUDP = synchronizeUsingUDP;
             this.server = server;
+            spatializedSnapshotSender = SendCurrentSpatializedSnapshot;
+            schedulerActionName = "NetSquare world synchronization " +
+                world.ID + "-" + Interlocked.Increment(ref nextSchedulerInstanceID);
             Messages = new ConcurrentDictionary<ushort, SynchronizedMessage>();
         }
         #endregion
@@ -83,58 +88,47 @@ namespace NetSquare.Server.Worlds
 
                 int clampedFrequency = Math.Max(1, Math.Min(60, frequency));
                 Frequency = Math.Max(1, 1000 / clampedFrequency);
-                stopCancellation = new CancellationTokenSource();
-                CancellationToken workerToken = stopCancellation.Token;
-                synchronizationThread = new Thread(() => SynchronizationLoop(workerToken));
-                synchronizationThread.IsBackground = true;
-                synchronizationThread.Name = "NetSquare world synchronization " + World.ID;
+                if (!NetSquareScheduler.AddAction(
+                    schedulerActionName,
+                    Frequency,
+                    true,
+                    RunSynchronizationTick))
+                {
+                    throw new InvalidOperationException(
+                        "The world synchronization action is already registered.");
+                }
+
                 Volatile.Write(ref synchronizing, 1);
-                synchronizationThread.Start();
+                if (!NetSquareScheduler.StartAction(schedulerActionName))
+                {
+                    Volatile.Write(ref synchronizing, 0);
+                    NetSquareScheduler.RemoveAction(schedulerActionName);
+                    throw new InvalidOperationException(
+                        "The world synchronization action could not be started.");
+                }
             }
         }
 
         /// <summary>
-        /// Stops synchronization and waits for the active iteration to finish.
+        /// Stops synchronization and waits for the active shared-worker iteration to finish.
         /// </summary>
         public void Stop()
         {
-            Thread threadToJoin;
-            CancellationTokenSource cancellation;
             lock (lifecycleLock)
             {
-                if (!Synchronizing && synchronizationThread == null)
+                if (!Synchronizing)
                 {
+                    NetSquareScheduler.RemoveAction(schedulerActionName);
                     Messages = new ConcurrentDictionary<ushort, SynchronizedMessage>();
                     return;
                 }
-
                 Volatile.Write(ref synchronizing, 0);
-                cancellation = stopCancellation;
-                threadToJoin = synchronizationThread;
-                cancellation?.Cancel();
             }
 
-            if (threadToJoin != null && threadToJoin != Thread.CurrentThread)
-            {
-                int configuredTimeout = NetSquareConfigurationManager
-                    .Get<NetSquareConfiguration>().WorkerStopTimeoutMilliseconds;
-                int timeout = configuredTimeout > 0 ? configuredTimeout : 5000;
-                if (!threadToJoin.Join(timeout))
-                {
-                    throw new TimeoutException(
-                        "The world synchronization worker did not stop within the configured timeout.");
-                }
-            }
-
+            NetSquareScheduler.StopAction(schedulerActionName);
+            NetSquareScheduler.RemoveAction(schedulerActionName);
             lock (lifecycleLock)
-            {
-                if (synchronizationThread == threadToJoin)
-                {
-                    synchronizationThread = null;
-                    stopCancellation = null;
-                }
                 Messages = new ConcurrentDictionary<ushort, SynchronizedMessage>();
-            }
         }
         #endregion
 
@@ -167,33 +161,21 @@ namespace NetSquare.Server.Worlds
 
         #region Synchronization loop
         /// <summary>
-        /// Sends snapshots at a stable frequency until cancellation is requested.
+        /// Executes one synchronization tick and publishes a stopped state if the callback fails.
         /// </summary>
-        /// <param name="cancellationToken">Stop token.</param>
-        private void SynchronizationLoop(CancellationToken cancellationToken)
+        private void RunSynchronizationTick()
         {
-            Stopwatch syncWatch = new Stopwatch();
             try
             {
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    syncWatch.Restart();
-                    SynchronizeCurrentSnapshots();
-                    syncWatch.Stop();
-
-                    int delayMilliseconds = Frequency - (int)syncWatch.ElapsedMilliseconds;
-                    if (delayMilliseconds < 1)
-                        delayMilliseconds = 1;
-                    if (cancellationToken.WaitHandle.WaitOne(delayMilliseconds))
-                        return;
-                }
+                SynchronizeCurrentSnapshots();
             }
-            finally
+            catch
             {
                 Volatile.Write(ref synchronizing, 0);
+                NetSquareScheduler.RemoveAction(schedulerActionName);
+                throw;
             }
         }
-
         /// <summary>
         /// Captures and broadcasts every pending synchronized message partition.
         /// </summary>
@@ -209,7 +191,10 @@ namespace NetSquare.Server.Worlds
             {
                 Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
                 if (snapshot.Count == 0)
+                {
+                    message.RemoveSnapshot(snapshot);
                     continue;
+                }
 
                 foreach (uint clientID in World.Clients.Keys)
                 {
@@ -229,20 +214,44 @@ namespace NetSquare.Server.Worlds
             {
                 Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
                 if (snapshot.Count == 0)
-                    continue;
-
-                World.Spatializer.ForEach((clientID, visibleIDs) =>
                 {
-                    NetworkMessage packed = message.GetSpatializedPackedMessage(
-                        visibleIDs,
-                        clientID,
-                        snapshot);
-                    SendPackedMessage(packed, clientID);
-                });
+                    message.RemoveSnapshot(snapshot);
+                    continue;
+                }
+
+                currentSpatializedMessage = message;
+                currentSpatializedSnapshot = snapshot;
+                try
+                {
+                    World.Spatializer.ForEachVisibleSnapshot(spatializedSnapshotSender);
+                }
+                finally
+                {
+                    currentSpatializedMessage = null;
+                    currentSpatializedSnapshot = null;
+                }
                 message.RemoveSnapshot(snapshot);
             }
         }
 
+        /// <summary>
+        /// Builds and sends one recipient-specific payload using the current synchronization snapshot.
+        /// </summary>
+        /// <param name="clientID">Destination client identifier.</param>
+        /// <param name="visibleIDs">Immutable visible-client identifiers.</param>
+        private void SendCurrentSpatializedSnapshot(uint clientID, uint[] visibleIDs)
+        {
+            SynchronizedMessage message = currentSpatializedMessage;
+            Dictionary<uint, NetworkMessage> snapshot = currentSpatializedSnapshot;
+            if (message == null || snapshot == null)
+                return;
+
+            NetworkMessage packed = message.GetSpatializedPackedMessage(
+                visibleIDs,
+                clientID,
+                snapshot);
+            SendPackedMessage(packed, clientID);
+        }
         /// <summary>
         /// Sends one packed synchronization payload over the configured transport.
         /// </summary>

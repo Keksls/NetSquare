@@ -7,88 +7,37 @@ namespace NetSquare.Core
     /// <summary>
     /// Represents the pooled byte buffer component.
     /// </summary>
-    internal sealed class PooledByteBuffer : IDisposable
-    {
-        /// <summary>
-        /// Gets or sets the buffer value.
-        /// </summary>
-        public byte[] Buffer { get; private set; }
-        /// <summary>
-        /// Gets or sets the length value.
-        /// </summary>
-        public int Length { get; private set; }
-        /// <summary>
-        /// Stores the pooled value.
-        /// </summary>
-        private readonly bool pooled;
-
-        /// <summary>
-        /// Executes the pooled byte buffer operation.
-        /// </summary>
-        public PooledByteBuffer(byte[] buffer, int length, bool pooled)
-        {
-            Buffer = buffer;
-            Length = length;
-            this.pooled = pooled;
-        }
-
-        /// <summary>
-        /// Executes the wrap operation.
-        /// </summary>
-        public static PooledByteBuffer Wrap(byte[] buffer)
-        {
-            return new PooledByteBuffer(buffer, buffer != null ? buffer.Length : 0, false);
-        }
-
-        /// <summary>
-        /// Executes the rent operation.
-        /// </summary>
-        public static PooledByteBuffer Rent(int length)
-        {
-            return new PooledByteBuffer(NetSquareBufferPool.Rent(length), length, true);
-        }
-
-        /// <summary>
-        /// Executes the dispose operation.
-        /// </summary>
-        public void Dispose()
-        {
-            if (pooled && Buffer != null)
-                NetSquareBufferPool.Return(Buffer);
-            Buffer = null;
-            Length = 0;
-        }
-    }
-
-    /// <summary>
-    /// Represents the net square buffer pool component.
-    /// </summary>
     internal static class NetSquareBufferPool
     {
         /// <summary>
         /// Defines the max pooled buffer size constant.
         /// </summary>
-        private const int MaxPooledBufferSize = 1024 * 1024;
+        private const int MinimumBucketSize = 256;
+        private const int MaximumBucketSize = 1024 * 1024;
+        private const int BucketCount = 13;
         /// <summary>
-        /// Stores the buckets value.
+        /// Stores fixed power-of-two buckets without dictionary lookups on the send hot path.
         /// </summary>
-        private static readonly ConcurrentDictionary<int, ConcurrentBag<byte[]>> Buckets = new ConcurrentDictionary<int, ConcurrentBag<byte[]>>();
+        private static readonly ConcurrentBag<byte[]>[] Buckets = CreateBuckets();
 
         /// <summary>
         /// Executes the rent operation.
         /// </summary>
         public static byte[] Rent(int minimumLength)
         {
-            int size = GetBucketSize(minimumLength);
-            if (size > MaxPooledBufferSize)
+            if (minimumLength < 0)
+                throw new ArgumentOutOfRangeException(nameof(minimumLength));
+            if (minimumLength == 0)
+                return Array.Empty<byte>();
+
+            int bucketIndex = GetBucketIndex(minimumLength);
+            if (bucketIndex < 0)
                 return new byte[minimumLength];
 
-            ConcurrentBag<byte[]> bucket = Buckets.GetOrAdd(size, _ => new ConcurrentBag<byte[]>());
             byte[] buffer;
-            if (bucket.TryTake(out buffer))
+            if (Buckets[bucketIndex].TryTake(out buffer))
                 return buffer;
-
-            return new byte[size];
+            return new byte[MinimumBucketSize << bucketIndex];
         }
 
         /// <summary>
@@ -96,28 +45,45 @@ namespace NetSquare.Core
         /// </summary>
         public static void Return(byte[] buffer)
         {
-            if (buffer == null || buffer.Length > MaxPooledBufferSize)
+            if (buffer == null || buffer.Length < MinimumBucketSize || buffer.Length > MaximumBucketSize)
                 return;
 
-            int size = GetBucketSize(buffer.Length);
-            if (size != buffer.Length)
+            int bucketIndex = GetBucketIndex(buffer.Length);
+            if (bucketIndex < 0 || (MinimumBucketSize << bucketIndex) != buffer.Length)
                 return;
-
-            Buckets.GetOrAdd(size, _ => new ConcurrentBag<byte[]>()).Add(buffer);
+            Buckets[bucketIndex].Add(buffer);
         }
 
         /// <summary>
-        /// Executes the get bucket size operation.
+        /// Creates every fixed power-of-two buffer bucket once during type initialization.
         /// </summary>
-        private static int GetBucketSize(int minimumLength)
+        /// <returns>Initialized buffer buckets.</returns>
+        private static ConcurrentBag<byte[]>[] CreateBuckets()
         {
-            if (minimumLength <= 0)
-                return 0;
+            ConcurrentBag<byte[]>[] buckets = new ConcurrentBag<byte[]>[BucketCount];
+            for (int index = 0; index < buckets.Length; index++)
+                buckets[index] = new ConcurrentBag<byte[]>();
+            return buckets;
+        }
 
-            int size = 256;
-            while (size < minimumLength && size < MaxPooledBufferSize)
-                size <<= 1;
-            return size < minimumLength ? minimumLength : size;
+        /// <summary>
+        /// Resolves the smallest power-of-two bucket that can hold a requested length.
+        /// </summary>
+        /// <param name="minimumLength">Requested buffer length.</param>
+        /// <returns>Bucket index, or -1 when the request exceeds the pooled range.</returns>
+        private static int GetBucketIndex(int minimumLength)
+        {
+            if (minimumLength <= 0 || minimumLength > MaximumBucketSize)
+                return -1;
+
+            int bucketSize = MinimumBucketSize;
+            int bucketIndex = 0;
+            while (bucketSize < minimumLength)
+            {
+                bucketSize <<= 1;
+                bucketIndex++;
+            }
+            return bucketIndex;
         }
     }
 }

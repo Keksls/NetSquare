@@ -66,17 +66,21 @@ namespace NetSquare.Core
         /// </summary>
         private bool isServer = false;
         /// <summary>
-        /// Stores the message types array value.
+        /// Stores routes whose coalesced payload became ready, avoiding a scan of every registered route.
         /// </summary>
-        private ushort[] messageTypesArray;
-        /// <summary>
-        /// Stores the last message type index sended value.
-        /// </summary>
-        private int lastMessageTypeIndexSended;
+        private readonly Queue<ushort> pendingUdpRoutes = new Queue<ushort>();
         /// <summary>
         /// Stores the current sending message value.
         /// </summary>
         private byte[] currentSendingMessage = null;
+        /// <summary>
+        /// Keeps the authenticated datagram alive until the socket completes the asynchronous send.
+        /// </summary>
+        private byte[] currentSendingDatagram;
+        /// <summary>
+        /// Reuses one socket operation object for every outgoing datagram on this connection.
+        /// </summary>
+        private readonly SocketAsyncEventArgs sendingArgs;
         /// <summary>
         /// Stores the send lock value.
         /// </summary>
@@ -102,6 +106,10 @@ namespace NetSquare.Core
         /// </summary>
         private int registrationCompleted;
         /// <summary>
+        /// Stores whether this UDP transport was closed.
+        /// </summary>
+        private int closed;
+        /// <summary>
         /// Gets whether UDP endpoint registration completed.
         /// </summary>
         public bool IsRegistrationCompleted { get { return Volatile.Read(ref registrationCompleted) != 0; } }
@@ -116,8 +124,9 @@ namespace NetSquare.Core
         public UDPConnection()
         {
             UDPSendingQueue = new Dictionary<ushort, byte[]>();
-            messageTypesArray = new ushort[0];
-            lastMessageTypeIndexSended = 0;
+            Volatile.Write(ref closed, 0);
+            sendingArgs = new SocketAsyncEventArgs();
+            sendingArgs.Completed += MessageSended;
         }
 
         /// <summary>
@@ -296,6 +305,40 @@ namespace NetSquare.Core
         }
 
         /// <summary>
+        /// Closes this UDP transport, clears queued data, and releases authentication state.
+        /// </summary>
+        public void Close()
+        {
+            if (Interlocked.Exchange(ref closed, 1) != 0)
+                return;
+
+            UnregisterServerClient();
+            Interlocked.Exchange(ref registrationCompleted, 0);
+            lock (sendLock)
+            {
+                currentSendingMessage = null;
+                isSendingUDPMessage = false;
+                queuedUdpMessages = 0;
+                ClearQueuedMessagesLocked();
+                RefreshSendingCountLocked();
+            }
+
+            UdpDatagramAuthenticator currentAuthenticator = authenticator;
+            authenticator = null;
+            currentAuthenticator?.Dispose();
+            byte[] sessionKey = udpSessionKey;
+            udpSessionKey = null;
+            if (sessionKey != null)
+                Array.Clear(sessionKey, 0, sessionKey.Length);
+
+            // Server transports share their hub socket; only standalone client sockets are owned here.
+            if (!isServer)
+            {
+                try { connection?.Close(); }
+                catch { }
+            }
+        }
+        /// <summary>
         /// Executes the unregister server client operation.
         /// </summary>
         public void UnregisterServerClient()
@@ -365,7 +408,7 @@ namespace NetSquare.Core
             byte[] payload,
             bool allowBeforeRegistration)
         {
-            if (payload == null || payload.Length == 0)
+            if (payload == null || payload.Length == 0 || Volatile.Read(ref closed) != 0)
                 return;
 
             bool shouldStartSend = false;
@@ -374,20 +417,25 @@ namespace NetSquare.Core
                 if (!allowBeforeRegistration && !IsRegistrationCompleted)
                     return;
 
-                if (!UDPSendingQueue.ContainsKey(headID))
+                byte[] queuedPayload;
+                if (!UDPSendingQueue.TryGetValue(headID, out queuedPayload))
                 {
                     UDPSendingQueue.Add(headID, null);
-                    Array.Resize(ref messageTypesArray, messageTypesArray.Length + 1);
-                    messageTypesArray[messageTypesArray.Length - 1] = headID;
+                    queuedPayload = null;
                 }
 
-                // Keep only the newest pending datagram for each route.
+                // Keep only the newest pending datagram for each route and enqueue the route once.
                 if (isSendingUDPMessage)
                 {
-                    if (UDPSendingQueue[headID] != null)
+                    if (queuedPayload != null)
+                    {
                         Interlocked.Increment(ref nbMessagesDropped);
+                    }
                     else
+                    {
+                        pendingUdpRoutes.Enqueue(headID);
                         queuedUdpMessages++;
+                    }
 
                     UDPSendingQueue[headID] = payload;
                 }
@@ -446,128 +494,125 @@ namespace NetSquare.Core
         }
 
         /// <summary>
-        /// Executes the begin send message operation.
+        /// Starts one UDP send with the reusable socket operation object.
         /// </summary>
+        /// <param name="message">Coalesced serialized payload to send.</param>
         private void BeginSendMessage(byte[] message)
         {
+            if (Volatile.Read(ref closed) != 0)
+            {
+                ResetSendPump();
+                return;
+            }
+
             try
             {
                 // Protect only the payload that survived coalescing, preserving sequence order and CPU time.
                 byte[] datagram = authenticator != null ? authenticator.Protect(message) : message;
+                currentSendingDatagram = datagram;
+                sendingArgs.RemoteEndPoint = isServer ? RemoteEndPoint : null;
+                sendingArgs.SetBuffer(datagram, 0, datagram.Length);
                 Interlocked.Add(ref sendedBytes, datagram.Length);
-                if (isServer)
-                    connection.BeginSend(datagram, datagram.Length, RemoteEndPoint, MessageSended, null);
-                else
-                    connection.BeginSend(datagram, datagram.Length, MessageSended, null);
+
+                Socket socket = connection.Client;
+                bool pending = isServer
+                    ? socket.SendToAsync(sendingArgs)
+                    : socket.SendAsync(sendingArgs);
+                if (!pending)
+                    ProcessSendCompletion(sendingArgs);
             }
             catch (SocketException)
             {
-                lock (sendLock)
-                {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
-                }
+                ResetSendPump();
             }
             catch (ObjectDisposedException)
             {
-                lock (sendLock)
-                {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
-                }
+                ResetSendPump();
             }
         }
 
         /// <summary>
-        /// Executes the message sended operation.
+        /// Handles completion of the reusable UDP socket operation.
         /// </summary>
-        private void MessageSended(IAsyncResult res)
+        /// <param name="sender">Socket that completed the send.</param>
+        /// <param name="eventArgs">Reusable send operation state.</param>
+        private void MessageSended(object sender, SocketAsyncEventArgs eventArgs)
         {
-            try
-            {
-                connection.EndSend(res);
-                NbMessagesSended++;
-
-                // send other message if there is some
-                byte[] nextMessage = null;
-                lock (sendLock)
-                {
-                    currentSendingMessage = null;
-                    if (GetNextSendingMessage(ref nextMessage))
-                    {
-                        currentSendingMessage = nextMessage;
-                    }
-                    else
-                    {
-                        isSendingUDPMessage = false;
-                    }
-                    RefreshSendingCountLocked();
-                }
-
-                if (nextMessage != null)
-                    BeginSendMessage(nextMessage);
-            }
-            catch (SocketException)
-            {
-                lock (sendLock)
-                {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
-                }
-            }
-            catch (ObjectDisposedException)
-            {
-                lock (sendLock)
-                {
-                    currentSendingMessage = null;
-                    isSendingUDPMessage = false;
-                    queuedUdpMessages = 0;
-                    ClearQueuedMessagesLocked();
-                    RefreshSendingCountLocked();
-                }
-            }
+            ProcessSendCompletion(eventArgs);
         }
 
         /// <summary>
-        /// Executes the get next sending message operation.
+        /// Advances the coalesced send pump after one synchronous or asynchronous socket completion.
         /// </summary>
+        /// <param name="eventArgs">Completed socket operation.</param>
+        private void ProcessSendCompletion(SocketAsyncEventArgs eventArgs)
+        {
+            if (eventArgs.SocketError != SocketError.Success ||
+                currentSendingDatagram == null ||
+                eventArgs.BytesTransferred != currentSendingDatagram.Length)
+            {
+                ResetSendPump();
+                return;
+            }
+
+            NbMessagesSended++;
+            currentSendingDatagram = null;
+            eventArgs.SetBuffer(null, 0, 0);
+
+            byte[] nextMessage = null;
+            lock (sendLock)
+            {
+                currentSendingMessage = null;
+                if (Volatile.Read(ref closed) == 0 && GetNextSendingMessage(ref nextMessage))
+                    currentSendingMessage = nextMessage;
+                else
+                    isSendingUDPMessage = false;
+                RefreshSendingCountLocked();
+            }
+
+            if (nextMessage != null)
+                BeginSendMessage(nextMessage);
+        }
+
+        /// <summary>
+        /// Dequeues the next route whose coalesced UDP payload is ready.
+        /// </summary>
+        /// <param name="message">Newest payload retained for the dequeued route.</param>
+        /// <returns>True when a payload is ready to send.</returns>
         private bool GetNextSendingMessage(ref byte[] message)
         {
-            if (messageTypesArray.Length == 0)
-                return false;
-
-            // switch to next index
-            lastMessageTypeIndexSended++;
-            lastMessageTypeIndexSended %= messageTypesArray.Length;
-
-            int nbTry = 0;
-            while (nbTry < messageTypesArray.Length)
+            while (pendingUdpRoutes.Count > 0)
             {
-                if (UDPSendingQueue[messageTypesArray[lastMessageTypeIndexSended]] != null)
-                {
-                    message = UDPSendingQueue[messageTypesArray[lastMessageTypeIndexSended]];
-                    UDPSendingQueue[messageTypesArray[lastMessageTypeIndexSended]] = null;
-                    queuedUdpMessages--;
-                    return true;
-                }
-                // switch to next index
-                lastMessageTypeIndexSended++;
-                lastMessageTypeIndexSended %= messageTypesArray.Length;
-                nbTry++;
+                ushort headID = pendingUdpRoutes.Dequeue();
+                byte[] queuedPayload;
+                if (!UDPSendingQueue.TryGetValue(headID, out queuedPayload) || queuedPayload == null)
+                    continue;
+
+                UDPSendingQueue[headID] = null;
+                queuedUdpMessages--;
+                message = queuedPayload;
+                return true;
             }
 
             return false;
         }
 
+        /// <summary>
+        /// Clears the active and queued UDP sends after a terminal socket failure.
+        /// </summary>
+        private void ResetSendPump()
+        {
+            lock (sendLock)
+            {
+                currentSendingMessage = null;
+                currentSendingDatagram = null;
+                sendingArgs.SetBuffer(null, 0, 0);
+                isSendingUDPMessage = false;
+                queuedUdpMessages = 0;
+                ClearQueuedMessagesLocked();
+                RefreshSendingCountLocked();
+            }
+        }
         /// <summary>
         /// Executes the refresh sending count locked operation.
         /// </summary>
@@ -581,8 +626,15 @@ namespace NetSquare.Core
         /// </summary>
         private void ClearQueuedMessagesLocked()
         {
-            for (int i = 0; i < messageTypesArray.Length; i++)
-                UDPSendingQueue[messageTypesArray[i]] = null;
+            pendingUdpRoutes.Clear();
+            if (UDPSendingQueue.Count == 0)
+                return;
+
+            // Route registration is rare, so clearing retained payloads after failure stays off the hot path.
+            ushort[] routeIDs = new ushort[UDPSendingQueue.Count];
+            UDPSendingQueue.Keys.CopyTo(routeIDs, 0);
+            for (int index = 0; index < routeIDs.Length; index++)
+                UDPSendingQueue[routeIDs[index]] = null;
         }
 
         /// <summary>

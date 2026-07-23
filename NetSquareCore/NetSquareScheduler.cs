@@ -101,6 +101,7 @@ namespace NetSquare.Core
 
             if (runner.IsRunning)
                 runner.StopAction();
+            runner.Detach();
             return true;
         }
 
@@ -199,7 +200,7 @@ namespace NetSquare.Core
                 if (!ScheduledActions.TryGetValue(actionName, out runner))
                     return;
             }
-            runner.Action.Frequency = GetMsFrequencyFromHz(frequencyHz);
+            runner.UpdateFrequency(GetMsFrequencyFromHz(frequencyHz));
         }
 
         /// <summary>
@@ -215,7 +216,7 @@ namespace NetSquare.Core
                 if (!ScheduledActions.TryGetValue(actionName, out runner))
                     return;
             }
-            runner.Action.Frequency = frequencyMs;
+            runner.UpdateFrequency(frequencyMs);
         }
 
     }
@@ -263,39 +264,49 @@ namespace NetSquare.Core
     /// </summary>
     internal class NetSquareScheduledActionRunner
     {
+        #region Fields
+        [ThreadStatic]
+        private static NetSquareScheduledActionRunner executingRunner;
+        private readonly object lifecycleLock = new object();
+        private readonly ManualResetEventSlim idleSignal = new ManualResetEventSlim(true);
+        private long nextDueTimestamp;
+        private int queuedOrExecuting;
+        private int running;
+        #endregion
+
+        #region Properties and events
         /// <summary>
-        /// Gets or sets the action value.
+        /// Gets the scheduled action configuration.
         /// </summary>
         public NetSquareScheduledAction Action { get; private set; }
+
         /// <summary>
-        /// Gets or sets the is running value.
+        /// Gets whether this action accepts future executions.
         /// </summary>
         public bool IsRunning { get { return Volatile.Read(ref running) != 0; } }
+
         /// <summary>
-        /// Occurs when do action is raised.
+        /// Occurs after the scheduled callback executes successfully.
         /// </summary>
         public event Action OnDoAction;
-        /// <summary>
-        /// Stores the action thread value.
-        /// </summary>
-        private Thread actionThread;
-        private readonly object lifecycleLock = new object();
-        private readonly ManualResetEventSlim stopSignal = new ManualResetEventSlim(false);
-        private int running;
+        #endregion
 
+        #region Constructor
         /// <summary>
-        /// Executes the net square scheduled action runner operation.
+        /// Initializes a runner managed by the shared scheduler engine.
         /// </summary>
+        /// <param name="action">Scheduled action configuration.</param>
         public NetSquareScheduledActionRunner(NetSquareScheduledAction action)
         {
-            Action = action;
-            Volatile.Write(ref running, 0);
-            actionThread = null;
+            Action = action ?? throw new ArgumentNullException(nameof(action));
         }
+        #endregion
 
+        #region Lifecycle
         /// <summary>
-        /// Start the action repetively
+        /// Starts the action and makes its first execution immediately due.
         /// </summary>
+        /// <returns>True when the action transitioned to running.</returns>
         public bool StartAction()
         {
             lock (lifecycleLock)
@@ -303,20 +314,70 @@ namespace NetSquare.Core
                 if (IsRunning)
                     return false;
 
-                stopSignal.Reset();
-                actionThread = Action.SmartFrequencyAdjusting
-                    ? new Thread(SmartFrequencyActionLoop)
-                    : new Thread(NormalFrequencyActionLoop);
-                actionThread.IsBackground = true;
-                actionThread.Name = "NetSquare scheduler " + Action.Name;
+                Interlocked.Exchange(ref nextDueTimestamp, Stopwatch.GetTimestamp());
                 Volatile.Write(ref running, 1);
-                actionThread.Start();
-                return true;
             }
+
+            NetSquareSchedulerEngine.Register(this);
+            return true;
         }
 
         /// <summary>
-        /// Do the action now for once
+        /// Stops future executions and waits for an active callback to finish.
+        /// </summary>
+        /// <returns>True when the action transitioned to stopped.</returns>
+        public bool StopAction()
+        {
+            lock (lifecycleLock)
+            {
+                if (!IsRunning)
+                    return false;
+                Volatile.Write(ref running, 0);
+            }
+
+            NetSquareSchedulerEngine.SignalScheduleChanged();
+            if (ReferenceEquals(executingRunner, this))
+                return true;
+
+            Stopwatch stopWatch = Stopwatch.StartNew();
+            while (Volatile.Read(ref queuedOrExecuting) != 0)
+            {
+                int remainingMilliseconds = 5000 - (int)stopWatch.ElapsedMilliseconds;
+                if (remainingMilliseconds <= 0 || !idleSignal.Wait(remainingMilliseconds))
+                {
+                    throw new TimeoutException(
+                        "The scheduled action '" + Action.Name + "' did not stop within 5000 ms.");
+                }
+                Thread.Yield();
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Removes this stopped runner from the shared timing coordinator.
+        /// </summary>
+        public void Detach()
+        {
+            NetSquareSchedulerEngine.Unregister(this);
+        }
+
+        /// <summary>
+        /// Updates the interval and applies it to the next execution without restarting the runner.
+        /// </summary>
+        /// <param name="frequencyMilliseconds">New interval in milliseconds.</param>
+        public void UpdateFrequency(int frequencyMilliseconds)
+        {
+            Action.Frequency = Math.Max(1, frequencyMilliseconds);
+            Interlocked.Exchange(
+                ref nextDueTimestamp,
+                Stopwatch.GetTimestamp() + MillisecondsToTimestampTicks(Action.Frequency));
+            NetSquareSchedulerEngine.SignalScheduleChanged();
+        }
+        #endregion
+
+        #region Execution
+        /// <summary>
+        /// Executes the callback immediately on the caller thread.
         /// </summary>
         public void DoActionImmediate()
         {
@@ -325,76 +386,95 @@ namespace NetSquare.Core
         }
 
         /// <summary>
-        /// stop the scheduled action
+        /// Atomically reserves one due execution for the shared ready queue.
         /// </summary>
-        public bool StopAction()
+        /// <param name="nowTimestamp">Current stopwatch timestamp.</param>
+        /// <returns>True when this runner must be enqueued.</returns>
+        internal bool TryQueue(long nowTimestamp)
         {
-            Thread threadToJoin;
-            lock (lifecycleLock)
+            if (!IsRunning || nowTimestamp < Interlocked.Read(ref nextDueTimestamp))
+                return false;
+            if (Interlocked.CompareExchange(ref queuedOrExecuting, 1, 0) != 0)
+                return false;
+            if (!IsRunning)
             {
-                if (!IsRunning)
-                    return false;
-
-                Volatile.Write(ref running, 0);
-                stopSignal.Set();
-                threadToJoin = actionThread;
+                Interlocked.Exchange(ref queuedOrExecuting, 0);
+                return false;
             }
 
-            if (threadToJoin != null && threadToJoin != Thread.CurrentThread && !threadToJoin.Join(5000))
-            {
-                throw new TimeoutException(
-                    "The scheduled action '" + Action.Name + "' did not stop within 5000 ms.");
-            }
+            idleSignal.Reset();
             return true;
         }
 
         /// <summary>
-        /// Executes the smart frequency action loop operation.
+        /// Returns the remaining wait before this runner becomes due.
         /// </summary>
-        private void SmartFrequencyActionLoop()
+        /// <param name="nowTimestamp">Current stopwatch timestamp.</param>
+        /// <returns>Remaining delay in milliseconds.</returns>
+        internal int GetDelayMilliseconds(long nowTimestamp)
         {
-            Stopwatch stopwatch = new Stopwatch();
+            if (!IsRunning || Volatile.Read(ref queuedOrExecuting) != 0)
+                return int.MaxValue;
+
+            long remainingTicks = Interlocked.Read(ref nextDueTimestamp) - nowTimestamp;
+            if (remainingTicks <= 0)
+                return 0;
+
+            long milliseconds = (remainingTicks * 1000L + Stopwatch.Frequency - 1L) / Stopwatch.Frequency;
+            return milliseconds > int.MaxValue ? int.MaxValue : (int)milliseconds;
+        }
+
+        /// <summary>
+        /// Executes one reserved callback and releases the runner for its next due time.
+        /// </summary>
+        internal void ExecuteQueued()
+        {
+            long startedTimestamp = Stopwatch.GetTimestamp();
+            executingRunner = this;
             try
             {
-                while (IsRunning)
-                {
-                    stopwatch.Restart();
-                    Action.Callback();
-                    OnDoAction?.Invoke();
-                    stopwatch.Stop();
-                    int waitMilliseconds = (int)(Action.Frequency - stopwatch.ElapsedMilliseconds);
-                    if (waitMilliseconds < 1)
-                        waitMilliseconds = 1;
-                    if (stopSignal.Wait(waitMilliseconds))
-                        return;
-                }
+                if (!IsRunning)
+                    return;
+
+                Action.Callback();
+                OnDoAction?.Invoke();
+            }
+            catch (Exception exception)
+            {
+                // One failing callback stops only its own schedule and never kills a shared worker.
+                Volatile.Write(ref running, 0);
+                Trace.TraceError("Scheduled action '" + Action.Name + "' failed: " + exception);
             }
             finally
             {
-                Volatile.Write(ref running, 0);
+                executingRunner = null;
+                if (IsRunning)
+                {
+                    long completedTimestamp = Stopwatch.GetTimestamp();
+                    long baseTimestamp = Action.SmartFrequencyAdjusting
+                        ? startedTimestamp
+                        : completedTimestamp;
+                    Interlocked.Exchange(
+                        ref nextDueTimestamp,
+                        baseTimestamp + MillisecondsToTimestampTicks(Action.Frequency));
+                }
+
+                Interlocked.Exchange(ref queuedOrExecuting, 0);
+                idleSignal.Set();
+                NetSquareSchedulerEngine.SignalScheduleChanged();
             }
         }
 
         /// <summary>
-        /// Executes the normal frequency action loop operation.
+        /// Converts a positive millisecond interval into stopwatch timestamp ticks.
         /// </summary>
-        private void NormalFrequencyActionLoop()
+        /// <param name="milliseconds">Interval in milliseconds.</param>
+        /// <returns>Equivalent stopwatch timestamp ticks.</returns>
+        private static long MillisecondsToTimestampTicks(int milliseconds)
         {
-            try
-            {
-                while (IsRunning)
-                {
-                    Action.Callback();
-                    OnDoAction?.Invoke();
-                    if (stopSignal.Wait(Math.Max(1, Action.Frequency)))
-                        return;
-                }
-            }
-            finally
-            {
-                Volatile.Write(ref running, 0);
-            }
+            return Math.Max(1L, (long)Math.Max(1, milliseconds) * Stopwatch.Frequency / 1000L);
         }
+        #endregion
     }
 }
 #endregion

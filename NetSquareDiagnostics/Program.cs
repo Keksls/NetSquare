@@ -217,6 +217,7 @@ namespace NetSquareDiagnostics
             RunTest("concurrent client IDs are unique", TestConcurrentClientIdsAreUnique);
             RunTest("bounded queue applies backpressure", TestBoundedQueueAppliesBackpressure);
             RunTest("scheduler stops and restarts deterministically", TestSchedulerStopsAndRestartsDeterministically);
+            RunTest("scheduler uses bounded shared workers", TestSchedulerUsesBoundedSharedWorkers);
             RunTest("SetType uses argument", TestSetType);
             RunTest("TCP fragmented receive", TestTcpFragmentedReceive);
             RunTest("TCP oversized frame disconnects", TestTcpOversizedFrameDisconnects);
@@ -552,6 +553,70 @@ namespace NetSquareDiagnostics
             }
         }
 
+        /// <summary>
+        /// Verifies that many independent schedules share a bounded worker set instead of creating one thread each.
+        /// </summary>
+        private static void TestSchedulerUsesBoundedSharedWorkers()
+        {
+            const int actionCount = 64;
+            List<string> actionNames = new List<string>(actionCount);
+            CountdownEvent completed = new CountdownEvent(actionCount);
+            int concurrentCallbacks = 0;
+            int maximumConcurrentCallbacks = 0;
+            try
+            {
+                for (int index = 0; index < actionCount; index++)
+                {
+                    string actionName = "diagnostics-shared-scheduler-" + Guid.NewGuid().ToString("N");
+                    actionNames.Add(actionName);
+                    Assert(NetSquareScheduler.AddAction(
+                        actionName,
+                        10000,
+                        false,
+                        delegate
+                        {
+                            int concurrent = Interlocked.Increment(ref concurrentCallbacks);
+                            try
+                            {
+                                int observedMaximum;
+                                do
+                                {
+                                    observedMaximum = Volatile.Read(ref maximumConcurrentCallbacks);
+                                    if (concurrent <= observedMaximum)
+                                        break;
+                                }
+                                while (Interlocked.CompareExchange(
+                                    ref maximumConcurrentCallbacks,
+                                    concurrent,
+                                    observedMaximum) != observedMaximum);
+                                Thread.Sleep(20);
+                            }
+                            finally
+                            {
+                                Interlocked.Decrement(ref concurrentCallbacks);
+                                completed.Signal();
+                            }
+                        }),
+                        "shared scheduler action could not be registered");
+                    Assert(NetSquareScheduler.StartAction(actionName),
+                        "shared scheduler action could not be started");
+                }
+
+                Assert(completed.Wait(5000), "shared scheduler workers did not drain all due actions");
+                Assert(maximumConcurrentCallbacks > 0, "shared scheduler did not execute callbacks");
+                Assert(maximumConcurrentCallbacks <= 16,
+                    "shared scheduler exceeded its bounded worker count");
+            }
+            finally
+            {
+                for (int index = 0; index < actionNames.Count; index++)
+                {
+                    NetSquareScheduler.StopAction(actionNames[index]);
+                    NetSquareScheduler.RemoveAction(actionNames[index]);
+                }
+                completed.Dispose();
+            }
+        }
         /// <summary>
         /// Executes the test set type operation.
         /// </summary>

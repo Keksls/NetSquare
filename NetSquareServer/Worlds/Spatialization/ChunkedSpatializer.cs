@@ -46,9 +46,9 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         private readonly List<ChunkedClient> spatializationClients = new List<ChunkedClient>();
         /// <summary>
-        /// Stores the reusable visibility buffer for synchronization ticks.
+        /// Caches one serialized synchronization payload per source chunk for the current tick.
         /// </summary>
-        private readonly List<uint> synchronizationVisibleClientIDs = new List<uint>();
+        private readonly Dictionary<int, byte[]> synchronizationPayloadsByChunk = new Dictionary<int, byte[]>();
 
         /// <summary>
         /// Initializes a new instance of the chunked spatializer class.
@@ -157,28 +157,33 @@ namespace NetSquare.Server.Worlds
                     return;
 
                 syncStopWatch.Restart();
-                // Reuse one visibility buffer for all clients in this synchronization pass.
-                List<uint> visibleClientIDs = synchronizationVisibleClientIDs;
+                // Every client in one source chunk sees the same neighbourhood, so serialize that payload once.
+                synchronizationPayloadsByChunk.Clear();
                 foreach (KeyValuePair<uint, ChunkedClient> clientPair in Clients)
                 {
                     ChunkedClient client = clientPair.Value;
-                    visibleClientIDs.Clear();
-                    lock (client.SyncRoot)
-                        visibleClientIDs.AddRange(client.VisibleIDs);
-
-                    if (visibleClientIDs.Count == 0)
-                        continue;
-
-                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
-                    foreach (uint visibleClientID in visibleClientIDs)
+                    int chunkKey = GetChunkKey(client.ChunkX, client.ChunkY);
+                    byte[] serializedPayload;
+                    if (!synchronizationPayloadsByChunk.TryGetValue(chunkKey, out serializedPayload))
                     {
-                        List<INetSquareSynchFrame> frames;
-                        if (frameSnapshot.TryGetValue(visibleClientID, out frames) && frames.Count > 0)
-                            NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleClientID, frames);
+                        SpatialChunk chunk = GetChunk(client.ChunkX, client.ChunkY);
+                        NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
+                        if (chunk != null)
+                        {
+                            foreach (uint visibleClientID in chunk.Clients.Keys)
+                            {
+                                List<INetSquareSynchFrame> frames;
+                                if (frameSnapshot.TryGetValue(visibleClientID, out frames) && frames.Count > 0)
+                                    NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleClientID, frames);
+                            }
+                        }
+
+                        serializedPayload = synchMessage.HasWriteData ? synchMessage.Serialize() : null;
+                        synchronizationPayloadsByChunk[chunkKey] = serializedPayload;
                     }
 
-                    if (synchMessage.HasWriteData)
-                        World.server.SendToClient(synchMessage, client.ClientID);
+                    if (serializedPayload != null)
+                        World.server.SendToClient(serializedPayload, client.ClientID);
                 }
                 syncStopWatch.Stop();
                 UpdateSynchFrequency((int)syncStopWatch.ElapsedMilliseconds);
@@ -187,6 +192,7 @@ namespace NetSquare.Server.Worlds
             {
                 if (syncStopWatch.IsRunning)
                     syncStopWatch.Stop();
+                synchronizationPayloadsByChunk.Clear();
                 ReturnDrainedFrames(frameSnapshot);
             }
         }
@@ -284,6 +290,7 @@ namespace NetSquare.Server.Worlds
                 client.NextVisibleIDs.Clear();
                 client.VisibleIDs = client.NextVisibleIDs;
                 client.NextVisibleIDs = leaving;
+                client.PublishVisibleIDs(client.VisibleIDs);
             }
 
             NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
@@ -313,8 +320,11 @@ namespace NetSquare.Server.Worlds
             lock (client.SyncRoot)
             {
                 previousVisible = client.VisibleIDs;
+                bool visibilityChanged = !previousVisible.SetEquals(currentVisible);
                 client.VisibleIDs = currentVisible;
                 client.NextVisibleIDs = previousVisible;
+                if (visibilityChanged)
+                    client.PublishVisibleIDs(currentVisible);
             }
 
             NetworkMessage leavingMessage = null;
@@ -373,6 +383,16 @@ namespace NetSquare.Server.Worlds
             return GetChunk(chunkX, chunkY);
         }
 
+        /// <summary>
+        /// Packs signed chunk coordinates into one allocation-free dictionary key.
+        /// </summary>
+        /// <param name="chunkX">Chunk X coordinate.</param>
+        /// <param name="chunkY">Chunk Y coordinate.</param>
+        /// <returns>Unique key for the coordinate pair.</returns>
+        private static int GetChunkKey(short chunkX, short chunkY)
+        {
+            return (chunkX << 16) | (ushort)chunkY;
+        }
         /// <summary>
         /// Executes the get chunk operation.
         /// </summary>
@@ -482,13 +502,24 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public override void ForEach(Action<uint, IEnumerable<uint>> callback)
         {
-            foreach (var client in Clients)
-            {
-                HashSet<uint> visible;
-                lock (client.Value.SyncRoot)
-                    visible = new HashSet<uint>(client.Value.VisibleIDs);
-                callback(client.Key, visible);
-            }
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
+
+            foreach (KeyValuePair<uint, ChunkedClient> client in Clients)
+                callback(client.Key, new HashSet<uint>(client.Value.GetVisibleIDsSnapshot()));
+        }
+
+        /// <summary>
+        /// Executes an internal callback with immutable visibility snapshots and no per-client copy.
+        /// </summary>
+        /// <param name="callback">Internal synchronization callback.</param>
+        internal override void ForEachVisibleSnapshot(Action<uint, uint[]> callback)
+        {
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
+
+            foreach (KeyValuePair<uint, ChunkedClient> client in Clients)
+                callback(client.Key, client.Value.GetVisibleIDsSnapshot());
         }
 
         /// <summary>

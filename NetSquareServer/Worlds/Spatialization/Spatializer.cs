@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 
 namespace NetSquare.Server.Worlds
 {
@@ -42,11 +43,13 @@ namespace NetSquare.Server.Worlds
         /// <summary>
         /// Stores the synch name value.
         /// </summary>
-        private string synchName;
+        private static long nextSchedulerInstanceID;
+        private readonly object lifecycleLock = new object();
+        private readonly string synchName;
         /// <summary>
         /// Stores the spatialization name value.
         /// </summary>
-        private string spatializationName;
+        private readonly string spatializationName;
         /// <summary>
         /// Stores the synch max frequency value.
         /// </summary>
@@ -98,8 +101,9 @@ namespace NetSquare.Server.Worlds
         {
             World = world;
             ClientsTransformFrames = new ConcurrentDictionary<uint, List<INetSquareSynchFrame>>();
-            synchName = "Spatializer_Sync_World_" + World.ID;
-            spatializationName = "Spatializer_Spatialization_World_" + World.ID;
+            long schedulerInstanceID = Interlocked.Increment(ref nextSchedulerInstanceID);
+            synchName = "Spatializer_Sync_World_" + World.ID + "-" + schedulerInstanceID;
+            spatializationName = "Spatializer_Spatialization_World_" + World.ID + "-" + schedulerInstanceID;
             SpatializationFrequency = NetSquareScheduler.GetMsFrequencyFromHz(spatializationFreq);
             SynchFrequency = NetSquareScheduler.GetMsFrequencyFromHz(synchFreq);
             MaxStoredFramesPerClient = 256;
@@ -372,6 +376,31 @@ namespace NetSquare.Server.Worlds
         public abstract void ForEach(Action<uint, IEnumerable<uint>> callback);
 
         /// <summary>
+        /// Executes an internal callback with immutable visibility snapshots and no per-client copy.
+        /// </summary>
+        /// <param name="callback">Internal synchronization callback.</param>
+        internal virtual void ForEachVisibleSnapshot(Action<uint, uint[]> callback)
+        {
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
+
+            // Custom spatializers keep working through the public API; built-ins override this allocation path.
+            ForEach(delegate (uint clientID, IEnumerable<uint> visibleClients)
+            {
+                if (visibleClients == null)
+                {
+                    callback(clientID, Array.Empty<uint>());
+                    return;
+                }
+
+                uint[] visibleArray = visibleClients as uint[];
+                callback(
+                    clientID,
+                    visibleArray ?? new List<uint>(visibleClients).ToArray());
+            });
+        }
+
+        /// <summary>
         /// Creates a debug snapshot of this spatializer.
         /// </summary>
         /// <returns>Spatializer debug snapshot.</returns>
@@ -396,7 +425,7 @@ namespace NetSquare.Server.Worlds
                 snapshot.PendingFrameCount += pendingFrames;
             }
 
-            ForEach(delegate (uint clientID, IEnumerable<uint> visibleClients)
+            ForEachVisibleSnapshot(delegate (uint clientID, uint[] visibleClients)
             {
                 snapshot.VisibleClientsByClientID[clientID] = visibleClients != null ? new List<uint>(visibleClients) : new List<uint>();
             });
@@ -429,30 +458,57 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public void Start()
         {
-            if (started)
-                return;
+            lock (lifecycleLock)
+            {
+                if (started)
+                    return;
 
-            started = true;
-            // start synchronization loop
-            NetSquareScheduler.AddAction(synchName, SynchFrequency, true, SynchLoop);
-            NetSquareScheduler.StartAction(synchName);
-            // start spatialization loop
-            NetSquareScheduler.AddAction(spatializationName, SpatializationFrequency, true, SpatializationLoop);
-            NetSquareScheduler.StartAction(spatializationName);
+                if (!NetSquareScheduler.AddAction(synchName, SynchFrequency, true, SynchLoop))
+                    throw new InvalidOperationException("The spatial synchronization action is already registered.");
+                if (!NetSquareScheduler.AddAction(
+                    spatializationName,
+                    SpatializationFrequency,
+                    true,
+                    SpatializationLoop))
+                {
+                    NetSquareScheduler.RemoveAction(synchName);
+                    throw new InvalidOperationException("The spatialization action is already registered.");
+                }
+
+                started = true;
+                if (!NetSquareScheduler.StartAction(synchName) ||
+                    !NetSquareScheduler.StartAction(spatializationName))
+                {
+                    started = false;
+                    NetSquareScheduler.StopAction(synchName);
+                    NetSquareScheduler.StopAction(spatializationName);
+                    NetSquareScheduler.RemoveAction(synchName);
+                    NetSquareScheduler.RemoveAction(spatializationName);
+                    throw new InvalidOperationException("The spatializer actions could not be started.");
+                }
+            }
         }
 
         /// <summary>
-        /// Stop synchronization loop
-        /// Stop spatialization loop
+        /// Stops both spatializer actions and removes them from the shared scheduler.
         /// </summary>
         public void Stop()
         {
-            if (!started)
-                return;
+            lock (lifecycleLock)
+            {
+                if (!started)
+                {
+                    NetSquareScheduler.RemoveAction(synchName);
+                    NetSquareScheduler.RemoveAction(spatializationName);
+                    return;
+                }
 
-            NetSquareScheduler.StopAction(synchName);
-            NetSquareScheduler.StopAction(spatializationName);
-            started = false;
+                started = false;
+                NetSquareScheduler.StopAction(synchName);
+                NetSquareScheduler.StopAction(spatializationName);
+                NetSquareScheduler.RemoveAction(synchName);
+                NetSquareScheduler.RemoveAction(spatializationName);
+            }
         }
     }
 

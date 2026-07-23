@@ -730,16 +730,32 @@ namespace NetSquare.Core
             if (!IsSerialized && Serializer.Length > 0)
                 prefixLength = Serializer.Length;
 
-            // Materialize once so one-shot enumerables cannot change between sizing and serialization.
-            List<NetworkMessage> blocks = new List<NetworkMessage>();
+            // Reuse stable collections directly; materialize only genuinely one-shot enumerables.
+            int maximumBlockCount = NetSquareSerializer.MaxCollectionLength;
+            if (maximumBlockCount < 0)
+                throw new InvalidOperationException("MaxCollectionLength cannot be negative.");
+
+            ICollection<NetworkMessage> blocks = messages as ICollection<NetworkMessage>;
+            if (blocks == null)
+            {
+                List<NetworkMessage> materializedBlocks = new List<NetworkMessage>();
+                foreach (NetworkMessage message in messages)
+                {
+                    if (materializedBlocks.Count >= maximumBlockCount)
+                        throw new InvalidDataException("The packed message contains too many blocks.");
+                    materializedBlocks.Add(message);
+                }
+                blocks = materializedBlocks;
+            }
+            if (blocks.Count > maximumBlockCount)
+                throw new InvalidDataException("The packed message contains too many blocks.");
+
             int headSize = GetHeadSize();
             int length = checked(headSize + prefixLength);
-            foreach (NetworkMessage message in messages)
+            foreach (NetworkMessage message in blocks)
             {
                 if (message == null)
                     throw new InvalidDataException("Packed messages cannot contain null entries.");
-                if (blocks.Count >= NetSquareSerializer.MaxCollectionLength)
-                    throw new InvalidDataException("The packed message contains too many blocks.");
 
                 int blockLength = GetPackBlockLength(message, alreadySerialized);
                 if (blockLength < 0 || blockLength > UInt24.MaxValue)
@@ -748,7 +764,6 @@ namespace NetSquare.Core
                 length = checked(length + blockLength + 7);
                 if (length > MaxDecodedMessageSize)
                     throw new InvalidDataException("The packed message exceeds the configured decoded size limit.");
-                blocks.Add(message);
             }
 
             if (blocks.Count == 0 && prefixLength == 0)

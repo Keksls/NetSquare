@@ -24,6 +24,9 @@ namespace NetSquareDiagnostics
         /// <returns>Process exit code.</returns>
         public static int Run(string[] args)
         {
+            if (HasArg(args, "--spatial-matrix"))
+                return RunSpatialMatrix(args);
+
             int clientCount = GetIntArgValue(args, "--clients", 16);
             int durationSeconds = GetIntArgValue(args, "--duration-seconds", 10);
             int tickMs = GetIntArgValue(args, "--tick-ms", 50);
@@ -75,6 +78,11 @@ namespace NetSquareDiagnostics
                         throw new InvalidOperationException("client " + i + " failed to join world");
                 }
 
+                int gen0Before = GC.CollectionCount(0);
+                int gen1Before = GC.CollectionCount(1);
+                int gen2Before = GC.CollectionCount(2);
+                long memoryBefore = GC.GetTotalMemory(false);
+                TimeSpan cpuBefore = Process.GetCurrentProcess().TotalProcessorTime;
                 Stopwatch stopwatch = Stopwatch.StartNew();
                 while (stopwatch.Elapsed.TotalSeconds < durationSeconds)
                 {
@@ -88,8 +96,18 @@ namespace NetSquareDiagnostics
                     Thread.Sleep(tickMs);
                 }
 
+                stopwatch.Stop();
+                TimeSpan cpuAfter = Process.GetCurrentProcess().TotalProcessorTime;
+                long memoryAfter = GC.GetTotalMemory(false);
                 Thread.Sleep(500);
+                double elapsedSeconds = Math.Max(0.001, stopwatch.Elapsed.TotalSeconds);
                 Console.WriteLine("  sent frames=" + sentFrames + " received frames=" + receivedFrames);
+                Console.WriteLine("  sent frames/s=" + (sentFrames / elapsedSeconds).ToString("0", CultureInfo.InvariantCulture));
+                Console.WriteLine("  process cpu ms=" + (cpuAfter - cpuBefore).TotalMilliseconds.ToString("0.0", CultureInfo.InvariantCulture));
+                Console.WriteLine("  gc0=" + (GC.CollectionCount(0) - gen0Before) +
+                    " gc1=" + (GC.CollectionCount(1) - gen1Before) +
+                    " gc2=" + (GC.CollectionCount(2) - gen2Before));
+                Console.WriteLine("  managed memory delta=" + (memoryAfter - memoryBefore));
                 Console.WriteLine("  world clients=" + world.Clients.Count + " pending=" + (world.Spatializer != null ? world.Spatializer.CreateSnapshot().PendingFrameCount : 0));
                 return 0;
             }
@@ -121,6 +139,65 @@ namespace NetSquareDiagnostics
                 if (serverThread != null && serverThread.IsAlive)
                     serverThread.Join(1000);
             }
+        }
+        /// <summary>
+        /// Runs comparable simple and chunked spatialization scenarios at increasing client counts.
+        /// </summary>
+        /// <param name="args">Original command-line arguments.</param>
+        /// <returns>Zero when every scenario succeeds.</returns>
+        private static int RunSpatialMatrix(string[] args)
+        {
+            int[] clientCounts = { 100, 500, 1000 };
+            for (int spatializerIndex = 0; spatializerIndex < 2; spatializerIndex++)
+            {
+                bool simpleSpatializer = spatializerIndex == 0;
+                for (int countIndex = 0; countIndex < clientCounts.Length; countIndex++)
+                {
+                    List<string> scenarioArguments = CopyScenarioArguments(args);
+                    scenarioArguments.Add("--clients");
+                    scenarioArguments.Add(clientCounts[countIndex].ToString(CultureInfo.InvariantCulture));
+                    if (simpleSpatializer)
+                        scenarioArguments.Add("--simple-spatializer");
+
+                    Console.WriteLine();
+                    Console.WriteLine(
+                        "Spatial matrix: " +
+                        (simpleSpatializer ? "simple" : "chunked") +
+                        " clients=" + clientCounts[countIndex]);
+                    int exitCode = Run(scenarioArguments.ToArray());
+                    if (exitCode != 0)
+                        return exitCode;
+                }
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// Copies matrix arguments while removing options that must be unique per generated scenario.
+        /// </summary>
+        /// <param name="args">Original command-line arguments.</param>
+        /// <returns>Arguments safe to reuse for one generated scenario.</returns>
+        private static List<string> CopyScenarioArguments(string[] args)
+        {
+            List<string> copied = new List<string>();
+            if (args == null)
+                return copied;
+
+            for (int index = 0; index < args.Length; index++)
+            {
+                string argument = args[index];
+                if (string.Equals(argument, "--spatial-matrix", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(argument, "--simple-spatializer", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (string.Equals(argument, "--clients", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(argument, "--port", StringComparison.OrdinalIgnoreCase))
+                {
+                    index++;
+                    continue;
+                }
+                copied.Add(argument);
+            }
+            return copied;
         }
         #endregion
 

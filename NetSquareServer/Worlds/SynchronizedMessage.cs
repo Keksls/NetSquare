@@ -22,6 +22,22 @@ namespace NetSquare.Server.Worlds
         /// Gets or sets the messages list value.
         /// </summary>
         private ConcurrentDictionary<uint, NetworkMessage> messagesList = new ConcurrentDictionary<uint, NetworkMessage>(); // clientID => message
+        /// <summary>
+        /// Coordinates reuse of the temporary filtered-message list.
+        /// </summary>
+        private readonly object packingLock = new object();
+        /// <summary>
+        /// Stores the reusable filtered-message list used while building recipient-specific packets.
+        /// </summary>
+        private readonly List<NetworkMessage> reusablePackingMessages = new List<NetworkMessage>();
+        /// <summary>
+        /// Coordinates reuse of the drained snapshot dictionary.
+        /// </summary>
+        private readonly object snapshotPoolLock = new object();
+        /// <summary>
+        /// Stores one reusable drained snapshot dictionary.
+        /// </summary>
+        private Dictionary<uint, NetworkMessage> reusableSnapshot;
 
         /// <summary>
         /// Initializes a new instance of the synchronized message class.
@@ -55,8 +71,16 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public Dictionary<uint, NetworkMessage> GetSnapshot()
         {
-            Dictionary<uint, NetworkMessage> snapshot = new Dictionary<uint, NetworkMessage>();
-            foreach (var pair in messagesList)
+            Dictionary<uint, NetworkMessage> snapshot;
+            lock (snapshotPoolLock)
+            {
+                snapshot = reusableSnapshot;
+                reusableSnapshot = null;
+            }
+
+            if (snapshot == null)
+                snapshot = new Dictionary<uint, NetworkMessage>();
+            foreach (KeyValuePair<uint, NetworkMessage> pair in messagesList)
                 snapshot[pair.Key] = pair.Value;
             return snapshot;
         }
@@ -74,6 +98,14 @@ namespace NetSquare.Server.Worlds
             ICollection<KeyValuePair<uint, NetworkMessage>> entries = messagesList;
             foreach (KeyValuePair<uint, NetworkMessage> pair in snapshot)
                 entries.Remove(pair);
+
+            snapshot.Clear();
+            lock (snapshotPoolLock)
+            {
+                // One cached dictionary covers the steady-state single synchronization consumer.
+                if (reusableSnapshot == null)
+                    reusableSnapshot = snapshot;
+            }
         }
 
         /// <summary>
@@ -101,15 +133,28 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public NetworkMessage GetPackedMessage(Dictionary<uint, NetworkMessage> snapshot, uint excludedClientID)
         {
-            List<NetworkMessage> messages = new List<NetworkMessage>();
-            foreach (var pair in snapshot)
-                if (pair.Key != excludedClientID)
-                    messages.Add(pair.Value);
+            if (snapshot == null)
+                throw new System.ArgumentNullException(nameof(snapshot));
 
-            if (messages.Count == 0)
-                return null;
+            lock (packingLock)
+            {
+                try
+                {
+                    foreach (KeyValuePair<uint, NetworkMessage> pair in snapshot)
+                    {
+                        if (pair.Key != excludedClientID)
+                            reusablePackingMessages.Add(pair.Value);
+                    }
 
-            return GetPackedMessage(messages);
+                    return reusablePackingMessages.Count == 0
+                        ? null
+                        : GetPackedMessage(reusablePackingMessages);
+                }
+                finally
+                {
+                    reusablePackingMessages.Clear();
+                }
+            }
         }
 
         /// <summary>
@@ -138,24 +183,37 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public NetworkMessage GetSpatializedPackedMessage(IEnumerable<uint> visivleClientsID, uint clientID, Dictionary<uint, NetworkMessage> snapshot)
         {
-            List<NetworkMessage> messages = new List<NetworkMessage>();
-            foreach (uint visibleID in visivleClientsID)
+            if (visivleClientsID == null)
+                throw new System.ArgumentNullException(nameof(visivleClientsID));
+            if (snapshot == null)
+                throw new System.ArgumentNullException(nameof(snapshot));
+
+            lock (packingLock)
             {
-                if (visibleID == clientID)
-                    continue;
+                try
+                {
+                    foreach (uint visibleID in visivleClientsID)
+                    {
+                        if (visibleID == clientID)
+                            continue;
 
-                NetworkMessage message;
-                if (snapshot.TryGetValue(visibleID, out message))
-                    messages.Add(message);
+                        NetworkMessage message;
+                        if (snapshot.TryGetValue(visibleID, out message))
+                            reusablePackingMessages.Add(message);
+                    }
+                    if (reusablePackingMessages.Count == 0)
+                        return null;
+
+                    NetworkMessage packed = new NetworkMessage(HeadID);
+                    packed.ClientID = clientID;
+                    packed.Pack(reusablePackingMessages, true);
+                    return packed;
+                }
+                finally
+                {
+                    reusablePackingMessages.Clear();
+                }
             }
-            if (messages.Count == 0)
-                return null;
-
-            NetworkMessage packed = new NetworkMessage(HeadID);
-            packed.HeadID = HeadID;
-            packed.ClientID = clientID;
-            packed.Pack(messages, true);
-            return packed;
         }
 
         /// <summary>

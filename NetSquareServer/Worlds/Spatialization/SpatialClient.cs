@@ -1,6 +1,8 @@
 using NetSquare.Core;
 using NetSquare.Core.Messages;
+using System;
 using System.Collections.Generic;
+using System.Threading;
 
 #region Source
 namespace NetSquare.Server.Worlds
@@ -58,6 +60,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         private HashSet<uint> nextVisibleIDs;
         /// <summary>
+        /// Stores the immutable visible-client snapshot consumed by synchronization workers.
+        /// </summary>
+        private uint[] visibleIDsSnapshot;
+        /// <summary>
         /// Stores the reusable next visible-static-entity set.
         /// </summary>
         private HashSet<StaticEntity> nextVisibleStaticEntities;
@@ -74,6 +80,7 @@ namespace NetSquare.Server.Worlds
             VisibleStaticEntities = new HashSet<StaticEntity>();
             nextVisibles = new HashSet<SpatialClient>();
             nextVisibleIDs = new HashSet<uint>();
+            visibleIDsSnapshot = Array.Empty<uint>();
             nextVisibleStaticEntities = new HashSet<StaticEntity>();
             NetsquareTransformFrame transform;
             if (TryGetTransform(out transform))
@@ -108,6 +115,7 @@ namespace NetSquare.Server.Worlds
 
             NetworkMessage leavingMessage = null;
             List<NetworkMessage> joiningClientMessages = null;
+            bool visibilityChanged = false;
             lock (SyncRoot)
             {
                 HashSet<SpatialClient> previousVisibles = Visibles;
@@ -127,6 +135,7 @@ namespace NetSquare.Server.Worlds
                         if (leavingMessage == null)
                             leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
                         leavingMessage.Set(previousVisible.Client.ID);
+                        visibilityChanged = true;
                     }
                 }
 
@@ -147,6 +156,7 @@ namespace NetSquare.Server.Worlds
                     if (wasVisible)
                         continue;
 
+                    visibilityChanged = true;
                     NetworkMessage joiningClientMessage = new NetworkMessage(0, candidate.Client.ID);
                     candidateTransform.Serialize(joiningClientMessage);
                     if (joiningClientMessages == null)
@@ -162,6 +172,8 @@ namespace NetSquare.Server.Worlds
                 HashSet<uint> previousVisibleIDs = VisibleIDs;
                 VisibleIDs = nextVisibleIDs;
                 nextVisibleIDs = previousVisibleIDs;
+                if (visibilityChanged)
+                    Volatile.Write(ref visibleIDsSnapshot, CopyVisibleIDs(VisibleIDs));
             }
 
             if (leavingMessage != null)
@@ -181,6 +193,29 @@ namespace NetSquare.Server.Worlds
             NetworkMessage joiningPacked = new NetworkMessage(NetSquareMessageID.ClientsJoinWorld);
             joiningPacked.Pack(joiningClientMessages);
             Client.AddTCPMessage(joiningPacked);
+        }
+        /// <summary>
+        /// Returns the immutable visible-client snapshot without allocating or holding the spatialization lock.
+        /// </summary>
+        /// <returns>Visible client identifiers for the latest completed spatialization pass.</returns>
+        internal uint[] GetVisibleIDsSnapshot()
+        {
+            return Volatile.Read(ref visibleIDsSnapshot);
+        }
+
+        /// <summary>
+        /// Copies a visible-client set into an immutable synchronization snapshot.
+        /// </summary>
+        /// <param name="visibleIDs">Visible client identifiers to copy.</param>
+        /// <returns>Immutable visible-client identifier array.</returns>
+        private static uint[] CopyVisibleIDs(HashSet<uint> visibleIDs)
+        {
+            if (visibleIDs == null || visibleIDs.Count == 0)
+                return Array.Empty<uint>();
+
+            uint[] snapshot = new uint[visibleIDs.Count];
+            visibleIDs.CopyTo(snapshot);
+            return snapshot;
         }
         /// <summary>
         /// Executes the process visible static entities operation.

@@ -304,7 +304,9 @@ namespace NetSquare.Core
             lock (tcpQueueBackpressureLock)
                 Monitor.PulseAll(tcpQueueBackpressureLock);
 
-            // Dispose TLS first so it can release its cryptographic and buffering state.
+            // Close UDP first so receive callbacks and authentication state cannot outlive the TCP session.
+            try { UDP?.Close(); } catch { }
+            // Dispose TLS next so it can release its cryptographic and buffering state.
             try { tcpTransportStream?.Dispose(); } catch { }
             tcpTransportStream = null;
             try { TcpSocket?.Shutdown(SocketShutdown.Both); } catch { }
