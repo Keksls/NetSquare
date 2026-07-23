@@ -20,7 +20,8 @@ namespace Server_Test
         static unsafe void Main(string[] args)
         {
             // Set configuration
-            NetSquareConfiguration config = NetSquareConfigurationManager.Configuration;
+            NetSquareConfigurationManager.Initialize<ServerTestConfiguration>();
+            ServerTestConfiguration config = NetSquareConfigurationManager.Get<ServerTestConfiguration>();
             config.BlackListFilePath = @"[current]\blackList.bl";
             config.LockConsole = false;
             config.Port = 5050;
@@ -28,7 +29,7 @@ namespace Server_Test
             config.NbQueueThreads = 4;
             config.SynchronizingFrequency = 10;
             config.UpdateFrequencyHz = 10;
-            NetSquareConfigurationManager.SaveConfiguration(config);
+            NetSquareConfigurationManager.Save();
 
             // Instantiate NetSquare Server
             server = new NetSquareServer(NetSquareProtocoleType.TCP);

@@ -2,6 +2,7 @@ using NetSquare.Core;
 using NetSquare.Core.Messages;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace NetSquare.Client
 {
@@ -64,17 +65,17 @@ namespace NetSquare.Client
         /// </summary>
         private List<INetSquareSynchFrame> currentClientFrames = new List<INetSquareSynchFrame>();
         /// <summary>
+        /// Stores one reusable drained frame list for allocation-free steady-state sends.
+        /// </summary>
+        private List<INetSquareSynchFrame> reusableClientFrames = new List<INetSquareSynchFrame>();
+        /// <summary>
         /// Stores the current client frames lock value.
         /// </summary>
         private readonly object currentClientFramesLock = new object();
         /// <summary>
         /// Stores the next synchronization frame sequence id.
         /// </summary>
-        private uint nextSynchFrameSequenceID;
-        /// <summary>
-        /// Stores the synchronization frame sequence lock value.
-        /// </summary>
-        private readonly object synchFrameSequenceLock = new object();
+        private int nextSynchFrameSequenceID;
 
         /// <summary>
         /// Initializes a new instance of the worlds manager class.
@@ -255,12 +256,28 @@ namespace NetSquare.Client
                 if (currentClientFrames.Count == 0)
                     return;
 
-                frames = new List<INetSquareSynchFrame>(currentClientFrames);
-                currentClientFrames.Clear();
+                // Swap lists in O(1) so producers can continue while the drained frames are serialized.
+                frames = currentClientFrames;
+                currentClientFrames = reusableClientFrames ??
+                    new List<INetSquareSynchFrame>(Math.Max(frames.Count, 4));
+                reusableClientFrames = null;
             }
 
             NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrames, client.ClientID);
-            NetSquareSynchFramesUtils.SerializeFrames(message, frames);
+            try
+            {
+                NetSquareSynchFramesUtils.SerializeFrames(message, frames);
+            }
+            finally
+            {
+                frames.Clear();
+                lock (currentClientFramesLock)
+                {
+                    // Concurrent manual sends may need a temporary third list; retain only one spare.
+                    if (reusableClientFrames == null)
+                        reusableClientFrames = frames;
+                }
+            }
 
             if (SynchronizationTransport == NetSquareSyncTransport.UnreliableUdp)
                 client.SendMessageUDP(message);
@@ -289,14 +306,14 @@ namespace NetSquare.Client
         /// <returns>The next sequence id.</returns>
         private uint GetNextSynchFrameSequenceID()
         {
-            lock (synchFrameSequenceLock)
+            // Atomic assignment avoids serializing frame producers on a monitor.
+            uint sequence;
+            do
             {
-                nextSynchFrameSequenceID++;
-                if (nextSynchFrameSequenceID == 0)
-                    nextSynchFrameSequenceID = 1;
-
-                return nextSynchFrameSequenceID;
+                sequence = unchecked((uint)Interlocked.Increment(ref nextSynchFrameSequenceID));
             }
+            while (sequence == 0);
+            return sequence;
         }
 
         /// <summary>
@@ -352,7 +369,7 @@ namespace NetSquare.Client
         /// <param name="message"> message to read</param>
         private void ClientLeaveCurrentWorld(NetworkMessage message)
         {
-            OnClientLeaveWorld?.Invoke(message.Serializer.GetUInt24().UInt32);
+            OnClientLeaveWorld?.Invoke(message.Serializer.GetUInt());
         }
 
         /// <summary>
@@ -364,8 +381,8 @@ namespace NetSquare.Client
             if (OnClientLeaveWorld == null)
                 return;
 
-            while (message.Serializer.CanGetUInt24())
-                OnClientLeaveWorld(message.Serializer.GetUInt24().UInt32);
+            while (message.Serializer.CanGetUInt())
+                OnClientLeaveWorld(message.Serializer.GetUInt());
         }
 
         /// <summary>

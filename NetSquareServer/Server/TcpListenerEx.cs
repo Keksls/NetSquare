@@ -1,6 +1,5 @@
 using System.Net;
 
-#region Source
 namespace NetSquare.Server
 {
     /// <summary>
@@ -34,4 +33,3 @@ namespace NetSquare.Server
         }
     }
 }
-#endregion

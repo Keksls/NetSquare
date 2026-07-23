@@ -1,4 +1,5 @@
 using NetSquare.Core;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -8,169 +9,257 @@ using System.Threading;
 namespace NetSquare.Server.Worlds
 {
     /// <summary>
-    /// Represents the synchronizer component.
+    /// Periodically broadcasts the latest synchronized state of each client.
     /// </summary>
     public class Synchronizer
     {
+        #region Fields
+        private readonly object lifecycleLock = new object();
+        private readonly NetSquareServer server;
+        private CancellationTokenSource stopCancellation;
+        private Thread synchronizationThread;
+        private int synchronizing;
+        #endregion
+
+        #region Properties
         /// <summary>
-        /// Gets or sets the synchronize using udp value.
+        /// Gets whether unreliable UDP is used for synchronized state broadcasts.
         /// </summary>
         public bool SynchronizeUsingUDP { get; private set; }
+
         /// <summary>
-        /// Gets or sets the messages value.
+        /// Gets synchronized state partitions by message head.
         /// </summary>
         public ConcurrentDictionary<ushort, SynchronizedMessage> Messages { get; private set; }
+
         /// <summary>
-        /// Gets or sets the synchronizing value.
+        /// Gets whether the synchronization worker is running.
         /// </summary>
-        public bool Synchronizing { get; private set; }
+        public bool Synchronizing { get { return Volatile.Read(ref synchronizing) != 0; } }
+
         /// <summary>
-        /// Gets or sets the frequency value.
+        /// Gets the synchronization interval in milliseconds.
         /// </summary>
         public int Frequency { get; private set; }
+
         /// <summary>
-        /// Gets or sets the world value.
+        /// Gets the synchronized world.
         /// </summary>
         public NetSquareWorld World { get; private set; }
-        /// <summary>
-        /// Stores the server value.
-        /// </summary>
-        private NetSquareServer server;
+        #endregion
 
+        #region Constructor
         /// <summary>
-        /// Initializes a new instance of the synchronizer class.
+        /// Initializes a world state synchronizer.
         /// </summary>
-        public Synchronizer(NetSquareServer _server, NetSquareWorld world, bool synchronizeUsingUDP)
+        /// <param name="server">Owning server.</param>
+        /// <param name="world">World whose state is synchronized.</param>
+        /// <param name="synchronizeUsingUDP">Whether synchronization uses unreliable UDP.</param>
+        public Synchronizer(NetSquareServer server, NetSquareWorld world, bool synchronizeUsingUDP)
         {
+            if (server == null)
+                throw new ArgumentNullException(nameof(server));
+            if (world == null)
+                throw new ArgumentNullException(nameof(world));
+
             World = world;
             SynchronizeUsingUDP = synchronizeUsingUDP;
-            server = _server;
-            Synchronizing = false;
+            this.server = server;
             Messages = new ConcurrentDictionary<ushort, SynchronizedMessage>();
         }
+        #endregion
 
+        #region Lifecycle
         /// <summary>
-        /// Start synchronizer
+        /// Starts periodic synchronization at the requested frequency.
         /// </summary>
-        /// <param name="frequency">frequency of the synchronization (Hz => times / s)</param>
+        /// <param name="frequency">Synchronization frequency in hertz.</param>
         public void StartSynchronizing(int frequency)
         {
-            if (frequency <= 0)
-                frequency = 1;
-            if (frequency > 30)
-                frequency = 30;
-            Frequency = (int)((1f / (float)frequency) * 1000f);
-            Synchronizing = true;
-            Thread syncThread = new Thread(SyncronizationLoop);
-            syncThread.IsBackground = true;
-            syncThread.Start();
+            lock (lifecycleLock)
+            {
+                if (Synchronizing)
+                    return;
+
+                int clampedFrequency = Math.Max(1, Math.Min(60, frequency));
+                Frequency = Math.Max(1, 1000 / clampedFrequency);
+                stopCancellation = new CancellationTokenSource();
+                CancellationToken workerToken = stopCancellation.Token;
+                synchronizationThread = new Thread(() => SynchronizationLoop(workerToken));
+                synchronizationThread.IsBackground = true;
+                synchronizationThread.Name = "NetSquare world synchronization " + World.ID;
+                Volatile.Write(ref synchronizing, 1);
+                synchronizationThread.Start();
+            }
         }
 
         /// <summary>
-        /// Remove every received message for a given clientID (call it on client Disconnect)
-        /// </summary>
-        /// <param name="ClientID">ID of the disconnected client</param>
-        public void RemoveMessagesFromClient(uint ClientID)
-        {
-            foreach (var pair in Messages)
-                pair.Value.RemoveMessagesFromClient(ClientID);
-        }
-
-        /// <summary>
-        /// Stop synchronization
+        /// Stops synchronization and waits for the active iteration to finish.
         /// </summary>
         public void Stop()
         {
-            Synchronizing = false;
-            Messages = new ConcurrentDictionary<ushort, SynchronizedMessage>();
-        }
-
-        /// <summary>
-        /// Add a message (from a client) to the synchronization queue
-        /// </summary>
-        /// <param name="message">message to sync</param>
-        public void AddMessage(NetworkMessage message)
-        {
-            SynchronizedMessage synchronizedMessage = Messages.GetOrAdd(message.HeadID, headID => new SynchronizedMessage(headID));
-            synchronizedMessage.AddMessage(message);
-        }
-
-        Stopwatch syncWatch = new Stopwatch();
-        /// <summary>
-        /// Executes the syncronization loop operation.
-        /// </summary>
-        private void SyncronizationLoop()
-        {
-            while (Synchronizing)
+            Thread threadToJoin;
+            CancellationTokenSource cancellation;
+            lock (lifecycleLock)
             {
-                syncWatch.Reset();
-                syncWatch.Start();
-                // we use spatializer, let's send spatialized packed messages
-                if (World.UseSpatializer)
+                if (!Synchronizing && synchronizationThread == null)
                 {
-                    foreach (SynchronizedMessage message in Messages.Values)
-                    {
-                        Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
-                        if (snapshot.Count == 0)
-                            continue;
-                        // get spatialized messages
-                        List<NetworkMessage> packedMessages = new List<NetworkMessage>();
-                        World.Spatializer.ForEach((clientID, visibleIDs) =>
-                        {
-                            NetworkMessage msg = message.GetSpatializedPackedMessage(visibleIDs, clientID, snapshot);
-                            if (msg != null)
-                                packedMessages.Add(msg);
-                        });
-
-                        if (SynchronizeUsingUDP)
-                        {
-                            foreach (var packed in packedMessages)
-                                server.SafeGetClient(packed.ClientID)?.AddUnreliableMessage(packed);
-                        }
-                        else
-                        {
-                            foreach (var packed in packedMessages)
-                                server.SafeGetClient(packed.ClientID)?.AddTCPMessage(packed);
-                        }
-                        message.RemoveSnapshot(snapshot);
-                    }
+                    Messages = new ConcurrentDictionary<ushort, SynchronizedMessage>();
+                    return;
                 }
-                else // don't use spatializer
+
+                Volatile.Write(ref synchronizing, 0);
+                cancellation = stopCancellation;
+                threadToJoin = synchronizationThread;
+                cancellation?.Cancel();
+            }
+
+            if (threadToJoin != null && threadToJoin != Thread.CurrentThread)
+            {
+                int configuredTimeout = NetSquareConfigurationManager
+                    .Get<NetSquareConfiguration>().WorkerStopTimeoutMilliseconds;
+                int timeout = configuredTimeout > 0 ? configuredTimeout : 5000;
+                if (!threadToJoin.Join(timeout))
                 {
-                    foreach (SynchronizedMessage message in Messages.Values)
-                    {
-                        Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
-                        if (snapshot.Count == 0)
-                            continue;
-
-                        if (SynchronizeUsingUDP)
-                        {
-                            foreach (uint clientID in World.Clients.Keys)
-                            {
-                                NetworkMessage packed = message.GetPackedMessage(snapshot, clientID);
-                                if (packed != null)
-                                    server.SafeGetClient(clientID)?.AddUnreliableMessage(packed);
-                            }
-                        }
-                        else
-                        {
-                            foreach (uint clientID in World.Clients.Keys)
-                            {
-                                NetworkMessage packed = message.GetPackedMessage(snapshot, clientID);
-                                if (packed != null)
-                                    server.SafeGetClient(clientID)?.AddTCPMessage(packed);
-                            }
-                        }
-                        message.RemoveSnapshot(snapshot);
-                    }
+                    throw new TimeoutException(
+                        "The world synchronization worker did not stop within the configured timeout.");
                 }
-                syncWatch.Stop();
-                int freq = Frequency - (int)syncWatch.ElapsedMilliseconds;
-                if (freq <= 0)
-                    freq = 1;
-                Thread.Sleep(freq);
+            }
+
+            lock (lifecycleLock)
+            {
+                if (synchronizationThread == threadToJoin)
+                {
+                    synchronizationThread = null;
+                    stopCancellation = null;
+                }
+                Messages = new ConcurrentDictionary<ushort, SynchronizedMessage>();
             }
         }
+        #endregion
+
+        #region Message state
+        /// <summary>
+        /// Removes every retained message for one disconnected client.
+        /// </summary>
+        /// <param name="clientID">Disconnected client identifier.</param>
+        public void RemoveMessagesFromClient(uint clientID)
+        {
+            foreach (KeyValuePair<ushort, SynchronizedMessage> pair in Messages)
+                pair.Value.RemoveMessagesFromClient(clientID);
+        }
+
+        /// <summary>
+        /// Replaces the latest synchronized state for one client and message head.
+        /// </summary>
+        /// <param name="message">Latest client state.</param>
+        public void AddMessage(NetworkMessage message)
+        {
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
+
+            SynchronizedMessage synchronizedMessage = Messages.GetOrAdd(
+                message.HeadID,
+                headID => new SynchronizedMessage(headID));
+            synchronizedMessage.AddMessage(message);
+        }
+        #endregion
+
+        #region Synchronization loop
+        /// <summary>
+        /// Sends snapshots at a stable frequency until cancellation is requested.
+        /// </summary>
+        /// <param name="cancellationToken">Stop token.</param>
+        private void SynchronizationLoop(CancellationToken cancellationToken)
+        {
+            Stopwatch syncWatch = new Stopwatch();
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    syncWatch.Restart();
+                    SynchronizeCurrentSnapshots();
+                    syncWatch.Stop();
+
+                    int delayMilliseconds = Frequency - (int)syncWatch.ElapsedMilliseconds;
+                    if (delayMilliseconds < 1)
+                        delayMilliseconds = 1;
+                    if (cancellationToken.WaitHandle.WaitOne(delayMilliseconds))
+                        return;
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref synchronizing, 0);
+            }
+        }
+
+        /// <summary>
+        /// Captures and broadcasts every pending synchronized message partition.
+        /// </summary>
+        private void SynchronizeCurrentSnapshots()
+        {
+            if (World.UseSpatializer)
+            {
+                SynchronizeSpatializedSnapshots();
+                return;
+            }
+
+            foreach (SynchronizedMessage message in Messages.Values)
+            {
+                Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
+                if (snapshot.Count == 0)
+                    continue;
+
+                foreach (uint clientID in World.Clients.Keys)
+                {
+                    NetworkMessage packed = message.GetPackedMessage(snapshot, clientID);
+                    SendPackedMessage(packed, clientID);
+                }
+                message.RemoveSnapshot(snapshot);
+            }
+        }
+
+        /// <summary>
+        /// Builds and broadcasts one tailored synchronized payload per visible client set.
+        /// </summary>
+        private void SynchronizeSpatializedSnapshots()
+        {
+            foreach (SynchronizedMessage message in Messages.Values)
+            {
+                Dictionary<uint, NetworkMessage> snapshot = message.GetSnapshot();
+                if (snapshot.Count == 0)
+                    continue;
+
+                World.Spatializer.ForEach((clientID, visibleIDs) =>
+                {
+                    NetworkMessage packed = message.GetSpatializedPackedMessage(
+                        visibleIDs,
+                        clientID,
+                        snapshot);
+                    SendPackedMessage(packed, clientID);
+                });
+                message.RemoveSnapshot(snapshot);
+            }
+        }
+
+        /// <summary>
+        /// Sends one packed synchronization payload over the configured transport.
+        /// </summary>
+        /// <param name="message">Targeted packed message, or null when no state is visible.</param>
+        /// <param name="clientID">Authenticated destination client identifier.</param>
+        private void SendPackedMessage(NetworkMessage message, uint clientID)
+        {
+            if (message == null)
+                return;
+
+            ConnectedClient client = server.SafeGetClient(clientID);
+            if (SynchronizeUsingUDP)
+                client?.AddUnreliableMessage(message);
+            else
+                client?.AddTCPMessage(message);
+        }
+        #endregion
     }
 }
 #endregion

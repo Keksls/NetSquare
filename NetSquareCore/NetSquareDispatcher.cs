@@ -145,9 +145,12 @@ namespace NetSquare.Core
         /// <returns>true if success</returns>
         public bool DispatchMessage(NetworkMessage message)
         {
-            if (!HasHeadAction(message.HeadID))
+            NetSquareHeadAction headAction;
+            if (!HeadActions.TryGetValue(message.HeadID, out headAction))
                 return false;
-            ExecuteinMainThread(HeadActions[message.HeadID].HeadAction, message);
+
+            // Resolve the route once on the per-message hot path.
+            ExecuteinMainThread(headAction.HeadAction, message);
             return true;
         }
 
@@ -172,10 +175,10 @@ namespace NetSquare.Core
         /// <returns>name of the action</returns>
         public string GetHeadName(ushort ID)
         {
-            if (HasHeadAction(ID))
-                return HeadActions[ID].HeadName;
-            else
-                return "No Action registered with ID '" + ID + "'";
+            NetSquareHeadAction headAction;
+            return HeadActions.TryGetValue(ID, out headAction)
+                ? headAction.HeadName
+                : "No Action registered with ID '" + ID + "'";
         }
 
         /// <summary>
@@ -185,10 +188,10 @@ namespace NetSquare.Core
         /// <returns>null of don't exists</returns>
         public NetSquareHeadAction? GetHeadAction(ushort ID)
         {
-            if (HasHeadAction(ID))
-                return HeadActions[ID];
-            else
-                return null;
+            NetSquareHeadAction headAction;
+            return HeadActions.TryGetValue(ID, out headAction)
+                ? (NetSquareHeadAction?)headAction
+                : null;
         }
     }
 }

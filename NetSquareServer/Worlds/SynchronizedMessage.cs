@@ -62,15 +62,18 @@ namespace NetSquare.Server.Worlds
         }
 
         /// <summary>
-        /// Executes the remove snapshot operation.
+        /// Removes only entries that still reference the messages captured by a snapshot.
         /// </summary>
+        /// <param name="snapshot">Previously captured client/message pairs.</param>
         public void RemoveSnapshot(Dictionary<uint, NetworkMessage> snapshot)
         {
-            foreach (uint clientID in snapshot.Keys)
-            {
-                NetworkMessage removed;
-                messagesList.TryRemove(clientID, out removed);
-            }
+            if (snapshot == null)
+                throw new System.ArgumentNullException(nameof(snapshot));
+
+            // Conditional removal preserves a newer message that arrived for the same client during broadcast.
+            ICollection<KeyValuePair<uint, NetworkMessage>> entries = messagesList;
+            foreach (KeyValuePair<uint, NetworkMessage> pair in snapshot)
+                entries.Remove(pair);
         }
 
         /// <summary>

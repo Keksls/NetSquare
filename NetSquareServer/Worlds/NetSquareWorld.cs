@@ -103,7 +103,8 @@ namespace NetSquare.Server.Worlds
         public void StartSynchronizer(int frequency = -1, bool synchronizeUsingUdp = false)
         {
             if (frequency <= 0)
-                frequency = NetSquareConfigurationManager.Configuration.SynchronizingFrequency;
+                // Read the shared server setting through the initialized configuration contract.
+                frequency = NetSquareConfigurationManager.Get<NetSquareConfiguration>().SynchronizingFrequency;
             if (frequency > 60)
                 frequency = 60;
             Synchronizer = new Synchronizer(server, this, synchronizeUsingUdp);

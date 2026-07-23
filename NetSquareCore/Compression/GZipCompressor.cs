@@ -28,12 +28,22 @@ namespace NetSquare.Core.Compression
         /// </summary>
         public override byte[] Decompress(byte[] data)
         {
+            return Decompress(data, int.MaxValue);
+        }
+
+        /// <summary>
+        /// Decompresses GZip data while enforcing an absolute output limit.
+        /// </summary>
+        /// <param name="data">Compressed input bytes.</param>
+        /// <param name="maxOutputLength">Maximum accepted decompressed length.</param>
+        /// <returns>The decompressed bytes.</returns>
+        public override byte[] Decompress(byte[] data, int maxOutputLength)
+        {
+            ValidateDecompressionArguments(data, maxOutputLength);
             using (var compressedStream = new MemoryStream(data))
             using (var zipStream = new GZipStream(compressedStream, CompressionMode.Decompress))
-            using (var resultStream = new MemoryStream())
             {
-                zipStream.CopyTo(resultStream);
-                return resultStream.ToArray();
+                return ReadBounded(zipStream, maxOutputLength);
             }
         }
     }

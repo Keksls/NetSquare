@@ -30,6 +30,10 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public HashSet<uint> VisibleIDs;
         /// <summary>
+        /// Stores the reusable next visible-client ID set.
+        /// </summary>
+        internal HashSet<uint> NextVisibleIDs;
+        /// <summary>
         /// Stores the sync root value.
         /// </summary>
         internal readonly object SyncRoot = new object();
@@ -44,6 +48,7 @@ namespace NetSquare.Server.Worlds
             ChunkY = chunkY;
             LastPosition = new NetsquareTransformFrame(pos);
             VisibleIDs = new HashSet<uint>();
+            NextVisibleIDs = new HashSet<uint>();
         }
 
         /// <summary>

@@ -33,6 +33,17 @@ namespace NetSquare.Server.Worlds
         /// Stores the static entities lock value.
         /// </summary>
         private readonly object staticEntitiesLock = new object();
+        /// <summary>
+        /// Gets the current static-entity count without allocating a snapshot.
+        /// </summary>
+        public int StaticEntityCount
+        {
+            get
+            {
+                lock (staticEntitiesLock)
+                    return StaticEntities.Count;
+            }
+        }
 
         /// <summary>
         /// Initializes a new instance of the spatial chunk class.

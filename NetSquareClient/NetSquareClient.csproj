@@ -28,7 +28,12 @@
 
   <ItemGroup>
     <Compile Include="ClientStatistics.cs" />
+    <Compile Include="ConnectionResult.cs" />
+    <Compile Include="ConnectionResultStatus.cs" />
+    <Compile Include="Handshake\HandshakeRejectedException.cs" />
     <Compile Include="NetSquareSyncTransport.cs" />
+    <Compile Include="NetSquareClientConfiguration.cs" />
+    <Compile Include="NetSquareClientConfigurationManager.cs" />
     <Compile Include="WorldsManager.cs" />
     <Compile Include="NetSquareClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

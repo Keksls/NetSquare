@@ -1,8 +1,9 @@
 using System;
-using System.IO;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
+using System.Runtime.Serialization;
 using System.Text;
-using NetSquare.Server.Utils;
 
 #region Source
 namespace NetSquare.Server
@@ -10,24 +11,72 @@ namespace NetSquare.Server
     /// <summary>
     /// Represents the net square configuration component.
     /// </summary>
-    public class NetSquareConfiguration
+    public class NetSquareConfiguration : NetSquare.Core.Configuration.NetSquareConfiguration
     {
         /// <summary>
         /// the port to start server on
         /// </summary>
         public int Port { get; set; }
         /// <summary>
+        /// Path to the PFX or PKCS#12 certificate containing the server private key.
+        /// </summary>
+        public string TLSCertificatePath { get; set; }
+        /// <summary>
+        /// Password protecting the TLS certificate file.
+        /// </summary>
+        public string TLSCertificatePassword { get; set; }
+        /// <summary>
         /// If TRUE, the server consol will be lock to unselectable
         /// </summary>
         public bool LockConsole { get; set; }
         /// <summary>
-        /// Path to the BlackListed IP list file
+        /// Path to the persisted generic blacklist subject state
         /// </summary>
         public string BlackListFilePath { get; set; }
+
+        #region Blacklist
+        public int BlackListHitThreshold { get; set; }
+        public int BlackListHitWindowSeconds { get; set; }
+        public BlackListBanType BlackListDefaultBanType { get; set; }
+        public int BlackListTemporaryBanDurationSeconds { get; set; }
+        public bool BlackListPersistTemporaryBans { get; set; }
+        public bool BlackListPersistHitProgress { get; set; }
+        public bool BlackListIgnoreNonPublicAddressesForHits { get; set; }
+        public int BlackListMaxTrackedHitAddresses { get; set; }
+        public string BlackListDefaultPolicyName { get; set; }
+        public int BlackListMaxTrackedSubjects { get; set; }
+        public List<BlackListPolicy> BlackListPolicies { get; set; }
+        public int BlackListReputationCacheMinutes { get; set; }
+        public int BlackListReputationFailureCacheSeconds { get; set; }
+        public int BlackListMaxReputationCacheEntries { get; set; }
+        public int BlackListMaxPendingReputationChecks { get; set; }
+        public int BlackListExternalRequestTimeoutMilliseconds { get; set; }
+        public bool AbuseIPDBEnabled { get; set; }
+        public string AbuseIPDBApiKey { get; set; }
+        public int AbuseIPDBConfidenceThreshold { get; set; }
+        public int AbuseIPDBMaxAgeInDays { get; set; }
+        public int AbuseIPDBMaximumDailyChecks { get; set; }
+        public bool BlockListDeEnabled { get; set; }
+        public int BlockListDeMinimumAttacks { get; set; }
+        public int BlockListDeMinimumReports { get; set; }
+        public bool SpamhausDropEnabled { get; set; }
+        public int SpamhausDropRefreshHours { get; set; }
+        public bool DShieldEnabled { get; set; }
+        public int DShieldRefreshHours { get; set; }
+        #endregion
+
         /// <summary>
         /// Number of threads for message action handling
         /// </summary>
         public int NbQueueThreads { get; set; }
+        /// <summary>
+        /// Maximum number of received messages retained by each processing worker.
+        /// </summary>
+        public int MessageQueueCapacity { get; set; }
+        /// <summary>
+        /// Maximum graceful worker shutdown duration in milliseconds.
+        /// </summary>
+        public int WorkerStopTimeoutMilliseconds { get; set; }
         /// <summary>
         /// Receiving buffer max size
         /// </summary>
@@ -51,12 +100,63 @@ namespace NetSquare.Server
         public NetSquareConfiguration()
         {
             Port = 5555;
+            TLSCertificatePath = string.Empty;
+            TLSCertificatePassword = string.Empty;
             NbSendingThreads = 1;
             NbQueueThreads = 1;
             ReceivingBufferSize = 1024;
+            MessageQueueCapacity = 8192;
+            WorkerStopTimeoutMilliseconds = 5000;
             LockConsole = false;
             BlackListFilePath = Environment.CurrentDirectory + @"\BlackListedIP.json";
+            SetBlackListDefaults();
             UpdateFrequencyHz = 10;
+        }
+
+        /// <summary>
+        /// Applies blacklist defaults before JSON properties are deserialized.
+        /// </summary>
+        /// <param name="context">Serialization context.</param>
+        [OnDeserializing]
+        private void OnDeserializing(StreamingContext context)
+        {
+            // Existing config files omit new properties, so seed defaults before applying their stored values.
+            SetBlackListDefaults();
+        }
+
+        /// <summary>
+        /// Applies default values for the blacklist and reputation system.
+        /// </summary>
+        private void SetBlackListDefaults()
+        {
+            BlackListHitThreshold = 10;
+            BlackListHitWindowSeconds = 600;
+            BlackListDefaultBanType = BlackListBanType.Temporary;
+            BlackListTemporaryBanDurationSeconds = 3600;
+            BlackListPersistTemporaryBans = true;
+            BlackListPersistHitProgress = true;
+            BlackListIgnoreNonPublicAddressesForHits = true;
+            BlackListMaxTrackedHitAddresses = 10000;
+            BlackListReputationCacheMinutes = 60;
+            BlackListReputationFailureCacheSeconds = 60;
+            BlackListMaxReputationCacheEntries = 10000;
+            BlackListMaxPendingReputationChecks = 64;
+            BlackListExternalRequestTimeoutMilliseconds = 3000;
+            AbuseIPDBEnabled = false;
+            AbuseIPDBApiKey = string.Empty;
+            AbuseIPDBConfidenceThreshold = 75;
+            AbuseIPDBMaxAgeInDays = 90;
+            AbuseIPDBMaximumDailyChecks = 1000;
+            BlockListDeEnabled = false;
+            BlockListDeMinimumAttacks = 1;
+            BlockListDeMinimumReports = 1;
+            SpamhausDropEnabled = false;
+            SpamhausDropRefreshHours = 24;
+            DShieldEnabled = false;
+            DShieldRefreshHours = 1;
+            BlackListDefaultPolicyName = "default";
+            BlackListMaxTrackedSubjects = 10000;
+            BlackListPolicies = new List<BlackListPolicy>();
         }
 
         /// <summary>
@@ -64,127 +164,73 @@ namespace NetSquare.Server
         /// </summary>
         public override string ToString()
         {
+            // Display every readable scalar property, including properties declared by consuming projects.
             StringBuilder sb = new StringBuilder();
-            foreach (PropertyInfo Info in GetType().GetProperties())
+            foreach (PropertyInfo property in GetType().GetProperties())
             {
+                if (!property.CanRead || property.GetIndexParameters().Length > 0)
+                    continue;
+
                 sb.Append(" - ");
-                sb.Append(Info.Name);
+                sb.Append(property.Name);
                 sb.Append(" : ");
-                sb.AppendLine(GetType().GetProperty(Info.Name).GetValue(this).ToString());
+
+                if (IsSensitiveProperty(property.Name))
+                {
+                    // Never expose credentials when the complete configuration is written to the server log.
+                    object secretValue = property.GetValue(this);
+                    sb.AppendLine(secretValue == null || string.IsNullOrEmpty(secretValue.ToString())
+                        ? "<empty>"
+                        : "<redacted>");
+                    continue;
+                }
+
+                if (!IsScalarType(property.PropertyType))
+                {
+                    // Do not invoke ToString on complex objects because their graph may reference this configuration.
+                    sb.Append('<');
+                    sb.Append(property.PropertyType.Name);
+                    sb.AppendLine(">");
+                    continue;
+                }
+
+                object value = property.GetValue(this);
+                sb.AppendLine(value == null
+                    ? "null"
+                    : Convert.ToString(value, CultureInfo.InvariantCulture));
             }
             return sb.ToString();
         }
-    }
 
-    /// <summary>
-    /// Represents the net square configuration manager component.
-    /// </summary>
-    public static class NetSquareConfigurationManager
-    {
         /// <summary>
-        /// Stores the configuration value.
+        /// Returns whether a property type can be formatted without traversing an object graph.
         /// </summary>
-        public static NetSquareConfiguration Configuration;
-        /// <summary>
-        /// Stores the configuration path value.
-        /// </summary>
-        private static string configurationPath;
-
-        static NetSquareConfigurationManager()
+        private static bool IsScalarType(Type type)
         {
-            configurationPath = Environment.CurrentDirectory + @"\config.json";
-            if (File.Exists(configurationPath))
-            {
-                Configuration = NetSquareJsonSerializer.Deserialize<NetSquareConfiguration>(File.ReadAllText(configurationPath));
-                Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
-            }
-            else
-            {
-                Configuration = new NetSquareConfiguration();
-            }
+            // Nullable scalar values use the same formatting rules as their underlying type.
+            Type scalarType = Nullable.GetUnderlyingType(type) ?? type;
+            return scalarType.IsPrimitive ||
+                   scalarType.IsEnum ||
+                   scalarType == typeof(string) ||
+                   scalarType == typeof(decimal) ||
+                   scalarType == typeof(DateTime) ||
+                   scalarType == typeof(DateTimeOffset) ||
+                   scalarType == typeof(TimeSpan) ||
+                   scalarType == typeof(Guid);
         }
 
         /// <summary>
-        /// Frequency of loop time in Hz
+        /// Returns whether a configuration property contains a credential.
         /// </summary>
-        /// <param name="UpdateFrequencyHz">frequency in Hz</param>
-        public static void SetUpdateFrequencyHz(int UpdateFrequencyHz)
+        /// <param name="propertyName">Configuration property name.</param>
+        /// <returns>True when the value must be redacted from logs.</returns>
+        private static bool IsSensitiveProperty(string propertyName)
         {
-            Configuration.UpdateFrequencyHz = UpdateFrequencyHz;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// Frequency of var synchronization
-        /// </summary>
-        public static void SetSynchronizingFrequency(int SynchronizingFrequency)
-        {
-            Configuration.SynchronizingFrequency = SynchronizingFrequency;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// number of threads for message sending
-        /// </summary>
-        public static void SetNbSendingThreadse(int NbSendingThreads)
-        {
-            Configuration.NbSendingThreads = NbSendingThreads;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// Receiving buffer max size
-        /// </summary>
-        public static void SetReceivingBufferSize(int ReceivingBufferSize)
-        {
-            Configuration.ReceivingBufferSize = ReceivingBufferSize;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// the port to start server on
-        /// </summary>
-        public static void SetPort(int Port)
-        {
-            Configuration.Port = Port;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// number of threads for message action handling
-        /// </summary>
-        public static void SetNbQueueThreads(int NbThreads)
-        {
-            Configuration.NbQueueThreads = NbThreads;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// If TRUE, the server consol will be lock to unselectable
-        /// </summary>
-        public static void SetLockConsole(bool LockConsole)
-        {
-            Configuration.LockConsole = LockConsole;
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// Path to the BlackListed IP list file
-        /// </summary>
-        public static void SetBlackListFilePath(string BlackListFilePath)
-        {
-            SaveConfiguration(Configuration);
-        }
-
-        /// <summary>
-        /// Save the given configuration as json next to the server dll
-        /// </summary>
-        /// <param name="Configuration"></param>
-        public static void SaveConfiguration(NetSquareConfiguration configuration)
-        {
-            Configuration = configuration;
-            Configuration.BlackListFilePath = Configuration.BlackListFilePath.Replace("[current]", Environment.CurrentDirectory);
-            File.WriteAllText(configurationPath, NetSquareJsonSerializer.Serialize(configuration));
+            // Cover conventional credential suffixes used by project-defined configuration classes too.
+            return propertyName.IndexOf("ApiKey", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   propertyName.IndexOf("Password", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   propertyName.IndexOf("Secret", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   propertyName.IndexOf("Token", StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

@@ -75,6 +75,20 @@ namespace NetSquare.Server.Worlds
         /// Stores the started value.
         /// </summary>
         private bool started;
+        /// <summary>
+        /// Stores reusable drained-frame dictionaries for synchronization passes.
+        /// </summary>
+        private readonly Stack<Dictionary<uint, List<INetSquareSynchFrame>>> drainedFrameSnapshots =
+            new Stack<Dictionary<uint, List<INetSquareSynchFrame>>>(1);
+        /// <summary>
+        /// Stores reusable per-client frame lists to reduce synchronization allocations.
+        /// </summary>
+        private readonly Stack<List<INetSquareSynchFrame>> drainedFrameLists =
+            new Stack<List<INetSquareSynchFrame>>();
+        /// <summary>
+        /// Defines the maximum number of per-client frame lists retained by the local pool.
+        /// </summary>
+        private const int MaxPooledFrameLists = 4096;
 
         /// <summary>
         /// Instantiate a new spatializer
@@ -274,8 +288,12 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         protected Dictionary<uint, List<INetSquareSynchFrame>> DrainStoredFrames()
         {
-            Dictionary<uint, List<INetSquareSynchFrame>> snapshot = new Dictionary<uint, List<INetSquareSynchFrame>>();
-            foreach (var pair in ClientsTransformFrames)
+            Dictionary<uint, List<INetSquareSynchFrame>> snapshot =
+                drainedFrameSnapshots.Count > 0
+                    ? drainedFrameSnapshots.Pop()
+                    : new Dictionary<uint, List<INetSquareSynchFrame>>();
+
+            foreach (KeyValuePair<uint, List<INetSquareSynchFrame>> pair in ClientsTransformFrames)
             {
                 List<INetSquareSynchFrame> frames = pair.Value;
                 lock (frames)
@@ -283,13 +301,40 @@ namespace NetSquare.Server.Worlds
                     if (frames.Count == 0)
                         continue;
 
-                    snapshot[pair.Key] = new List<INetSquareSynchFrame>(frames);
+                    List<INetSquareSynchFrame> drainedFrames =
+                        drainedFrameLists.Count > 0
+                            ? drainedFrameLists.Pop()
+                            : new List<INetSquareSynchFrame>(frames.Count);
+                    if (drainedFrames.Capacity < frames.Count)
+                        drainedFrames.Capacity = frames.Count;
+                    drainedFrames.AddRange(frames);
                     frames.Clear();
+                    snapshot[pair.Key] = drainedFrames;
                 }
             }
             return snapshot;
         }
 
+        /// <summary>
+        /// Returns drained synchronization containers to their bounded local pools.
+        /// </summary>
+        /// <param name="snapshot">Completed synchronization snapshot.</param>
+        protected void ReturnDrainedFrames(Dictionary<uint, List<INetSquareSynchFrame>> snapshot)
+        {
+            if (snapshot == null)
+                return;
+
+            foreach (List<INetSquareSynchFrame> frames in snapshot.Values)
+            {
+                frames.Clear();
+                if (drainedFrameLists.Count < MaxPooledFrameLists)
+                    drainedFrameLists.Push(frames);
+            }
+
+            snapshot.Clear();
+            if (drainedFrameSnapshots.Count == 0)
+                drainedFrameSnapshots.Push(snapshot);
+        }
         /// <summary>
         /// Trims a stored frame list to the configured per-client cap.
         /// </summary>

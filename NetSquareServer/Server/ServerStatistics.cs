@@ -1,8 +1,8 @@
+using NetSquare.Server.Utils;
 using System;
 using System.Text;
 using System.Threading;
 
-#region Source
 namespace NetSquare.Server.Server
 {
     /// <summary>
@@ -82,7 +82,7 @@ namespace NetSquare.Server.Server
     }
 
     /// <summary>
-    /// Represents the server statistics manager component.
+    /// Periodically captures aggregate server network statistics.
     /// </summary>
     public class ServerStatisticsManager
     {
@@ -91,9 +91,21 @@ namespace NetSquare.Server.Server
         /// </summary>
         private NetSquareServer server;
         /// <summary>
+        /// Coordinates statistics worker lifecycle transitions.
+        /// </summary>
+        private readonly object lifecycleLock = new object();
+        /// <summary>
+        /// Cancels the active statistics worker.
+        /// </summary>
+        private CancellationTokenSource stopCancellation;
+        /// <summary>
+        /// Stores the active statistics worker thread.
+        /// </summary>
+        private Thread statisticsThread;
+        /// <summary>
         /// Stores the stop order value.
         /// </summary>
-        private bool stopOrder = false;
+        private int running;
         /// <summary>
         /// Occurs when get statistics is raised.
         /// </summary>
@@ -101,7 +113,7 @@ namespace NetSquare.Server.Server
         /// <summary>
         /// Gets or sets the running value.
         /// </summary>
-        public bool Running { get; private set; }
+        public bool Running { get { return Volatile.Read(ref running) != 0; } }
         /// <summary>
         /// Gets or sets the current statistics value.
         /// </summary>
@@ -144,12 +156,25 @@ namespace NetSquare.Server.Server
         /// <param name="intervalMs">intervals (in ms) for getting statistics</param>
         public void StartReceivingStatistics(NetSquareServer _server)
         {
-            server = _server;
-            stopOrder = false;
-            Running = true;
-            Thread statisticsThread = new Thread(() => { GetStatisticsLoop(); });
-            statisticsThread.IsBackground = true;
-            statisticsThread.Start();
+            if (_server == null)
+                throw new ArgumentNullException(nameof(_server));
+
+            lock (lifecycleLock)
+            {
+                if (Running)
+                    return;
+
+                server = _server;
+                lastProcessReceived = 0;
+                lastProcessSended = 0;
+                stopCancellation = new CancellationTokenSource();
+                CancellationToken workerToken = stopCancellation.Token;
+                statisticsThread = new Thread(() => GetStatisticsLoop(workerToken));
+                statisticsThread.IsBackground = true;
+                statisticsThread.Name = "NetSquare server statistics";
+                Volatile.Write(ref running, 1);
+                statisticsThread.Start();
+            }
         }
 
         /// <summary>
@@ -157,69 +182,98 @@ namespace NetSquare.Server.Server
         /// </summary>
         public void Stop()
         {
-            stopOrder = true;
+            Thread threadToJoin;
+            lock (lifecycleLock)
+            {
+                Volatile.Write(ref running, 0);
+                stopCancellation?.Cancel();
+                threadToJoin = statisticsThread;
+            }
+
+            if (threadToJoin != null && threadToJoin != Thread.CurrentThread)
+            {
+                int configuredTimeout = NetSquareConfigurationManager
+                    .Get<NetSquareConfiguration>().WorkerStopTimeoutMilliseconds;
+                int timeout = configuredTimeout > 0 ? configuredTimeout : 5000;
+                if (!threadToJoin.Join(timeout))
+                    throw new TimeoutException("The server statistics worker did not stop in time.");
+            }
         }
 
         /// <summary>
         /// Executes the get statistics loop operation.
         /// </summary>
-        private void GetStatisticsLoop()
+        private void GetStatisticsLoop(CancellationToken cancellationToken)
         {
-            while (!stopOrder)
+            try
             {
-                int toSend = 0;
-                long sended = 0;
-                long received = 0;
-                long dropped = 0;
-                long bytesSended = 0;
-                long bytesReceived = 0;
-                foreach (var client in server.Clients)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    toSend += client.Value.NbMessagesToSend;
-                    sended += client.Value.NbMessagesSended;
-                    received += client.Value.NbMessagesReceived;
-                    dropped += client.Value.NbMessagesDropped;
-                    bytesSended += client.Value.SendedBytes;
-                    bytesReceived += client.Value.ReceivedBytes;
-                    client.Value.SendedBytes = 0;
-                    client.Value.ReceivedBytes = 0;
+                    int toSend = 0;
+                    long sended = 0;
+                    long received = 0;
+                    long dropped = 0;
+                    long bytesSended = 0;
+                    long bytesReceived = 0;
+                    foreach (var client in server.Clients)
+                    {
+                        toSend += client.Value.NbMessagesToSend;
+                        sended += client.Value.NbMessagesSended;
+                        received += client.Value.NbMessagesReceived;
+                        dropped += client.Value.NbMessagesDropped;
+                        bytesSended += client.Value.TakeSendedBytes();
+                        bytesReceived += client.Value.TakeReceivedBytes();
+                    }
+
+                    long receivedThisTick = received - lastProcessReceived;
+                    lastProcessReceived = received;
+                    if (receivedThisTick < 0)
+                        receivedThisTick = 0;
+                    long sendedThisTick = sended - lastProcessSended;
+                    lastProcessSended = sended;
+                    if (sendedThisTick < 0)
+                        sendedThisTick = 0;
+
+                    int nbMessages = 0;
+                    foreach (MessageQueue queue in server.MessageQueueManager.Queues)
+                        nbMessages += queue.NbMessages;
+
+                    CurrentStatistics = new ServerStatistics
+                    {
+                        NbClientsConnected = server.Clients.Count,
+                        NbListeners = server.Listeners.Count,
+                        NbProcessingMessages = nbMessages,
+                        NbMessagesToSend = toSend,
+                        NbMessagesSended = sended,
+                        NbMessagesReceived = received,
+                        NbMessagesDropped = dropped,
+                        Downloading = (float)bytesReceived / 1024f * (1000f / intervalMs),
+                        Uploading = (float)bytesSended / 1024f * (1000f / intervalMs),
+                        NbMessagesReceiving = (int)(receivedThisTick * (1000f / intervalMs)),
+                        NbMessagesSending = (int)(sendedThisTick * (1000f / intervalMs))
+                    };
+
+                    try { OnGetStatistics?.Invoke(CurrentStatistics); }
+                    catch (Exception ex) { Writer.Write("Statistics callback failed: " + ex, ConsoleColor.DarkYellow); }
+                    if (cancellationToken.WaitHandle.WaitOne(IntervalMs))
+                        return;
                 }
-
-                long receivedThisTick = received - lastProcessReceived;
-                lastProcessReceived = received;
-                if (receivedThisTick < 0)
-                    receivedThisTick = 0;
-                long sendedThisTick = sended - lastProcessSended;
-                lastProcessSended = sended;
-                if (sendedThisTick < 0)
-                    sendedThisTick = 0;
-
-                int nbMessages = 0;
-                foreach (var queue in server.MessageQueueManager.Queues)
-                    nbMessages += queue.NbMessages;
-                //sended += server.UdpListener.NbMessageSended;
-                //received += server.UdpListener.NbMessageReceived;
-
-                CurrentStatistics = new ServerStatistics()
-                {
-                    NbClientsConnected = server.Clients.Count,
-                    NbListeners = server.Listeners.Count,
-                    NbProcessingMessages = nbMessages,
-                    NbMessagesToSend = toSend,
-                    NbMessagesSended = sended,
-                    NbMessagesReceived = received,
-                    NbMessagesDropped = dropped,
-                    Downloading = (float)bytesReceived / 1024f * ((1f / (float)intervalMs) * 1000f),
-                    Uploading = (float)bytesSended / 1024f * ((1f / (float)intervalMs) * 1000f),
-                    NbMessagesReceiving = (int)((float)receivedThisTick * ((1f / (float)intervalMs) * 1000f)),
-                    NbMessagesSending = (int)((float)sendedThisTick * ((1f / (float)intervalMs) * 1000f)),
-                };
-                OnGetStatistics?.Invoke(CurrentStatistics);
-                Thread.Sleep(intervalMs);
             }
-            Running = false;
-            stopOrder = false;
+            finally
+            {
+                CancellationTokenSource cancellationToDispose = null;
+                Volatile.Write(ref running, 0);
+                lock (lifecycleLock)
+                {
+                    if (statisticsThread == Thread.CurrentThread)
+                    {
+                        statisticsThread = null;
+                        cancellationToDispose = stopCancellation;
+                        stopCancellation = null;
+                    }
+                }
+                cancellationToDispose?.Dispose();
+            }
         }
     }
 }
-#endregion

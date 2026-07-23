@@ -15,6 +15,10 @@ namespace NetSquare.Core
         /// Gets or sets the scheduled actions value.
         /// </summary>
         private static Dictionary<string, NetSquareScheduledActionRunner> ScheduledActions { get; set; }
+        /// <summary>
+        /// Coordinates concurrent access to the global scheduled-action registry.
+        /// </summary>
+        private static readonly object ScheduledActionsLock = new object();
 
         /// <summary>
         /// Instantiatre a new Scheduler
@@ -31,7 +35,8 @@ namespace NetSquare.Core
         /// <returns>true if exists</returns>
         public static bool HasAction(string actionName)
         {
-            return ScheduledActions.ContainsKey(actionName);
+            lock (ScheduledActionsLock)
+                return ScheduledActions.ContainsKey(actionName);
         }
 
         /// <summary>
@@ -67,10 +72,16 @@ namespace NetSquare.Core
         /// <returns>true if success</returns>
         public static bool AddAction(NetSquareScheduledAction action)
         {
-            if (ScheduledActions.ContainsKey(action.Name))
-                return false;
-            ScheduledActions.Add(action.Name, new NetSquareScheduledActionRunner(action));
-            return true;
+            if (action == null)
+                throw new ArgumentNullException(nameof(action));
+
+            lock (ScheduledActionsLock)
+            {
+                if (ScheduledActions.ContainsKey(action.Name))
+                    return false;
+                ScheduledActions.Add(action.Name, new NetSquareScheduledActionRunner(action));
+                return true;
+            }
         }
 
         /// <summary>
@@ -80,7 +91,17 @@ namespace NetSquare.Core
         /// <returns>true if removed</returns>
         public static bool RemoveAction(string actionName)
         {
-            return ScheduledActions.Remove(actionName);
+            NetSquareScheduledActionRunner runner;
+            lock (ScheduledActionsLock)
+            {
+                if (!ScheduledActions.TryGetValue(actionName, out runner))
+                    return false;
+                ScheduledActions.Remove(actionName);
+            }
+
+            if (runner.IsRunning)
+                runner.StopAction();
+            return true;
         }
 
         /// <summary>
@@ -90,10 +111,13 @@ namespace NetSquare.Core
         /// <returns>true if started</returns>
         public static bool StartAction(string actionName)
         {
-            if (!ScheduledActions.ContainsKey(actionName))
-                return false;
-            ScheduledActions[actionName].StartAction();
-            return true;
+            NetSquareScheduledActionRunner runner;
+            lock (ScheduledActionsLock)
+            {
+                if (!ScheduledActions.TryGetValue(actionName, out runner))
+                    return false;
+            }
+            return runner.StartAction();
         }
 
         /// <summary>
@@ -103,10 +127,13 @@ namespace NetSquare.Core
         /// <returns>true if stoped</returns>
         public static bool StopAction(string actionName)
         {
-            if (!ScheduledActions.ContainsKey(actionName))
-                return false;
-            ScheduledActions[actionName].StopAction();
-            return true;
+            NetSquareScheduledActionRunner runner;
+            lock (ScheduledActionsLock)
+            {
+                if (!ScheduledActions.TryGetValue(actionName, out runner))
+                    return false;
+            }
+            return runner.StopAction();
         }
 
         /// <summary>
@@ -115,8 +142,12 @@ namespace NetSquare.Core
         /// <returns>nb of actions started</returns>
         public static int StartAllActions()
         {
+            List<NetSquareScheduledActionRunner> runners;
+            lock (ScheduledActionsLock)
+                runners = new List<NetSquareScheduledActionRunner>(ScheduledActions.Values);
+
             int nbStarted = 0;
-            foreach (NetSquareScheduledActionRunner runner in ScheduledActions.Values)
+            foreach (NetSquareScheduledActionRunner runner in runners)
                 if (runner.StartAction())
                     nbStarted++;
             return nbStarted;
@@ -128,8 +159,12 @@ namespace NetSquare.Core
         /// <returns>nb of actions stopped</returns>
         public static int StopAllActions()
         {
+            List<NetSquareScheduledActionRunner> runners;
+            lock (ScheduledActionsLock)
+                runners = new List<NetSquareScheduledActionRunner>(ScheduledActions.Values);
+
             int nbStopped = 0;
-            foreach (NetSquareScheduledActionRunner runner in ScheduledActions.Values)
+            foreach (NetSquareScheduledActionRunner runner in runners)
                 if (runner.StopAction())
                     nbStopped++;
             return nbStopped;
@@ -158,9 +193,13 @@ namespace NetSquare.Core
         /// <param name="frequencyHz"> frequency in Hz</param>
         public static void SetSchedulerFrequency(string actionName, float frequencyHz)
         {
-            if (!ScheduledActions.ContainsKey(actionName))
-                return;
-            ScheduledActions[actionName].Action.Frequency = GetMsFrequencyFromHz(frequencyHz);
+            NetSquareScheduledActionRunner runner;
+            lock (ScheduledActionsLock)
+            {
+                if (!ScheduledActions.TryGetValue(actionName, out runner))
+                    return;
+            }
+            runner.Action.Frequency = GetMsFrequencyFromHz(frequencyHz);
         }
 
         /// <summary>
@@ -170,14 +209,19 @@ namespace NetSquare.Core
         /// <param name="frequencyMs"> frequency in Ms</param>
         public static void SetSchedulerFrequency(string actionName, int frequencyMs)
         {
-            if (!ScheduledActions.ContainsKey(actionName))
-                return;
-            ScheduledActions[actionName].Action.Frequency = frequencyMs;
+            NetSquareScheduledActionRunner runner;
+            lock (ScheduledActionsLock)
+            {
+                if (!ScheduledActions.TryGetValue(actionName, out runner))
+                    return;
+            }
+            runner.Action.Frequency = frequencyMs;
         }
+
     }
 
     /// <summary>
-    /// Represents the net square scheduled action component.
+    /// Represents one callback and its scheduler timing settings.
     /// </summary>
     public class NetSquareScheduledAction
     {
@@ -226,7 +270,7 @@ namespace NetSquare.Core
         /// <summary>
         /// Gets or sets the is running value.
         /// </summary>
-        public bool IsRunning { get; private set; }
+        public bool IsRunning { get { return Volatile.Read(ref running) != 0; } }
         /// <summary>
         /// Occurs when do action is raised.
         /// </summary>
@@ -235,6 +279,9 @@ namespace NetSquare.Core
         /// Stores the action thread value.
         /// </summary>
         private Thread actionThread;
+        private readonly object lifecycleLock = new object();
+        private readonly ManualResetEventSlim stopSignal = new ManualResetEventSlim(false);
+        private int running;
 
         /// <summary>
         /// Executes the net square scheduled action runner operation.
@@ -242,7 +289,7 @@ namespace NetSquare.Core
         public NetSquareScheduledActionRunner(NetSquareScheduledAction action)
         {
             Action = action;
-            IsRunning = false;
+            Volatile.Write(ref running, 0);
             actionThread = null;
         }
 
@@ -251,17 +298,21 @@ namespace NetSquare.Core
         /// </summary>
         public bool StartAction()
         {
-            if (IsRunning)
-                return false;
+            lock (lifecycleLock)
+            {
+                if (IsRunning)
+                    return false;
 
-            if (Action.SmartFrequencyAdjusting)
-                actionThread = new Thread(SmartFrequencyActionLoop);
-            else
-                actionThread = new Thread(NormalFrequencyActionLoop);
-            IsRunning = true;
-            actionThread.IsBackground = true;
-            actionThread.Start();
-            return true;
+                stopSignal.Reset();
+                actionThread = Action.SmartFrequencyAdjusting
+                    ? new Thread(SmartFrequencyActionLoop)
+                    : new Thread(NormalFrequencyActionLoop);
+                actionThread.IsBackground = true;
+                actionThread.Name = "NetSquare scheduler " + Action.Name;
+                Volatile.Write(ref running, 1);
+                actionThread.Start();
+                return true;
+            }
         }
 
         /// <summary>
@@ -278,14 +329,23 @@ namespace NetSquare.Core
         /// </summary>
         public bool StopAction()
         {
-            if (IsRunning)
+            Thread threadToJoin;
+            lock (lifecycleLock)
             {
-                actionThread.Abort();
-                IsRunning = false;
-                return true;
+                if (!IsRunning)
+                    return false;
+
+                Volatile.Write(ref running, 0);
+                stopSignal.Set();
+                threadToJoin = actionThread;
             }
-            else
-                return false;
+
+            if (threadToJoin != null && threadToJoin != Thread.CurrentThread && !threadToJoin.Join(5000))
+            {
+                throw new TimeoutException(
+                    "The scheduled action '" + Action.Name + "' did not stop within 5000 ms.");
+            }
+            return true;
         }
 
         /// <summary>
@@ -293,17 +353,25 @@ namespace NetSquare.Core
         /// </summary>
         private void SmartFrequencyActionLoop()
         {
-            Stopwatch sw = new Stopwatch();
-            while (IsRunning)
+            Stopwatch stopwatch = new Stopwatch();
+            try
             {
-                sw.Restart();
-                Action.Callback();
-                OnDoAction?.Invoke();
-                sw.Stop();
-                int ms = (int)(Action.Frequency - sw.ElapsedMilliseconds);
-                if (ms < 1)
-                    ms = 1;
-                Thread.Sleep(ms);
+                while (IsRunning)
+                {
+                    stopwatch.Restart();
+                    Action.Callback();
+                    OnDoAction?.Invoke();
+                    stopwatch.Stop();
+                    int waitMilliseconds = (int)(Action.Frequency - stopwatch.ElapsedMilliseconds);
+                    if (waitMilliseconds < 1)
+                        waitMilliseconds = 1;
+                    if (stopSignal.Wait(waitMilliseconds))
+                        return;
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref running, 0);
             }
         }
 
@@ -312,11 +380,19 @@ namespace NetSquare.Core
         /// </summary>
         private void NormalFrequencyActionLoop()
         {
-            while (IsRunning)
+            try
             {
-                Action.Callback();
-                OnDoAction?.Invoke();
-                Thread.Sleep(Action.Frequency);
+                while (IsRunning)
+                {
+                    Action.Callback();
+                    OnDoAction?.Invoke();
+                    if (stopSignal.Wait(Math.Max(1, Action.Frequency)))
+                        return;
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref running, 0);
             }
         }
     }

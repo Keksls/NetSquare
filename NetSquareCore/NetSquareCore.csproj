@@ -42,8 +42,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Client\UdpDatagramAuthenticator.cs" />
+    <Compile Include="Collections\BoundedConcurrentQueue.cs" />
+    <Compile Include="Configuration\NetSquareConfiguration.cs" />
+    <Compile Include="Configuration\NetSquareConfigurationStore.cs" />
+    <Compile Include="Configuration\NetSquareJsonSerializer.cs" />
     <Compile Include="Compression\DeflateCompressor.cs" />
     <Compile Include="Client\ConnectedClient.cs" />
+    <Compile Include="Connection\ConnectionFeedbackProtocol.cs" />
+    <Compile Include="Connection\ConnectionRejectionInfo.cs" />
+    <Compile Include="Connection\ConnectionRejectionReason.cs" />
+    <Compile Include="Connection\DisconnectInfo.cs" />
+    <Compile Include="Connection\DisconnectReason.cs" />
     <Compile Include="Encryption\AES_Encryptor.cs" />
     <Compile Include="Encryption\CaesarChipher_Encryptor.cs" />
     <Compile Include="Encryption\CustomSBC_Encryptor.cs" />
@@ -63,7 +73,13 @@
     <Compile Include="Encryption\XOR_Encryptor.cs" />
     <Compile Include="NetSquareProtocoleType.cs" />
     <Compile Include="NetSquareBufferPool.cs" />
-    <Compile Include="HandShake.cs" />
+    <Compile Include="Handshake\HandshakeCapabilities.cs" />
+    <Compile Include="Handshake\HandshakeClientHello.cs" />
+    <Compile Include="Handshake\HandshakeClientProof.cs" />
+    <Compile Include="Handshake\HandshakeServerAccept.cs" />
+    <Compile Include="Handshake\HandshakeServerChallenge.cs" />
+    <Compile Include="Handshake\HandshakeServerConnected.cs" />
+    <Compile Include="Handshake\NetSquareHandshakeProtocol.cs" />
     <Compile Include="Messages\NetSquareMessageID.cs" />
     <Compile Include="Messages\Half.cs" />
     <Compile Include="Messages\HalfHelper.cs" />

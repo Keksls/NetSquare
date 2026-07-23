@@ -10,6 +10,14 @@ namespace NetSquare.Core
     public class NetSquareSerializer
     {
         /// <summary>
+        /// Defines the initial write buffer sized for common control messages and transform frames.
+        /// </summary>
+        public const int DefaultWriteCapacity = 128;
+        /// <summary>
+        /// Stores the maximum number of elements accepted from one serialized collection.
+        /// </summary>
+        public static int MaxCollectionLength = 1024 * 1024;
+        /// <summary>
         /// Stores the buffer value.
         /// </summary>
         private byte[] _buffer;
@@ -38,9 +46,18 @@ namespace NetSquare.Core
         /// <param name="position"> The position in the buffer </param>
         public void StartReading(byte[] buffer, int length = 0, int position = 0)
         {
+            if (buffer == null)
+                throw new ArgumentNullException(nameof(buffer));
+
+            int effectiveLength = length == 0 ? buffer.Length : length;
+            if (effectiveLength < 0 || effectiveLength > buffer.Length)
+                throw new ArgumentOutOfRangeException(nameof(length));
+            if (position < 0 || position > effectiveLength)
+                throw new ArgumentOutOfRangeException(nameof(position));
+
             _buffer = buffer;
             _position = position;
-            _length = length > 0 ? Math.Min(length, _buffer.Length) : _buffer.Length;
+            _length = effectiveLength;
             _serializationMode = NetSquareSerializationMode.Read;
         }
 
@@ -51,7 +68,16 @@ namespace NetSquare.Core
         /// <param name="position"> The position in the buffer </param>
         public void StartReading(int length = 0, int position = 0)
         {
-            _length = length > 0 ? Math.Min(length, _buffer.Length) : _buffer.Length;
+            if (_buffer == null)
+                throw new InvalidOperationException("No serializer buffer is available.");
+
+            int effectiveLength = length == 0 ? _buffer.Length : length;
+            if (effectiveLength < 0 || effectiveLength > _buffer.Length)
+                throw new ArgumentOutOfRangeException(nameof(length));
+            if (position < 0 || position > effectiveLength)
+                throw new ArgumentOutOfRangeException(nameof(position));
+
+            _length = effectiveLength;
             _position = position;
             _serializationMode = NetSquareSerializationMode.Read;
         }
@@ -61,10 +87,16 @@ namespace NetSquare.Core
         /// </summary>
         /// <param name="capacity"> The initial capacity of the buffer </param>
         /// <param name="growMin"> The minimum grow size of the buffer. if = 0, the buffer will double in size when it needs to grow, otherwise it will grow by the specified amount </param>
-        public void StartWriting(int capacity = 1024, int growMin = 0)
+        public void StartWriting(int capacity = DefaultWriteCapacity, int growMin = 0)
         {
+            if (capacity < 0)
+                throw new ArgumentOutOfRangeException(nameof(capacity));
+            if (growMin < 0)
+                throw new ArgumentOutOfRangeException(nameof(growMin));
+
             _buffer = new byte[capacity];
             _position = 0;
+            _length = 0;
             _growMin = growMin;
             _serializationMode = NetSquareSerializationMode.Write;
         }
@@ -101,6 +133,19 @@ namespace NetSquare.Core
         {
             if (!CanReadElements(count, elementSize))
                 throw new Exception("Buffer overflow");
+        }
+
+        /// <summary>
+        /// Rejects negative or excessively large collection counts before allocation.
+        /// </summary>
+        /// <param name="length">Serialized collection element count.</param>
+        private static void ThrowIfInvalidCollectionLength(int length)
+        {
+            int maximumLength = MaxCollectionLength;
+            if (maximumLength < 0)
+                throw new InvalidOperationException("MaxCollectionLength cannot be negative.");
+            if (length < 0 || length > maximumLength)
+                throw new InvalidOperationException("Serialized collection length exceeds the configured limit.");
         }
 
         #region Get Methods
@@ -684,10 +729,9 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (length < 0)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfInvalidCollectionLength(length);
+                    // Every encoded string needs at least its four-byte length prefix.
+                    ThrowIfCannotReadElements(length, 4);
                     string[] value = new string[length];
                     for (int i = 0; i < length; i++)
                     {
@@ -753,10 +797,7 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (length < 0)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfInvalidCollectionLength(length);
                     T[] value = new T[length];
                     for (int i = 0; i < length; i++)
                     {
@@ -780,10 +821,7 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (length < 0)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfInvalidCollectionLength(length);
                     List<T> value = new List<T>(length);
                     for (int i = 0; i < length; i++)
                     {
@@ -808,10 +846,7 @@ namespace NetSquare.Core
             {
                 case NetSquareSerializationMode.Read:
                     int length = GetInt();
-                    if (length < 0)
-                    {
-                        throw new Exception("Buffer overflow");
-                    }
+                    ThrowIfInvalidCollectionLength(length);
                     Dictionary<TKey, TValue> value = new Dictionary<TKey, TValue>(length);
                     for (int i = 0; i < length; i++)
                     {
@@ -1286,7 +1321,11 @@ namespace NetSquare.Core
                         return false;
                     }
                     int length = BitConverter.ToInt32(_buffer, _position);
-                    if (length < 0)
+                    int maximumLength = MaxCollectionLength;
+                    if (maximumLength < 0 ||
+                        length < 0 ||
+                        length > maximumLength ||
+                        length > (_length - _position - 4) / 4)
                     {
                         return false;
                     }
@@ -2146,13 +2185,36 @@ namespace NetSquare.Core
         /// <param name="length"> The length to ensure </param>
         private void EnsureCapacity(int length)
         {
-            if (_position + length > _buffer.Length)
+            if (length < 0)
+                throw new ArgumentOutOfRangeException(nameof(length));
+
+            int requiredCapacity = checked(_position + length);
+            if (requiredCapacity <= _buffer.Length)
+                return;
+
+            int newCapacity;
+            if (_growMin > 0)
             {
-                int toGrow = _growMin == 0 ? _buffer.Length > length ? _buffer.Length : length : length + _growMin;
-                byte[] newBuffer = new byte[_buffer.Length + toGrow];
-                Array.Copy(_buffer, newBuffer, _position);
-                _buffer = newBuffer;
+                newCapacity = Math.Max(requiredCapacity, checked(_buffer.Length + _growMin));
             }
+            else
+            {
+                // Power-of-two growth amortizes copies and avoids a second resize for adjacent writes.
+                newCapacity = Math.Max(1, _buffer.Length);
+                while (newCapacity < requiredCapacity)
+                {
+                    if (newCapacity > int.MaxValue / 2)
+                    {
+                        newCapacity = requiredCapacity;
+                        break;
+                    }
+                    newCapacity *= 2;
+                }
+            }
+
+            byte[] newBuffer = new byte[newCapacity];
+            Array.Copy(_buffer, newBuffer, _position);
+            _buffer = newBuffer;
         }
 
         /// <summary>
@@ -2170,10 +2232,8 @@ namespace NetSquare.Core
         /// <exception cref="Exception"></exception>
         public void DummyRead(int length)
         {
-            if (_position + length > _length)
-            {
+            if (!CanReadBytes(length))
                 throw new Exception("Buffer overflow");
-            }
             _position += length;
         }
 

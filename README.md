@@ -53,18 +53,24 @@ eg: .set([int]).set([string]).set([customType])
 
 #### Configuration
 You can use configuration system to specify persistants parameters
-```
-NetSquareConfigurationManager.Configuration.BlackListFilePath = @"[current]\blackList.bl";
-NetSquareConfigurationManager.Configuration.LockConsole = false;
-NetSquareConfigurationManager.Configuration.Port = 5050;
-NetSquareConfigurationManager.Configuration.ProcessOffsetTime = 1;
-NetSquareConfigurationManager.Configuration.NbReceivingThreads = 4;
-NetSquareConfigurationManager.Configuration.NbQueueThreads = 8;
-NetSquareConfigurationManager.SaveConfiguration(config);
+```csharp
+public sealed class GameConfiguration : NetSquareConfiguration
+{
+    public int MaxPlayers { get; set; } = 100;
+}
+
+NetSquareConfigurationManager.Initialize<GameConfiguration>();
+GameConfiguration config = NetSquareConfigurationManager.Get<GameConfiguration>();
+config.BlackListFilePath = @"[current]\blackList.bl";
+config.LockConsole = false;
+config.Port = 5050;
+config.NbQueueThreads = 8;
+config.MaxPlayers = 250;
+NetSquareConfigurationManager.Save();
 ```
 ###### BlackListFilePath
-Path to the BlackList IP File. NetSquare use external API to determinate if a client is a knew abusive IP.
-You can manualy add IP to the BlackListed IP file. It's a json file that NetSquare created a first run to the given path.
+Path to the persisted generic blacklist state. NetSquare stores account/IP escalation history, active hit windows, and temporary or permanent bans, and migrates older IP-only documents automatically.
+Applications can report abusive behavior for project-defined subjects such as accounts, or use the automatic IP adapters. AbuseIPDB, BlockList.de, Spamhaus DROP, and DShield remain IP-only, optional, and disabled by default.
 
 ###### LockConsole
 If LockConsole is set to True and your server run to a Windows Console, the console will be locked for preventing user selection that lock main thread

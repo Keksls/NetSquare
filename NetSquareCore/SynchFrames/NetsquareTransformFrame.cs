@@ -344,12 +344,22 @@ namespace NetSquare.Core
         /// <returns> distance between pos1 and pos2</returns>
         public static float Distance(NetsquareTransformFrame pos1, NetsquareTransformFrame pos2)
         {
-            float diff_x = pos1.x - pos2.x;
-            float diff_y = pos1.y - pos2.y;
-            float diff_z = pos1.z - pos2.z;
-            return Sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
+            return Sqrt(DistanceSquared(pos1, pos2));
         }
 
+        /// <summary>
+        /// Gets the squared distance between two positions without computing a square root.
+        /// </summary>
+        /// <param name="pos1">First position.</param>
+        /// <param name="pos2">Second position.</param>
+        /// <returns>Squared distance between both positions.</returns>
+        public static float DistanceSquared(NetsquareTransformFrame pos1, NetsquareTransformFrame pos2)
+        {
+            float diffX = pos1.x - pos2.x;
+            float diffY = pos1.y - pos2.y;
+            float diffZ = pos1.z - pos2.z;
+            return diffX * diffX + diffY * diffY + diffZ * diffZ;
+        }
         /// <summary>
         /// Linearly interpolates between two positions.
         /// </summary>

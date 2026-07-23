@@ -213,6 +213,17 @@ namespace NetSquare.Core
         {
             return compressor.Decompress(buffer);
         }
+
+        /// <summary>
+        /// Decompresses a payload while enforcing an absolute output limit.
+        /// </summary>
+        /// <param name="buffer">Compressed input bytes.</param>
+        /// <param name="maxOutputLength">Maximum accepted decompressed length.</param>
+        /// <returns>The bounded decompressed bytes.</returns>
+        public static byte[] Decompress(byte[] buffer, int maxOutputLength)
+        {
+            return compressor.Decompress(buffer, maxOutputLength);
+        }
         #endregion
     }
 }

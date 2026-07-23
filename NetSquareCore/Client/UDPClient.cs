@@ -90,6 +90,22 @@ namespace NetSquare.Core
         /// </summary>
         private IPEndPoint serverLocalEndPoint;
         /// <summary>
+        /// Stores the UDP session key until the transport direction is known.
+        /// </summary>
+        private byte[] udpSessionKey;
+        /// <summary>
+        /// Authenticates UDP datagrams when MAC64 was negotiated for this TCP session.
+        /// </summary>
+        private UdpDatagramAuthenticator authenticator;
+        /// <summary>
+        /// Stores whether both UDP directions were registered.
+        /// </summary>
+        private int registrationCompleted;
+        /// <summary>
+        /// Gets whether UDP endpoint registration completed.
+        /// </summary>
+        public bool IsRegistrationCompleted { get { return Volatile.Read(ref registrationCompleted) != 0; } }
+        /// <summary>
         /// Stores the server hubs value.
         /// </summary>
         private static readonly ConcurrentDictionary<string, ServerUdpHub> ServerHubs = new ConcurrentDictionary<string, ServerUdpHub>();
@@ -105,6 +121,123 @@ namespace NetSquare.Core
         }
 
         /// <summary>
+        /// Stores the session key delivered by the TCP handshake.
+        /// </summary>
+        /// <param name="sessionKey">Sixteen-byte session key, or null for unprotected UDP.</param>
+        public void SetAuthenticationKey(byte[] sessionKey)
+        {
+            // Own a private copy so callers cannot mutate an authenticated session after setup.
+            Interlocked.Exchange(ref registrationCompleted, 0);
+            if (udpSessionKey != null)
+                Array.Clear(udpSessionKey, 0, udpSessionKey.Length);
+            authenticator?.Dispose();
+            authenticator = null;
+
+            if (sessionKey == null)
+            {
+                udpSessionKey = null;
+                return;
+            }
+            if (sessionKey.Length != NetSquareHandshakeProtocol.NonceLength)
+            {
+                // A malformed negotiated key must fail closed instead of silently downgrading to raw UDP.
+                throw new ArgumentException(
+                    "The UDP authentication key must contain exactly " +
+                    NetSquareHandshakeProtocol.NonceLength + " bytes.",
+                    nameof(sessionKey));
+            }
+
+            udpSessionKey = new byte[sessionKey.Length];
+            Buffer.BlockCopy(sessionKey, 0, udpSessionKey, 0, sessionKey.Length);
+        }
+
+        /// <summary>
+        /// Initializes directional UDP authentication after the client or server role is known.
+        /// </summary>
+        private void InitializeAuthenticator()
+        {
+            if (udpSessionKey == null)
+                return;
+
+            // The authenticator derives and owns its keys; erase the temporary handshake key copy.
+            byte[] sessionKey = udpSessionKey;
+            udpSessionKey = null;
+            try
+            {
+                authenticator = new UdpDatagramAuthenticator(sessionKey, isServer);
+            }
+            finally
+            {
+                Array.Clear(sessionKey, 0, sessionKey.Length);
+            }
+        }
+
+        /// <summary>
+        /// Validates one datagram according to the UDP mode negotiated during the TCP handshake.
+        /// </summary>
+        /// <param name="datagram">Received UDP bytes.</param>
+        /// <param name="payloadLength">Validated NetworkMessage length.</param>
+        /// <returns>True when the raw envelope or MAC64 envelope is valid.</returns>
+        private bool TryDecodeDatagram(byte[] datagram, out int payloadLength)
+        {
+            if (authenticator != null)
+            {
+                return authenticator.TryAuthenticate(
+                    datagram,
+                    ConnectedClient.MinTcpMessageSize,
+                    out payloadLength);
+            }
+
+            // Unprotected mode still enforces the exact declared message length before parsing.
+            return UdpDatagramAuthenticator.TryGetPayloadLength(
+                datagram,
+                ConnectedClient.MinTcpMessageSize,
+                false,
+                out payloadLength);
+        }
+
+        /// <summary>
+        /// Completes client registration and binds its observed endpoint.
+        /// </summary>
+        /// <param name="message">Validated UDP registration message.</param>
+        /// <param name="remoteEndPoint">Observed datagram source.</param>
+        /// <returns>True when the endpoint was registered.</returns>
+        private bool TryCompleteServerRegistration(NetworkMessage message, IPEndPoint remoteEndPoint)
+        {
+            // MAC64 allows authenticated rebinding; unprotected UDP keeps the first observed endpoint.
+            if (!isServer ||
+                message == null ||
+                message.HeadID != (ushort)NetSquareMessageID.UdpRegister ||
+                remoteEndPoint == null)
+                return false;
+
+            if (IsRegistrationCompleted &&
+                authenticator == null &&
+                (RemoteEndPoint == null || !RemoteEndPoint.Equals(remoteEndPoint)))
+                return false;
+
+            RemoteEndPoint = remoteEndPoint;
+            Interlocked.Exchange(ref registrationCompleted, 1);
+            return true;
+        }
+
+        /// <summary>
+        /// Completes registration after a validated server acknowledgement.
+        /// </summary>
+        /// <param name="message">Validated UDP registration acknowledgement.</param>
+        /// <returns>True when registration became complete.</returns>
+        private bool TryCompleteClientRegistration(NetworkMessage message)
+        {
+            if (isServer ||
+                message == null ||
+                message.HeadID != (ushort)NetSquareMessageID.UdpRegister)
+                return false;
+
+            Interlocked.Exchange(ref registrationCompleted, 1);
+            return true;
+        }
+
+        /// <summary>
         /// Create new Client Side UDP Connection
         /// </summary>
         /// <param name="_relatedClient">ConnectedClient owner</param>
@@ -113,6 +246,7 @@ namespace NetSquare.Core
         {
             isServer = false;
             relatedClient = _relatedClient;
+            InitializeAuthenticator();
             IPEndPoint localTcpEndPoint = (IPEndPoint)relatedTcpClient.LocalEndPoint;
             IPEndPoint remoteTcpEndPoint = (IPEndPoint)relatedTcpClient.RemoteEndPoint;
             RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
@@ -131,6 +265,7 @@ namespace NetSquare.Core
         {
             isServer = true;
             relatedClient = _relatedClient;
+            InitializeAuthenticator();
             IPEndPoint localTcpEndPoint = (IPEndPoint)relatedTcpClient.LocalEndPoint;
             IPEndPoint remoteTcpEndPoint = (IPEndPoint)relatedTcpClient.RemoteEndPoint;
             RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
@@ -173,36 +308,72 @@ namespace NetSquare.Core
         }
 
         /// <summary>
-        /// Sends an internal UDP endpoint registration datagram.
+        /// Sends a UDP endpoint registration datagram.
         /// </summary>
         public void SendRegistration()
         {
             if (isServer || relatedClient == null || relatedClient.ID == 0)
                 return;
 
-            SendMessage(new NetworkMessage(NetSquareMessageID.UdpRegister, relatedClient.ID));
+            // The empty registration body avoids transmitting the session secret on UDP.
+            NetworkMessage registration = new NetworkMessage(NetSquareMessageID.UdpRegister, relatedClient.ID);
+            QueueDatagram(registration.HeadID, registration.Serialize(), true);
         }
 
         /// <summary>
-        /// Executes the send message operation.
+        /// Sends the server acknowledgement for UDP registration.
         /// </summary>
+        private void SendRegistrationAcknowledgement()
+        {
+            if (!isServer || relatedClient == null || relatedClient.ID == 0)
+                return;
+
+            NetworkMessage acknowledgement = new NetworkMessage(NetSquareMessageID.UdpRegister, relatedClient.ID);
+            QueueDatagram(acknowledgement.HeadID, acknowledgement.Serialize(), true);
+        }
+
+        /// <summary>
+        /// Serializes and queues one UDP message.
+        /// </summary>
+        /// <param name="msg">Message to send.</param>
         public void SendMessage(NetworkMessage msg)
         {
-            SendMessage(msg.HeadID, msg.Serialize());
+            if (msg == null)
+                return;
+
+            QueueDatagram(msg.HeadID, msg.Serialize(), false);
         }
 
         /// <summary>
-        /// Executes the send message operation.
+        /// Queues one serialized message as a UDP datagram.
         /// </summary>
+        /// <param name="headID">Message route identifier used by the coalescing queue.</param>
+        /// <param name="msg">Serialized NetworkMessage bytes.</param>
         public void SendMessage(ushort headID, byte[] msg)
         {
-            if (msg == null || msg.Length == 0)
+            QueueDatagram(headID, msg, false);
+        }
+
+        /// <summary>
+        /// Queues one UDP payload and defers optional authentication until it is actually sent.
+        /// </summary>
+        /// <param name="headID">Message route identifier used by the coalescing queue.</param>
+        /// <param name="payload">Serialized NetworkMessage bytes.</param>
+        /// <param name="allowBeforeRegistration">Whether this is a transport registration frame.</param>
+        private void QueueDatagram(
+            ushort headID,
+            byte[] payload,
+            bool allowBeforeRegistration)
+        {
+            if (payload == null || payload.Length == 0)
                 return;
 
             bool shouldStartSend = false;
             lock (sendLock)
             {
-                // add message index for HeadID
+                if (!allowBeforeRegistration && !IsRegistrationCompleted)
+                    return;
+
                 if (!UDPSendingQueue.ContainsKey(headID))
                 {
                     UDPSendingQueue.Add(headID, null);
@@ -210,57 +381,68 @@ namespace NetSquare.Core
                     messageTypesArray[messageTypesArray.Length - 1] = headID;
                 }
 
-                // already sending datagram, so let's save it for furture send
+                // Keep only the newest pending datagram for each route.
                 if (isSendingUDPMessage)
                 {
                     if (UDPSendingQueue[headID] != null)
-                    {
                         Interlocked.Increment(ref nbMessagesDropped);
-                    }
                     else
-                    {
                         queuedUdpMessages++;
-                    }
-                    // set current message as last for this headID in the  sending queue
-                    UDPSendingQueue[headID] = msg;
+
+                    UDPSendingQueue[headID] = payload;
                 }
                 else
                 {
                     isSendingUDPMessage = true;
-                    currentSendingMessage = msg;
+                    currentSendingMessage = payload;
                     shouldStartSend = true;
                 }
                 RefreshSendingCountLocked();
             }
 
             if (shouldStartSend)
-                BeginSendMessage(msg);
+                BeginSendMessage(payload);
         }
 
         #region UDP
         /// <summary>
-        /// Executes the on receive udp operation.
+        /// Validates and dispatches one client-side UDP datagram.
         /// </summary>
+        /// <param name="res">Asynchronous receive result.</param>
         private void OnReceiveUDP(IAsyncResult res)
         {
             try
             {
                 byte[] datagram = connection.EndReceive(res, ref RemoteEndPoint);
-                receivedBytes += datagram.Length;
-                // convert datagram into networkMessage, if success, send it to server for processing
+                Interlocked.Add(ref receivedBytes, datagram.Length);
+
+                int payloadLength;
+                if (!TryDecodeDatagram(datagram, out payloadLength))
+                    return;
+
+                // Never parse or dispatch bytes before their configured envelope is valid.
                 NetworkMessage message = new NetworkMessage();
-                if (message.SafeSetDatagram(datagram))
+                if (!message.SafeSetDatagram(datagram, payloadLength))
+                    return;
+
+                if (message.HeadID == (ushort)NetSquareMessageID.UdpRegister)
+                {
+                    // Consume registration acknowledgements inside the transport layer.
+                    TryCompleteClientRegistration(message);
+                }
+                else if (IsRegistrationCompleted)
                 {
                     relatedClient.NbMessagesReceived++;
                     message.Client = relatedClient;
                     relatedClient.Fire_OnMessageReceived(message);
                 }
-
-                //Start over receiving data
-                connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
             }
             catch (ObjectDisposedException) { }
             catch (SocketException) { }
+            finally
+            {
+                try { connection.BeginReceive(OnReceiveUDP, RemoteEndPoint); } catch { }
+            }
         }
 
         /// <summary>
@@ -270,11 +452,13 @@ namespace NetSquare.Core
         {
             try
             {
-                sendedBytes += message.Length;
+                // Protect only the payload that survived coalescing, preserving sequence order and CPU time.
+                byte[] datagram = authenticator != null ? authenticator.Protect(message) : message;
+                Interlocked.Add(ref sendedBytes, datagram.Length);
                 if (isServer)
-                    connection.BeginSend(message, message.Length, RemoteEndPoint, MessageSended, null);
+                    connection.BeginSend(datagram, datagram.Length, RemoteEndPoint, MessageSended, null);
                 else
-                    connection.BeginSend(message, message.Length, MessageSended, null);
+                    connection.BeginSend(datagram, datagram.Length, MessageSended, null);
             }
             catch (SocketException)
             {
@@ -484,30 +668,58 @@ namespace NetSquare.Core
             }
 
             /// <summary>
-            /// Executes the on receive udp operation.
+            /// Routes, validates and dispatches one server-side UDP datagram.
             /// </summary>
+            /// <param name="res">Asynchronous receive result.</param>
             private void OnReceiveUDP(IAsyncResult res)
             {
                 try
                 {
                     IPEndPoint remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
                     byte[] datagram = Connection.EndReceive(res, ref remoteEndPoint);
-                    NetworkMessage message = new NetworkMessage();
-                    if (message.SafeSetDatagram(datagram))
-                    {
-                        UDPConnection clientConnection;
-                        if (clients.TryGetValue(message.ClientID, out clientConnection))
-                        {
-                            clientConnection.RemoteEndPoint = remoteEndPoint;
-                            clientConnection.receivedBytes += datagram.Length;
-                            if (message.HeadID == (ushort)NetSquareMessageID.UdpRegister)
-                                return;
 
-                            clientConnection.relatedClient.NbMessagesReceived++;
-                            message.Client = clientConnection.relatedClient;
-                            clientConnection.relatedClient.Fire_OnMessageReceived(message);
-                        }
+                    // ClientID is only a routing hint; the selected connection validates the negotiated envelope.
+                    uint clientID;
+                    if (!UdpDatagramAuthenticator.TryReadClientID(
+                            datagram,
+                            ConnectedClient.MinTcpMessageSize,
+                            out clientID))
+                        return;
+
+                    UDPConnection clientConnection;
+                    if (!clients.TryGetValue(clientID, out clientConnection))
+                        return;
+
+                    Interlocked.Add(ref clientConnection.receivedBytes, datagram.Length);
+                    int payloadLength;
+                    if (!clientConnection.TryDecodeDatagram(datagram, out payloadLength))
+                        return;
+
+                    // Parsing is safe only after validating the negotiated UDP envelope.
+                    NetworkMessage message = new NetworkMessage();
+                    if (!message.SafeSetDatagram(datagram, payloadLength))
+                        return;
+
+                    // The TCP-associated session is authoritative, even if the UDP header was altered.
+                    message.Client = clientConnection.relatedClient;
+                    message.ClientID = clientConnection.relatedClient.ID;
+
+                    if (message.HeadID == (ushort)NetSquareMessageID.UdpRegister)
+                    {
+                        // MAC64 can authenticate rebinding; unprotected mode accepts only the first endpoint.
+                        if (clientConnection.TryCompleteServerRegistration(message, remoteEndPoint))
+                            clientConnection.SendRegistrationAcknowledgement();
+                        return;
                     }
+
+                    // Drop application datagrams until registration and source endpoint validation succeed.
+                    if (!clientConnection.IsRegistrationCompleted ||
+                        clientConnection.RemoteEndPoint == null ||
+                        !clientConnection.RemoteEndPoint.Equals(remoteEndPoint))
+                        return;
+
+                    clientConnection.relatedClient.NbMessagesReceived++;
+                    clientConnection.relatedClient.Fire_OnMessageReceived(message);
                 }
                 catch (ObjectDisposedException)
                 {

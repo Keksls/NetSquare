@@ -7,14 +7,31 @@ The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It is ins
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Core -Version 1.0.9
+NuGet\Install-Package NetSquare.Core -Version 1.0.14
 ```
 
 or:
 
 ```bash
-dotnet add package NetSquare.Core --version 1.0.9
+dotnet add package NetSquare.Core --version 1.0.14
 ```
+
+## Shared JSON Configuration
+
+`NetSquareConfigurationStore<TConfiguration>` is the common strongly typed JSON persistence layer used by the client and server packages. Each consumer owns its store, so client and server configurations can coexist in the same process without sharing static state.
+
+```csharp
+using NetSquare.Core.Configuration;
+
+NetSquareConfigurationStore<MyConfiguration> store =
+    new NetSquareConfigurationStore<MyConfiguration>("application.config.json");
+
+MyConfiguration configuration = store.Configuration;
+configuration.UseTLS = true;
+store.Save();
+```
+
+Configuration contracts derive from `NetSquareConfiguration`, which contains settings shared by both endpoints. Client-only settings remain in `NetSquareClientConfiguration`; certificates, blacklist policy, listener sizing, and other server-only settings remain in the server contract.
 
 ## Network Messages
 
@@ -91,6 +108,9 @@ public sealed class PlayerState : INetSquareSerializable
 }
 ```
 
+## Connection Feedback Contracts
+
+`ConnectionRejectionInfo` and `DisconnectInfo` expose a typed reason, optional human-readable message, and optional UTC expiration date. The related enums include `BannedTemporary` and `BannedPermanent`, and the `IsBanned`, `IsTemporaryBan`, and `IsPermanentBan` helpers simplify client handling.
 ## Compression and Encryption
 
 `NetSquare.Core` includes reusable compression and encryption implementations such as `NoCompression`, `GZipCompressor`, `DeflateCompressor`, `NoEncryption`, `AES_Encryptor`, and `XOR_Encryptor`.

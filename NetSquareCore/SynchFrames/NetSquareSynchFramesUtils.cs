@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 #region Source
 namespace NetSquare.Core
@@ -17,6 +18,10 @@ namespace NetSquare.Core
         /// Stores the custom sized value.
         /// </summary>
         private static Dictionary<byte, int> customSized = new Dictionary<byte, int>();
+        /// <summary>
+        /// Serializes registration and lookup of custom frame metadata.
+        /// </summary>
+        private static readonly object customFrameLock = new object();
 
         /// <summary>
         /// Static Utils constructor
@@ -33,54 +38,16 @@ namespace NetSquare.Core
         /// <param name="message"> message to get the frames</param>
         /// <returns> array of frames</returns>
         /// <exception cref="Exception"> if the frame type is unknown</exception>
-        public unsafe static INetSquareSynchFrame[] GetFrames(NetworkMessage message)
+        public static INetSquareSynchFrame[] GetFrames(NetworkMessage message)
         {
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
+
             ushort nbFrames = message.Serializer.GetUShort();
+            ValidateFrameCount(message.Serializer, nbFrames);
             INetSquareSynchFrame[] frames = new INetSquareSynchFrame[nbFrames];
-
-            fixed (byte* ptr = message.Serializer.Buffer)
-            {
-                byte* b = ptr;
-                b += message.Serializer.Position;
-                int readingIndex = 0;
-
-                for (int i = 0; i < nbFrames; i++)
-                {
-                    byte frameType = *b; // do NOT increment b here because we need to read the frame type again in Deserialize
-                    readingIndex = 0;
-                    switch (frameType)
-                    {
-                        // trasform frame
-                        case 0:
-                            frames[i] = new NetsquareTransformFrame();
-                            frames[i].Deserialize(ref b);
-                            readingIndex += NetsquareTransformFrame.Size;
-                            break;
-
-                        // states frame
-                        case 1:
-                            frames[i] = new NetSquareStateFrame();
-                            frames[i].Deserialize(ref b);
-                            readingIndex += NetSquareStateFrame.Size;
-                            break;
-
-                        // custom frame
-                        default:
-                            if (customDeserializers.ContainsKey(frameType))
-                            {
-                                frames[i] = customDeserializers[frameType](message);
-                                readingIndex += customSized[frameType];
-                            }
-                            else
-                            {
-                                throw new Exception("Unknown frame type (" + frameType + ")");
-                            }
-                            break;
-                    }
-                    message.Serializer.DummyRead(readingIndex);
-                }
-            }
-
+            for (int i = 0; i < nbFrames; i++)
+                frames[i] = DeserializeFrame(message);
             return frames;
         }
 
@@ -90,36 +57,11 @@ namespace NetSquare.Core
         /// <param name="message"> message to get the frame</param>
         /// <returns> frame</returns>
         /// <exception cref="Exception"> if the frame type is unknown</exception>
-        public unsafe static INetSquareSynchFrame GetFrame(NetworkMessage message)
+        public static INetSquareSynchFrame GetFrame(NetworkMessage message)
         {
-            fixed (byte* ptr = message.Serializer.Buffer)
-            {
-                byte* b = ptr;
-                b += message.Serializer.Position;
-                byte frameType = *b; // do NOT increment b here because we need to read the frame type again in Deserialize
-                switch (frameType)
-                {
-                    // trasform frame
-                    case 0:
-                        message.Serializer.DummyRead(NetsquareTransformFrame.Size);
-                        return new NetsquareTransformFrame(ref b);
-                    // states frame
-                    case 1:
-                        message.Serializer.DummyRead(NetSquareStateFrame.Size);
-                        return new NetSquareStateFrame(ref b);
-                    // custom frame
-                    default:
-                        if (customDeserializers.ContainsKey(frameType))
-                        {
-                            message.Serializer.DummyRead(customSized[frameType]);
-                            return customDeserializers[frameType](message);
-                        }
-                        else
-                        {
-                            throw new Exception("Unknown frame type (" + frameType + ")");
-                        }
-                }
-            }
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
+            return DeserializeFrame(message);
         }
 
         /// <summary>
@@ -128,54 +70,27 @@ namespace NetSquare.Core
         /// <param name="message"> message to get the packed frames</param>
         /// <param name="onGetFrames"> callback to call when the packed frames are read</param>
         /// <exception cref="Exception"> if the frame type is unknown</exception>
-        public unsafe static void GetPackedFrames(NetworkMessage message, Action<uint, INetSquareSynchFrame[]> onGetFrames)
+        public static void GetPackedFrames(NetworkMessage message, Action<uint, INetSquareSynchFrame[]> onGetFrames)
         {
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
+            if (onGetFrames == null)
+                throw new ArgumentNullException(nameof(onGetFrames));
+
             message.RestartRead();
-            fixed (byte* ptr = message.Serializer.Buffer)
+            while (!message.Serializer.EndOfStream)
             {
-                byte* b = ptr + message.Serializer.Position;
-                while (message.Serializer.CanGetUInt24())
-                {
-                    uint clientID = (uint)(*b | (*(b + 1) << 8) | (*(b + 2) << 16));
-                    b += 3;
-                    ushort nbFrames = *(ushort*)(b);
-                    b += 2;
-                    int readingIndex = 5;
-                    INetSquareSynchFrame[] frames = new INetSquareSynchFrame[nbFrames];
-                    for (int i = 0; i < nbFrames; i++)
-                    {
-                        byte frameType = *b; // do NOT increment b here because we need to read the frame type again in Deserialize
-                        switch (frameType)
-                        {
-                            // trasform frame
-                            case 0:
-                                frames[i] = new NetsquareTransformFrame(ref b);
-                                readingIndex += NetsquareTransformFrame.Size;
-                                break;
+                if (!message.Serializer.CanReadFor(6))
+                    throw new InvalidDataException("A packed synchronization frame header is truncated.");
 
-                            // states frame
-                            case 1:
-                                frames[i] = new NetSquareStateFrame(ref b);
-                                readingIndex += NetSquareStateFrame.Size;
-                                break;
+                uint clientID = message.Serializer.GetUInt();
+                ushort nbFrames = message.Serializer.GetUShort();
+                ValidateFrameCount(message.Serializer, nbFrames);
 
-                            // custom frame
-                            default:
-                                if (customDeserializers.ContainsKey(frameType))
-                                {
-                                    frames[i] = customDeserializers[frameType](message);
-                                    readingIndex += customSized[frameType];
-                                }
-                                else
-                                {
-                                    throw new Exception("Unknown frame type (" + frameType + ")");
-                                }
-                                break;
-                        }
-                    }
-                    onGetFrames(clientID, frames);
-                    message.Serializer.DummyRead(readingIndex);
-                }
+                INetSquareSynchFrame[] frames = new INetSquareSynchFrame[nbFrames];
+                for (int i = 0; i < nbFrames; i++)
+                    frames[i] = DeserializeFrame(message);
+                onGetFrames(clientID, frames);
             }
         }
 
@@ -186,15 +101,10 @@ namespace NetSquare.Core
         /// <param name="frames"> frames to serialize</param>
         public unsafe static void SerializeFrames(NetworkMessage message, List<INetSquareSynchFrame> frames)
         {
-            ushort nbFrames = (ushort)frames.Count;
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
 
-            // calculate the size of the byte array to allocate
-            int size = 2;
-            for (ushort i = 0; i < nbFrames; i++)
-            {
-                size += frames[i].Size;
-            }
-
+            ushort nbFrames = ValidateOutboundFrames(frames, 2, out int size);
             byte[] bytes = new byte[size];
             // write transform values using pointer
             fixed (byte* ptr = bytes)
@@ -224,29 +134,23 @@ namespace NetSquare.Core
         /// <param name="frames"> frames to pack</param>
         public unsafe static void SerializePackedFrames(NetworkMessage message, uint clientID, List<INetSquareSynchFrame> frames)
         {
-            // create new byte array to pack transform frames for this client
-            UInt24 clientId = new UInt24(clientID);
-            ushort nbFrames = (ushort)frames.Count;
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
 
-            // calculate the size of the byte array to allocate
-            int size = 5;
-            for (ushort i = 0; i < nbFrames; i++)
-            {
-                size += frames[i].Size;
-            }
-
-            // allocate the byte array
+            ushort nbFrames = ValidateOutboundFrames(frames, 6, out int size);
             byte[] bytes = new byte[size];
             // write transform values using pointer 
             fixed (byte* ptr = bytes)
             {
                 byte* b = ptr;
                 // write client id
-                *b = clientId.b0;
+                *b = (byte)clientID;
                 b++;
-                *b = clientId.b1;
+                *b = (byte)(clientID >> 8);
                 b++;
-                *b = clientId.b2;
+                *b = (byte)(clientID >> 16);
+                b++;
+                *b = (byte)(clientID >> 24);
                 b++;
                 // write frames count
                 *b = (byte)nbFrames;
@@ -273,8 +177,18 @@ namespace NetSquare.Core
         /// <param name="deserializer"> deserializer callback to register</param>
         public static void RegisterCustomDeserializer(byte frameType, int frameSize, Func<NetworkMessage, INetSquareSynchFrame> deserializer)
         {
-            customDeserializers[frameType] = deserializer;
-            customSized[frameType] = frameSize;
+            if (frameType <= 1)
+                throw new ArgumentOutOfRangeException(nameof(frameType), "Built-in frame types cannot be replaced.");
+            if (frameSize <= 0 || frameSize > NetworkMessage.MaxDecodedMessageSize)
+                throw new ArgumentOutOfRangeException(nameof(frameSize));
+            if (deserializer == null)
+                throw new ArgumentNullException(nameof(deserializer));
+
+            lock (customFrameLock)
+            {
+                customDeserializers[frameType] = deserializer;
+                customSized[frameType] = frameSize;
+            }
         }
 
         /// <summary>
@@ -286,16 +200,127 @@ namespace NetSquare.Core
         public static bool TryGetMostRecentTransformFrame(INetSquareSynchFrame[] frames, out NetsquareTransformFrame transformFrame)
         {
             transformFrame = default;
+            if (frames == null)
+                return false;
+
             for (int i = frames.Length - 1; i >= 0; i--)
             {
-                switch (frames[i].SynchFrameType)
+                INetSquareSynchFrame frame = frames[i];
+                if (frame != null && frame.SynchFrameType == 0)
                 {
-                    case 0:
-                        transformFrame = (NetsquareTransformFrame)frames[i];
-                        return true;
+                    transformFrame = (NetsquareTransformFrame)frame;
+                    return true;
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// Validates a network-provided frame count before allocating its result array.
+        /// </summary>
+        /// <param name="serializer">Serializer positioned at the first frame.</param>
+        /// <param name="frameCount">Number of frames declared by the payload.</param>
+        private static void ValidateFrameCount(NetSquareSerializer serializer, ushort frameCount)
+        {
+            int maximumFrames = NetSquareSerializer.MaxCollectionLength;
+            if (maximumFrames < 0 || frameCount > maximumFrames)
+                throw new InvalidDataException("The synchronization frame count exceeds the configured limit.");
+            if (!serializer.CanReadFor(frameCount))
+                throw new InvalidDataException("The synchronization frame payload is truncated.");
+        }
+
+        /// <summary>
+        /// Deserializes one frame only after its complete fixed-size payload is available.
+        /// </summary>
+        /// <param name="message">Message positioned at the frame type byte.</param>
+        /// <returns>The validated frame.</returns>
+        private unsafe static INetSquareSynchFrame DeserializeFrame(NetworkMessage message)
+        {
+            NetSquareSerializer serializer = message.Serializer;
+            if (!serializer.CanGetByte())
+                throw new InvalidDataException("The synchronization frame type is missing.");
+
+            int startPosition = serializer.Position;
+            byte frameType = serializer.Buffer[startPosition];
+            int frameSize;
+            Func<NetworkMessage, INetSquareSynchFrame> customDeserializer = null;
+            switch (frameType)
+            {
+                case 0:
+                    frameSize = NetsquareTransformFrame.Size;
+                    break;
+                case 1:
+                    frameSize = NetSquareStateFrame.Size;
+                    break;
+                default:
+                    lock (customFrameLock)
+                    {
+                        if (!customDeserializers.TryGetValue(frameType, out customDeserializer) ||
+                            !customSized.TryGetValue(frameType, out frameSize))
+                            throw new InvalidDataException("Unknown frame type (" + frameType + ").");
+                    }
+                    break;
+            }
+
+            if (frameSize <= 0 || !serializer.CanReadFor(frameSize))
+                throw new InvalidDataException("The synchronization frame payload is truncated.");
+
+            INetSquareSynchFrame frame;
+            if (frameType == 0 || frameType == 1)
+            {
+                fixed (byte* pointer = serializer.Buffer)
+                {
+                    byte* framePointer = pointer + startPosition;
+                    frame = frameType == 0
+                        ? (INetSquareSynchFrame)new NetsquareTransformFrame(ref framePointer)
+                        : new NetSquareStateFrame(ref framePointer);
+                }
+            }
+            else
+            {
+                frame = customDeserializer(message);
+                if (frame == null)
+                    throw new InvalidDataException("The custom frame deserializer returned null.");
+                if (serializer.Position > startPosition + frameSize)
+                    throw new InvalidDataException("The custom frame deserializer read past its registered size.");
+            }
+
+            serializer.Position = startPosition + frameSize;
+            return frame;
+        }
+
+        /// <summary>
+        /// Validates outbound frames and computes their serialized size without integer overflow.
+        /// </summary>
+        /// <param name="frames">Frames to serialize.</param>
+        /// <param name="headerSize">Serialized header size.</param>
+        /// <param name="serializedSize">Computed total size.</param>
+        /// <returns>The validated frame count.</returns>
+        private static ushort ValidateOutboundFrames(
+            List<INetSquareSynchFrame> frames,
+            int headerSize,
+            out int serializedSize)
+        {
+            if (frames == null)
+                throw new ArgumentNullException(nameof(frames));
+            if (frames.Count > ushort.MaxValue ||
+                frames.Count > NetSquareSerializer.MaxCollectionLength)
+                throw new InvalidOperationException("Too many synchronization frames.");
+
+            int size = headerSize;
+            for (int i = 0; i < frames.Count; i++)
+            {
+                INetSquareSynchFrame frame = frames[i];
+                if (frame == null || frame.Size <= 0)
+                    throw new InvalidOperationException("Synchronization frames must have a positive size.");
+
+                size = checked(size + frame.Size);
+                if (size > NetworkMessage.MaxDecodedMessageSize)
+                    throw new InvalidOperationException("The synchronization frame payload is too large.");
+            }
+
+            serializedSize = size;
+            return (ushort)frames.Count;
         }
     }
 }

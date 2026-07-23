@@ -31,7 +31,11 @@ namespace NetSquare.Core.Messages
         /// <summary>
         ///    Internal UDP endpoint registration datagram.
         /// </summary>
-        UdpRegister = 65526
+        UdpRegister = 65526,
+        /// <summary>
+        ///    Internal TCP heartbeat used to measure ping and detect dead peers.
+        /// </summary>
+        Heartbeat = 65525
     }
 }
 #endregion

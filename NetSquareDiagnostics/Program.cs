@@ -1,8 +1,11 @@
 using NetSquare.Core;
+using NetSquare.Core.Collections;
+using NetSquare.Core.Compression;
 using NetSquare.Core.Messages;
 using NetSquare.Server.Utils;
 using NetSquare.Server.Worlds;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -92,6 +95,10 @@ namespace NetSquareDiagnostics
 
             try
             {
+                // Writer performance runs alone because Shutdown intentionally makes Writer non-restartable.
+                if (HasArg(args, "--writer-bench"))
+                    return WriterPerformanceBenchmark.Run(GetIntArgValue(args, "--iterations", 100000));
+
                 if (HasArg(args, "--generate-server-config"))
                 {
                     string configPath = GetArgValue(args, "--generate-server-config") ?? Path.Combine(Environment.CurrentDirectory, "netsquare.generated.config.json");
@@ -101,13 +108,22 @@ namespace NetSquareDiagnostics
                 }
 
                 if (HasArg(args, "--load-scenario"))
+                {
+                    InitializeServerConfiguration();
                     return LoadScenarioRunner.Run(args);
+                }
 
                 if (!benchOnly)
+                {
+                    InitializeServerConfiguration();
                     RunReliabilityTests();
+                }
 
                 if (!testsOnly)
                 {
+                    // Bench-only runs still create a real server and therefore need its configuration.
+                    if (benchOnly)
+                        InitializeServerConfiguration();
                     RunBenchmarks(fullLoad, benchmarkRuns);
                     WriteBenchmarkResults(resultsDir);
                 }
@@ -123,6 +139,19 @@ namespace NetSquareDiagnostics
                 Console.WriteLine(ex);
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// Initializes the server configuration used by diagnostics that create a NetSquare server.
+        /// </summary>
+        private static void InitializeServerConfiguration()
+        {
+            // Keep the diagnostics configuration next to build outputs so it never pollutes the repository root.
+            string configurationPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "netsquare.diagnostics.config.json");
+            NetSquare.Server.NetSquareConfigurationManager.Initialize<NetSquare.Server.NetSquareConfiguration>(
+                configurationPath);
         }
 
         /// <summary>
@@ -177,9 +206,17 @@ namespace NetSquareDiagnostics
         {
             Console.WriteLine("Reliability tests");
             RunTest("serializer roundtrip", TestSerializerRoundtrip);
+            RunTest("serializer buffer growth", TestSerializerBufferGrowth);
             RunTest("synch frame sequence roundtrip", TestSynchFrameSequenceRoundtrip);
             RunTest("invalid frame rejected", TestInvalidFrameRejected);
             RunTest("datagram length mismatch rejected", TestDatagramMismatchRejected);
+            RunTest("decompression limit rejects expansion", TestDecompressionLimitRejectsExpansion);
+            RunTest("collection allocation limit", TestCollectionAllocationLimit);
+            RunTest("truncated synchronization frame rejected", TestTruncatedSynchronizationFrameRejected);
+            RunTest("snapshot replacement is preserved", TestSnapshotReplacementIsPreserved);
+            RunTest("concurrent client IDs are unique", TestConcurrentClientIdsAreUnique);
+            RunTest("bounded queue applies backpressure", TestBoundedQueueAppliesBackpressure);
+            RunTest("scheduler stops and restarts deterministically", TestSchedulerStopsAndRestartsDeterministically);
             RunTest("SetType uses argument", TestSetType);
             RunTest("TCP fragmented receive", TestTcpFragmentedReceive);
             RunTest("TCP oversized frame disconnects", TestTcpOversizedFrameDisconnects);
@@ -194,7 +231,7 @@ namespace NetSquareDiagnostics
             RunTest("automatic client/server time synchronization", TestAutomaticClientServerTimeSynchronization);
             RunTest("UDP client/server message", TestUdpClientServerMessage);
             RunTest("UDP client local port conflict", TestUdpClientLocalPortConflict);
-            RunTest("UDP replace client ID routing", TestUdpReplaceClientIdRouting);
+            RunTest("UDP MAC64 replace client ID routing", TestUdpReplaceClientIdRouting);
             RunTest("world join broadcast sync leave", TestWorldJoinBroadcastSyncLeave);
             RunTest("world transform cache updates from frames", TestWorldTransformCacheUpdatesFromFrames);
             RunTest("simple spatializer visibility", TestSimpleSpatializerVisibility);
@@ -252,6 +289,24 @@ namespace NetSquareDiagnostics
         }
 
         /// <summary>
+        /// Verifies that payloads larger than the optimized initial buffer still grow and round-trip correctly.
+        /// </summary>
+        private static void TestSerializerBufferGrowth()
+        {
+            byte[] payload = new byte[4096];
+            for (int i = 0; i < payload.Length; i++)
+                payload[i] = (byte)(i * 31);
+
+            NetworkMessage message = new NetworkMessage(43, 8).Set(payload);
+            NetworkMessage copy = new NetworkMessage(message.Serialize());
+            byte[] copiedPayload = copy.Serializer.GetByteArray();
+
+            Assert(copiedPayload.Length == payload.Length, "grown serializer payload length mismatch");
+            for (int i = 0; i < payload.Length; i++)
+                if (copiedPayload[i] != payload[i])
+                    throw new InvalidOperationException("grown serializer payload mismatch at " + i);
+        }
+        /// <summary>
         /// Executes the test synch frame sequence roundtrip operation.
         /// </summary>
         private static void TestSynchFrameSequenceRoundtrip()
@@ -291,6 +346,210 @@ namespace NetSquareDiagnostics
             WriteInt(data, 0, data.Length + 1);
             NetworkMessage message = new NetworkMessage();
             Assert(!message.SafeSetDatagram(data), "datagram mismatch was accepted");
+        }
+
+        /// <summary>
+        /// Executes the test set type operation.
+        /// </summary>
+        private static void TestDecompressionLimitRejectsExpansion()
+        {
+            int previousLimit = NetworkMessage.MaxDecodedMessageSize;
+            try
+            {
+                NetworkMessage.MaxDecodedMessageSize = 1024;
+                ProtocoleManager.SetCompressor(NetSquareCompression.GZipCompression);
+
+                byte[] expansionPayload = new byte[16 * 1024];
+                byte[] compressedMessage = new NetworkMessage(4, 1)
+                    .Set(expansionPayload, false)
+                    .Serialize();
+                Assert(compressedMessage.Length < expansionPayload.Length, "test payload did not compress");
+                ExpectThrows(
+                    delegate { new NetworkMessage(compressedMessage); },
+                    "oversized decompressed message was accepted");
+            }
+            finally
+            {
+                ProtocoleManager.SetCompressor(NetSquareCompression.NoCompression);
+                NetworkMessage.MaxDecodedMessageSize = previousLimit;
+            }
+        }
+
+        /// <summary>
+        /// Verifies that collection counts are rejected before allocating attacker-controlled arrays.
+        /// </summary>
+        private static void TestCollectionAllocationLimit()
+        {
+            int previousLimit = NetSquareSerializer.MaxCollectionLength;
+            try
+            {
+                NetSquareSerializer.MaxCollectionLength = 32;
+                byte[] data = BitConverter.GetBytes(33);
+                NetSquareSerializer serializer = new NetSquareSerializer();
+                serializer.StartReading(data);
+                ExpectThrows(
+                    delegate { serializer.GetStringArray(); },
+                    "oversized collection allocation was accepted");
+            }
+            finally
+            {
+                NetSquareSerializer.MaxCollectionLength = previousLimit;
+            }
+        }
+
+        /// <summary>
+        /// Verifies that fixed-size synchronization frames are checked before pointer access.
+        /// </summary>
+        private static void TestTruncatedSynchronizationFrameRejected()
+        {
+            NetworkMessage message = new NetworkMessage(NetSquareMessageID.SetSynchFrames)
+                .Set((ushort)1)
+                .Set((byte)0);
+            NetworkMessage copy = new NetworkMessage(message.Serialize());
+            ExpectThrows(
+                delegate { NetSquareSynchFramesUtils.GetFrames(copy); },
+                "truncated synchronization frame was accepted");
+        }
+
+        /// <summary>
+        /// Verifies that acknowledging an old snapshot cannot remove its newer replacement.
+        /// </summary>
+        private static void TestSnapshotReplacementIsPreserved()
+        {
+            SynchronizedMessage synchronizedMessage = new SynchronizedMessage(500);
+            NetworkMessage first = new NetworkMessage(500, 7).Set(1);
+            NetworkMessage replacement = new NetworkMessage(500, 7).Set(2);
+            synchronizedMessage.AddMessage(first);
+
+            Dictionary<uint, NetworkMessage> snapshot = synchronizedMessage.GetSnapshot();
+            synchronizedMessage.AddMessage(replacement);
+            synchronizedMessage.RemoveSnapshot(snapshot);
+
+            Dictionary<uint, NetworkMessage> remaining = synchronizedMessage.GetSnapshot();
+            NetworkMessage preserved;
+            Assert(
+                remaining.TryGetValue(7, out preserved) &&
+                object.ReferenceEquals(preserved, replacement),
+                "newer snapshot was removed by an older broadcast");
+        }
+
+        /// <summary>
+        /// Verifies uniqueness of the default atomic client ID generator under concurrent handshakes.
+        /// </summary>
+        private static void TestConcurrentClientIdsAreUnique()
+        {
+            const int workerCount = 8;
+            const int clientsPerWorker = 128;
+            NetSquare.Server.NetSquareServer server =
+                new NetSquare.Server.NetSquareServer(NetSquareProtocoleType.TCP, false);
+            ConcurrentDictionary<uint, byte> ids = new ConcurrentDictionary<uint, byte>();
+            Thread[] workers = new Thread[workerCount];
+            Exception workerError = null;
+
+            for (int workerIndex = 0; workerIndex < workerCount; workerIndex++)
+            {
+                workers[workerIndex] = new Thread(delegate ()
+                {
+                    try
+                    {
+                        for (int clientIndex = 0; clientIndex < clientsPerWorker; clientIndex++)
+                        {
+                            uint clientID = server.AddClient(new ConnectedClient());
+                            if (clientID == 0 || !ids.TryAdd(clientID, 0))
+                                throw new InvalidOperationException("duplicate or zero client ID");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.CompareExchange(ref workerError, ex, null);
+                    }
+                });
+                workers[workerIndex].Start();
+            }
+
+            for (int workerIndex = 0; workerIndex < workerCount; workerIndex++)
+                workers[workerIndex].Join();
+            if (workerError != null)
+                throw workerError;
+            Assert(ids.Count == workerCount * clientsPerWorker, "concurrent ID count mismatch");
+        }
+
+        /// <summary>
+        /// Verifies that a full bounded queue blocks producers and releases them after consumption.
+        /// </summary>
+        private static void TestBoundedQueueAppliesBackpressure()
+        {
+            BoundedConcurrentQueue<int> queue = new BoundedConcurrentQueue<int>(1);
+            Assert(queue.Enqueue(1), "first queue item was rejected");
+
+            using (ManualResetEventSlim producerStarted = new ManualResetEventSlim(false))
+            using (ManualResetEventSlim producerCompleted = new ManualResetEventSlim(false))
+            {
+                bool secondAccepted = false;
+                Thread producer = new Thread(() =>
+                {
+                    producerStarted.Set();
+                    secondAccepted = queue.Enqueue(2);
+                    producerCompleted.Set();
+                });
+                producer.IsBackground = true;
+                producer.Start();
+
+                Assert(producerStarted.Wait(1000), "bounded queue producer did not start");
+                Assert(!producerCompleted.Wait(100), "full bounded queue did not apply backpressure");
+
+                int first;
+                Assert(queue.TryDequeue(out first, CancellationToken.None), "first queue item was not available");
+                Assert(first == 1, "bounded queue changed FIFO order");
+                Assert(producerCompleted.Wait(1000), "producer did not resume after a slot was released");
+                Assert(secondAccepted, "second queue item was rejected while running");
+                Assert(producer.Join(1000), "bounded queue producer did not terminate");
+
+                queue.CompleteAdding();
+                int second;
+                Assert(queue.TryDequeue(out second, CancellationToken.None), "accepted queue item was lost");
+                Assert(second == 2, "bounded queue changed the second item");
+                int ignored;
+                Assert(!queue.TryDequeue(out ignored, CancellationToken.None), "completed queue did not terminate");
+            }
+        }
+
+        /// <summary>
+        /// Verifies that scheduler waits are interruptible and a stopped action can restart cleanly.
+        /// </summary>
+        private static void TestSchedulerStopsAndRestartsDeterministically()
+        {
+            string actionName = "diagnostics-scheduler-" + Guid.NewGuid().ToString("N");
+            ManualResetEventSlim callbackExecuted = new ManualResetEventSlim(false);
+            int callbackCount = 0;
+            NetSquareScheduler.AddAction(
+                actionName,
+                10000,
+                false,
+                () => { Interlocked.Increment(ref callbackCount); callbackExecuted.Set(); });
+
+            try
+            {
+                Assert(NetSquareScheduler.StartAction(actionName), "scheduler action did not start");
+                Assert(callbackExecuted.Wait(1000), "scheduler callback did not execute");
+
+                Stopwatch stopWatch = Stopwatch.StartNew();
+                Assert(NetSquareScheduler.StopAction(actionName), "scheduler action did not stop");
+                stopWatch.Stop();
+                Assert(stopWatch.ElapsedMilliseconds < 1000, "scheduler stop did not interrupt its wait");
+
+                callbackExecuted.Reset();
+                Assert(NetSquareScheduler.StartAction(actionName), "scheduler action did not restart");
+                Assert(callbackExecuted.Wait(1000), "restarted scheduler callback did not execute");
+                Assert(NetSquareScheduler.StopAction(actionName), "restarted scheduler action did not stop");
+                Assert(Volatile.Read(ref callbackCount) >= 2, "scheduler restart lost its callback");
+            }
+            finally
+            {
+                NetSquareScheduler.StopAction(actionName);
+                NetSquareScheduler.RemoveAction(actionName);
+                callbackExecuted.Dispose();
+            }
         }
 
         /// <summary>
@@ -708,12 +967,12 @@ namespace NetSquareDiagnostics
         /// </summary>
         private static void TestUdpReplaceClientIdRouting()
         {
-            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP_AND_UDP, false))
+            using (RunningServer server = RunningServer.Start(NetSquareProtocoleType.TCP_AND_UDP, false, true))
             {
-                NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP_AND_UDP, true);
+                NetSquare.Client.NetSquareClient client = server.ConnectClient(NetSquareProtocoleType.TCP_AND_UDP, true, true);
                 uint oldClientID = client.ClientID;
                 uint newClientID = oldClientID + 1000;
-                if (newClientID > UInt24.MaxValue)
+                if (newClientID < oldClientID)
                     newClientID = oldClientID - 1;
 
                 Assert(server.Server.ReplaceClientID(oldClientID, newClientID), "server failed to replace client ID");
@@ -1754,12 +2013,33 @@ namespace NetSquareDiagnostics
             }
 
             /// <summary>
-            /// Executes the start operation.
+            /// Starts an isolated diagnostic server with the requested UDP protection mode.
             /// </summary>
-            public static RunningServer Start(NetSquareProtocoleType protocol, bool useWorldManager)
+            /// <param name="protocol">Transport exposed by the server.</param>
+            /// <param name="useWorldManager">Whether the server creates its world manager.</param>
+            /// <param name="useUdpAuthentication">Whether UDP sequence and MAC64 protection is required.</param>
+            /// <returns>The running diagnostic server.</returns>
+            public static RunningServer Start(
+                NetSquareProtocoleType protocol,
+                bool useWorldManager,
+                bool useUdpAuthentication = false)
             {
                 int port = GetFreeTcpPort();
-                NetSquare.Server.NetSquareServer server = new NetSquare.Server.NetSquareServer(protocol, useWorldManager);
+                NetSquare.Server.NetSquareConfiguration configuration =
+                    NetSquare.Server.NetSquareConfigurationManager.Get<NetSquare.Server.NetSquareConfiguration>();
+                bool previousUdpAuthentication = configuration.UseUdpAuthentication;
+                NetSquare.Server.NetSquareServer server;
+                try
+                {
+                    configuration.UseUdpAuthentication = useUdpAuthentication;
+                    server = new NetSquare.Server.NetSquareServer(protocol, useWorldManager);
+                }
+                finally
+                {
+                    // Each server captures the option in its constructor; restore the shared diagnostic default.
+                    configuration.UseUdpAuthentication = previousUdpAuthentication;
+                }
+
                 Thread thread = new Thread(delegate () { server.Start(port, true, false, false); });
                 thread.IsBackground = true;
                 thread.Start();
@@ -1768,11 +2048,19 @@ namespace NetSquareDiagnostics
             }
 
             /// <summary>
-            /// Executes the connect client operation.
+            /// Connects one diagnostic client with the requested UDP protection mode.
             /// </summary>
-            public NetSquare.Client.NetSquareClient ConnectClient(NetSquareProtocoleType protocol, bool synchronizeUsingUdp)
+            /// <param name="protocol">Transport requested by the client.</param>
+            /// <param name="synchronizeUsingUdp">Whether world synchronization selects UDP.</param>
+            /// <param name="useUdpAuthentication">Whether the client requires UDP sequence and MAC64 protection.</param>
+            /// <returns>The connected diagnostic client.</returns>
+            public NetSquare.Client.NetSquareClient ConnectClient(
+                NetSquareProtocoleType protocol,
+                bool synchronizeUsingUdp,
+                bool useUdpAuthentication = false)
             {
                 NetSquare.Client.NetSquareClient client = new NetSquare.Client.NetSquareClient(false);
+                client.UseUdpAuthentication = useUdpAuthentication;
                 ManualResetEventSlim connected = new ManualResetEventSlim(false);
                 ManualResetEventSlim failed = new ManualResetEventSlim(false);
                 client.OnConnected += delegate (uint id) { connected.Set(); };

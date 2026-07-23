@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <!-- This is the single version source for every NetSquare assembly and NuGet package. -->
+    <NetSquareVersion>1.0.14</NetSquareVersion>
+    <Version>$(NetSquareVersion)</Version>
+    <PackageVersion>$(NetSquareVersion)</PackageVersion>
+    <AssemblyVersion>$(NetSquareVersion).0</AssemblyVersion>
+    <FileVersion>$(NetSquareVersion).0</FileVersion>
+    <InformationalVersion>$(NetSquareVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+
+    <Company>VRDTMStudio</Company>
+    <Product>NetSquare</Product>
+    <Copyright>Copyright ? 2022</Copyright>
+
+    <!-- MSBuild generates every assembly attribute from these shared properties. -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+</Project>

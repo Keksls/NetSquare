@@ -49,6 +49,18 @@ namespace NetSquare.Server.Worlds
         /// Stores the sync root value.
         /// </summary>
         internal readonly object SyncRoot = new object();
+        /// <summary>
+        /// Stores the reusable next visible-client set.
+        /// </summary>
+        private HashSet<SpatialClient> nextVisibles;
+        /// <summary>
+        /// Stores the reusable next visible-client ID set.
+        /// </summary>
+        private HashSet<uint> nextVisibleIDs;
+        /// <summary>
+        /// Stores the reusable next visible-static-entity set.
+        /// </summary>
+        private HashSet<StaticEntity> nextVisibleStaticEntities;
 
         /// <summary>
         /// Initializes a new instance of the spatial client class.
@@ -60,6 +72,9 @@ namespace NetSquare.Server.Worlds
             Visibles = new HashSet<SpatialClient>();
             VisibleIDs = new HashSet<uint>();
             VisibleStaticEntities = new HashSet<StaticEntity>();
+            nextVisibles = new HashSet<SpatialClient>();
+            nextVisibleIDs = new HashSet<uint>();
+            nextVisibleStaticEntities = new HashSet<StaticEntity>();
             NetsquareTransformFrame transform;
             if (TryGetTransform(out transform))
                 LastPosition = new NetsquareTransformFrame(transform);
@@ -78,137 +93,158 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public void ProcessVisibleClients()
         {
-            NetsquareTransformFrame currentTransform;
-            if (!TryGetTransform(out currentTransform))
-                return;
-
-            lock (SyncRoot)
-            {
-                // leaving clients
-                NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
-                bool clientLeaveFOV = false;
-                // pack message
-                foreach (SpatialClient oldVisible in Visibles)
-                {
-                    NetsquareTransformFrame oldVisibleTransform;
-                    if (!oldVisible.TryGetTransform(out oldVisibleTransform) ||
-                        NetsquareTransformFrame.Distance(oldVisibleTransform, currentTransform) > Spatializer.MaxViewDistance + Spatializer.VisibilityHysteresis)
-                    {
-                        // client just leave FOV
-                        clientLeaveFOV = true;
-                        leavingMessage.Set(new UInt24(oldVisible.Client.ID));
-                    }
-                }
-                // send packed message to client
-                if (clientLeaveFOV)
-                    Client.AddTCPMessage(leavingMessage);
-
-                // joining clients
-                NetworkMessage JoiningPacked = new NetworkMessage(NetSquareMessageID.ClientsJoinWorld);
-                List<NetworkMessage> JoiningClientMessages = new List<NetworkMessage>();
-                HashSet<SpatialClient> newVisibles = new HashSet<SpatialClient>();
-                HashSet<uint> newVisibleIDs = new HashSet<uint>();
-                // iterate on each clients in my spatializer
-                foreach (SpatialClient client in Spatializer.GetClientsSnapshot())
-                {
-                    NetsquareTransformFrame clientTransform;
-                    if (client.TryGetTransform(out clientTransform))
-                    {
-                        float distance = NetsquareTransformFrame.Distance(clientTransform, currentTransform);
-                        bool wasVisible = Visibles.Contains(client);
-                        bool isVisible = distance <= Spatializer.MaxViewDistance ||
-                            (wasVisible && distance <= Spatializer.MaxViewDistance + Spatializer.VisibilityHysteresis);
-                        if (!isVisible)
-                            continue;
-
-                        // new client in FOV
-                        newVisibles.Add(client);
-                        newVisibleIDs.Add(client.Client.ID);
-                        if (!Visibles.Contains(client))
-                        {
-                            //create new join message
-                            NetworkMessage joiningClientMessage = new NetworkMessage(0, client.Client.ID);
-                            // set Transform frame
-                            clientTransform.Serialize(joiningClientMessage);
-                            // send message so server event for being custom binded
-                            Spatializer.World.server.Worlds.Fire_OnSendWorldClients(Spatializer.World.ID,
-                                client.Client.ID,
-                                joiningClientMessage);
-                            // add message to list for packing
-                            JoiningClientMessages.Add(joiningClientMessage);
-                        }
-                    }
-                }
-
-                // send packed message
-                if (JoiningClientMessages.Count > 0)
-                {
-                    JoiningPacked.Pack(JoiningClientMessages);
-                    Client.AddTCPMessage(JoiningPacked);
-                }
-
-                // client has move since last spatialization
-                if (!currentTransform.Equals(LastPosition))
-                {
-                    LastPosition.Set(currentTransform);
-                }
-
-                Visibles = newVisibles;
-                VisibleIDs = newVisibleIDs;
-            }
+            ProcessVisibleClients(Spatializer.GetClientsSnapshot());
         }
 
         /// <summary>
-        /// Executes the process visible static entities operation.
+        /// Updates visible clients from a snapshot shared by the complete spatialization tick.
         /// </summary>
-        public void ProcessVisibleStaticEntities()
+        /// <param name="clientsSnapshot">Stable clients snapshot for the current tick.</param>
+        internal void ProcessVisibleClients(IReadOnlyList<SpatialClient> clientsSnapshot)
         {
             NetsquareTransformFrame currentTransform;
             if (!TryGetTransform(out currentTransform))
                 return;
 
-            // leaving entities
-            List<StaticEntity> leaving = new List<StaticEntity>();
-            List<StaticEntity> newVisibles = new List<StaticEntity>();
-            HashSet<StaticEntity> nextVisibleStaticEntities = new HashSet<StaticEntity>();
-
+            NetworkMessage leavingMessage = null;
+            List<NetworkMessage> joiningClientMessages = null;
             lock (SyncRoot)
             {
-                // pack message
-                foreach (StaticEntity oldVisible in VisibleStaticEntities)
+                HashSet<SpatialClient> previousVisibles = Visibles;
+                nextVisibles.Clear();
+                nextVisibleIDs.Clear();
+
+                float enterDistanceSquared = Spatializer.MaxViewDistance * Spatializer.MaxViewDistance;
+                float exitDistance = Spatializer.MaxViewDistance + Spatializer.VisibilityHysteresis;
+                float exitDistanceSquared = exitDistance * exitDistance;
+
+                foreach (SpatialClient previousVisible in previousVisibles)
                 {
-                    if (NetsquareTransformFrame.Distance(oldVisible.Transform, currentTransform) > Spatializer.MaxViewDistance)
+                    NetsquareTransformFrame previousTransform;
+                    if (!previousVisible.TryGetTransform(out previousTransform) ||
+                        NetsquareTransformFrame.DistanceSquared(previousTransform, currentTransform) > exitDistanceSquared)
                     {
-                        // client just leave FOV
-                        leaving.Add(oldVisible);
-                    }
-                    else
-                    {
-                        nextVisibleStaticEntities.Add(oldVisible);
+                        if (leavingMessage == null)
+                            leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
+                        leavingMessage.Set(previousVisible.Client.ID);
                     }
                 }
 
-                // iterate on each entities in my spatializer
-                foreach (StaticEntity entity in Spatializer.GetStaticEntitiesSnapshot())
+                for (int index = 0; index < clientsSnapshot.Count; index++)
                 {
-                    if (NetsquareTransformFrame.Distance(entity.Transform, currentTransform) <= Spatializer.MaxViewDistance &&
-                        !nextVisibleStaticEntities.Contains(entity))
+                    SpatialClient candidate = clientsSnapshot[index];
+                    NetsquareTransformFrame candidateTransform;
+                    if (!candidate.TryGetTransform(out candidateTransform))
+                        continue;
+
+                    bool wasVisible = previousVisibles.Contains(candidate);
+                    float maximumDistanceSquared = wasVisible ? exitDistanceSquared : enterDistanceSquared;
+                    if (NetsquareTransformFrame.DistanceSquared(candidateTransform, currentTransform) > maximumDistanceSquared)
+                        continue;
+
+                    nextVisibles.Add(candidate);
+                    nextVisibleIDs.Add(candidate.Client.ID);
+                    if (wasVisible)
+                        continue;
+
+                    NetworkMessage joiningClientMessage = new NetworkMessage(0, candidate.Client.ID);
+                    candidateTransform.Serialize(joiningClientMessage);
+                    if (joiningClientMessages == null)
+                        joiningClientMessages = new List<NetworkMessage>();
+                    joiningClientMessages.Add(joiningClientMessage);
+                }
+
+                if (!currentTransform.Equals(LastPosition))
+                    LastPosition.Set(currentTransform);
+
+                Visibles = nextVisibles;
+                nextVisibles = previousVisibles;
+                HashSet<uint> previousVisibleIDs = VisibleIDs;
+                VisibleIDs = nextVisibleIDs;
+                nextVisibleIDs = previousVisibleIDs;
+            }
+
+            if (leavingMessage != null)
+                Client.AddTCPMessage(leavingMessage);
+
+            if (joiningClientMessages == null)
+                return;
+
+            foreach (NetworkMessage joiningClientMessage in joiningClientMessages)
+            {
+                Spatializer.World.server.Worlds.Fire_OnSendWorldClients(
+                    Spatializer.World.ID,
+                    joiningClientMessage.ClientID,
+                    joiningClientMessage);
+            }
+
+            NetworkMessage joiningPacked = new NetworkMessage(NetSquareMessageID.ClientsJoinWorld);
+            joiningPacked.Pack(joiningClientMessages);
+            Client.AddTCPMessage(joiningPacked);
+        }
+        /// <summary>
+        /// Executes the process visible static entities operation.
+        /// </summary>
+        public void ProcessVisibleStaticEntities()
+        {
+            ProcessVisibleStaticEntities(Spatializer.GetStaticEntitiesSnapshot());
+        }
+
+        /// <summary>
+        /// Updates visible static entities from a snapshot shared by the complete spatialization tick.
+        /// </summary>
+        /// <param name="staticEntitiesSnapshot">Stable static-entity snapshot for the current tick.</param>
+        internal void ProcessVisibleStaticEntities(IReadOnlyList<StaticEntity> staticEntitiesSnapshot)
+        {
+            NetsquareTransformFrame currentTransform;
+            if (!TryGetTransform(out currentTransform))
+                return;
+
+            List<StaticEntity> leaving = null;
+            List<StaticEntity> joining = null;
+            lock (SyncRoot)
+            {
+                HashSet<StaticEntity> previousVisibleStaticEntities = VisibleStaticEntities;
+                nextVisibleStaticEntities.Clear();
+                float maximumDistanceSquared = Spatializer.MaxViewDistance * Spatializer.MaxViewDistance;
+
+                foreach (StaticEntity previousVisible in previousVisibleStaticEntities)
+                {
+                    if (NetsquareTransformFrame.DistanceSquared(previousVisible.Transform, currentTransform) > maximumDistanceSquared)
                     {
-                        nextVisibleStaticEntities.Add(entity);
-                        if (!VisibleStaticEntities.Contains(entity))
-                            newVisibles.Add(entity);
+                        if (leaving == null)
+                            leaving = new List<StaticEntity>();
+                        leaving.Add(previousVisible);
+                    }
+                    else
+                    {
+                        nextVisibleStaticEntities.Add(previousVisible);
+                    }
+                }
+
+                for (int index = 0; index < staticEntitiesSnapshot.Count; index++)
+                {
+                    StaticEntity entity = staticEntitiesSnapshot[index];
+                    if (NetsquareTransformFrame.DistanceSquared(entity.Transform, currentTransform) > maximumDistanceSquared ||
+                        !nextVisibleStaticEntities.Add(entity))
+                        continue;
+
+                    if (!previousVisibleStaticEntities.Contains(entity))
+                    {
+                        if (joining == null)
+                            joining = new List<StaticEntity>();
+                        joining.Add(entity);
                     }
                 }
 
                 VisibleStaticEntities = nextVisibleStaticEntities;
+                nextVisibleStaticEntities = previousVisibleStaticEntities;
             }
-            // fire event
-            if (leaving.Count > 0)
-                Spatializer.World.Fire_OnHideStaticEntities(Client.ID, leaving);
 
-            // fire event
-            if (newVisibles.Count > 0)
-                Spatializer.World.Fire_OnShowStaticEntities(Client.ID, newVisibles);
+            if (leaving != null)
+                Spatializer.World.Fire_OnHideStaticEntities(Client.ID, leaving);
+            if (joining != null)
+                Spatializer.World.Fire_OnShowStaticEntities(Client.ID, joining);
         }
     }
 }

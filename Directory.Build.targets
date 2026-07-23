@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'NetSquareCore' Or '$(MSBuildProjectName)' == 'NetSquareClient' Or '$(MSBuildProjectName)' == 'NetSquareServer'">
+    <IsNetSquarePackageProject>true</IsNetSquarePackageProject>
+  </PropertyGroup>
+
+  <Import Project="$(MSBuildThisFileDirectory)NetSquare.Version.props"
+          Condition="'$(IsNetSquarePackageProject)' == 'true'" />
+
+  <ItemGroup Condition="'$(IsNetSquarePackageProject)' == 'true'">
+    <!-- Assembly metadata is generated from NetSquare.Version.props. -->
+    <Compile Remove="$(MSBuildProjectDirectory)\Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+
+</Project>

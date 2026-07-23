@@ -184,16 +184,6 @@ namespace NetSquare.Server.Worlds
         }
 
         /// <summary>
-        /// Is the client in some world
-        /// </summary>
-        /// <param name="clientID">Id of the client to check</param>
-        /// <returns>true if in some world</returns>
-        public bool IsInWorld(UInt24 clientID)
-        {
-            return IsInWorld(clientID.UInt32);
-        }
-
-        /// <summary>
         /// Get the worldID witch a client is in
         /// </summary>
         /// <param name="clientID">ID of the client</param>

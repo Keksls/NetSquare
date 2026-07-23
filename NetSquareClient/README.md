@@ -7,13 +7,13 @@ The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It includ
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Client -Version 1.0.9
+NuGet\Install-Package NetSquare.Client -Version 1.0.14
 ```
 
 or:
 
 ```bash
-dotnet add package NetSquare.Client --version 1.0.9
+dotnet add package NetSquare.Client --version 1.0.14
 ```
 
 ## Basic Client
@@ -69,6 +69,91 @@ public static class Program
 }
 ```
 
+## JSON Configuration
+
+Client and server configuration files use the same loader from `NetSquare.Core`, but keep separate strongly typed contracts and files. Initialize the client manager once, then pass its configuration to the client:
+
+```csharp
+NetSquareClientConfigurationManager.Initialize<NetSquareClientConfiguration>();
+NetSquareClientConfiguration configuration =
+    NetSquareClientConfigurationManager.Get<NetSquareClientConfiguration>();
+
+NetSquareClient client = new NetSquareClient(configuration);
+client.Connect();
+```
+
+The default client path is `client.config.json`. It is created with complete defaults when missing. A typical file is:
+
+```json
+{
+  "Host": "game.example.com",
+  "Port": 5555,
+  "ProtocoleType": 1,
+  "UseTLS": true,
+  "TLSServerName": "game.example.com",
+  "ConnectionTimeoutMilliseconds": 30000,
+  "HeartbeatEnabled": true,
+  "HeartbeatIntervalMilliseconds": 10000,
+  "HeartbeatTimeoutMilliseconds": 30000,
+  "SmoothServerTimeOffset": true,
+  "ServerTimeOffsetSmoothingSpeed": 8,
+  "TimeSynchronizationRequestTimeoutMilliseconds": 1500,
+  "TimeSynchronizationMaxAttempts": 0,
+  "SynchronizationTransport": 1,
+  "MaxStoredSynchronizationFrames": 256,
+  "AutoSendSynchronizationFrames": true
+}
+```
+
+`ProtocoleType` uses `0` for TCP and `1` for TCP plus UDP. `SynchronizationTransport` uses `0` for reliable TCP and `1` for unreliable UDP. UDP synchronization requires the TCP-plus-UDP protocol.
+
+`TLSServerName` is optional. Leave it empty to validate the certificate against `Host`, or set it when connecting by IP to a certificate issued for a DNS name. Custom certificate callbacks remain code-only:
+
+```csharp
+client.TLSCertificateValidationCallback = ValidatePrivateCertificate;
+```
+
+Call `NetSquareClientConfigurationManager.Save()` after changing settings that should be persisted. Custom projects may derive from `NetSquareClientConfiguration` and initialize the manager with their derived type.
+
+## Async Connection
+
+`ConnectAsync` returns one typed result instead of splitting control flow between exceptions and events:
+
+```csharp
+using System.Threading;
+
+using CancellationTokenSource cancellation = new CancellationTokenSource();
+
+ConnectionResult result = await client.ConnectAsync(
+    "127.0.0.1",
+    5555,
+    timeoutMilliseconds: 10000,
+    cancellationToken: cancellation.Token);
+
+switch (result.Status)
+{
+    case ConnectionResultStatus.Connected:
+        Console.WriteLine("Connected as " + result.ClientID);
+        break;
+
+    case ConnectionResultStatus.Rejected:
+        Console.WriteLine("Rejected: " + result.RejectionInfo.Reason);
+        break;
+
+    case ConnectionResultStatus.TimedOut:
+    case ConnectionResultStatus.TransportError:
+        Console.WriteLine(result.Exception);
+        break;
+
+    case ConnectionResultStatus.Cancelled:
+        Console.WriteLine("Connection cancelled");
+        break;
+}
+```
+
+Set `ConnectionTimeoutMilliseconds` to change the default 30-second timeout, pass a `CancellationToken`, call `CancelConnectionAttempt()`, or call `Disconnect()` while the attempt is pending. Only one connection attempt can run at a time.
+
+The existing `Connect()` methods remain available as non-blocking compatibility wrappers. They use `ConnectAsync` internally and publish the existing connection events from its typed result.
 ## Sending Messages
 
 Use `NetworkMessage` to write values in the order the receiver will read them.
@@ -254,9 +339,29 @@ client.WorldsManager.StoreSynchFrame(new NetsquareTransformFrame(_x: 2, _y: 0, _
 client.WorldsManager.SendFrames();
 ```
 
+## Typed Connection Feedback
+
+Connection refusal and disconnection feedback is delivered before the server closes the socket:
+
+```csharp
+client.OnConnectionRejected += info =>
+{
+    Console.WriteLine("Connection rejected: " + info.Reason);
+    if (info.ExpiresUtc.HasValue)
+        Console.WriteLine("Ban expires at: " + info.ExpiresUtc.Value);
+};
+
+client.OnDisconnected += info =>
+{
+    Console.WriteLine("Disconnected: " + info.Reason);
+};
+```
+
+`ConnectionRejectionReason` and `DisconnectReason` distinguish temporary and permanent bans through `BannedTemporary` and `BannedPermanent`. The existing `OnConnectionFail` event remains reserved for transport failures that do not include server feedback.
 ## Useful Client Properties
 
 - `ClientID`: current server-assigned ID.
+- `ConnectionTimeoutMilliseconds`: default timeout used by `Connect` and `ConnectAsync`.
 - `IsConnected`: whether the TCP socket is connected.
 - `NbSendingMessages`: pending outgoing messages.
 - `NbProcessingMessages`: queued incoming messages waiting for dispatch.

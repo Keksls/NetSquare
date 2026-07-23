@@ -21,6 +21,20 @@ namespace NetSquare.Core.Compression
         {
             return buffer;
         }
+
+        /// <summary>
+        /// Returns uncompressed data after enforcing the output limit.
+        /// </summary>
+        /// <param name="buffer">Input bytes.</param>
+        /// <param name="maxOutputLength">Maximum accepted length.</param>
+        /// <returns>The original input buffer.</returns>
+        public override byte[] Decompress(byte[] buffer, int maxOutputLength)
+        {
+            ValidateDecompressionArguments(buffer, maxOutputLength);
+            if (buffer.Length > maxOutputLength)
+                throw new System.IO.InvalidDataException("The payload exceeds the configured limit.");
+            return buffer;
+        }
     }
 }
 #endregion

@@ -6,6 +6,7 @@ using NetSquare.Server.Worlds;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -14,6 +15,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Security.Cryptography.X509Certificates;
 
 namespace NetSquare.Server
 {
@@ -37,15 +39,7 @@ namespace NetSquare.Server
         /// <summary>
         /// Gets or sets the client id counter value.
         /// </summary>
-        public uint ClientIDCounter { get; private set; }
-        /// <summary>
-        /// Occurs when before load configuration step one is raised.
-        /// </summary>
-        public event Action BeforeLoadConfiguration_StepOne;
-        /// <summary>
-        /// Occurs when after load configuration step two is raised.
-        /// </summary>
-        public event Action AfterLoadConfiguration_StepTwo;
+        public uint ClientIDCounter { get { return unchecked((uint)Interlocked.Read(ref clientIDCounter)); } }
         /// <summary>
         /// Occurs when client connected is raised.
         /// </summary>
@@ -106,6 +100,18 @@ namespace NetSquare.Server
         /// </summary>
         public NetSquareProtocoleType ProtocoleType { get; private set; }
         /// <summary>
+        /// Gets whether this server requires TLS for every TCP connection.
+        /// </summary>
+        internal bool UseTLS { get; private set; }
+        /// <summary>
+        /// Gets whether UDP datagrams require sequence and MAC64 authentication.
+        /// </summary>
+        internal bool UseUdpAuthentication { get; private set; }
+        /// <summary>
+        /// Stores the certificate used by TLS listeners.
+        /// </summary>
+        internal X509Certificate2 TLSCertificate { get; private set; }
+        /// <summary>
         /// Stores the message queue manager value.
         /// </summary>
         internal MessageQueueManager MessageQueueManager;
@@ -129,6 +135,19 @@ namespace NetSquare.Server
         /// Stores the get new client id value.
         /// </summary>
         public Func<uint> GetNewClientID;
+        private long clientIDCounter;
+        /// <summary>
+        /// Cancels the server update worker during shutdown.
+        /// </summary>
+        private CancellationTokenSource serverStopCancellation;
+        /// <summary>
+        /// Stores the server update worker for deterministic shutdown.
+        /// </summary>
+        private Thread updateThread;
+        /// <summary>
+        /// Prevents concurrent server shutdown sequences.
+        /// </summary>
+        private int stopStarted;
         #endregion
 
         /// <summary>
@@ -141,7 +160,25 @@ namespace NetSquare.Server
             Dispatcher = new NetSquareDispatcher();
             if (useWorldManager)
                 Worlds = new WorldsManager(this);
-            MessageQueueManager = new MessageQueueManager(this, NetSquareConfigurationManager.Configuration.NbQueueThreads);
+            // Configuration must be explicitly initialized before server services are constructed.
+            NetSquareConfiguration configuration = NetSquareConfigurationManager.Get<NetSquareConfiguration>();
+            UseTLS = configuration.UseTLS;
+            UseUdpAuthentication = configuration.UseUdpAuthentication;
+            if (UseUdpAuthentication && !UseTLS && ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP)
+            {
+                Writer.Write(
+                    "UDP MAC64 is enabled without TLS. The UDP session key crosses TCP without transport encryption; enable TLS to protect it against on-path interception.",
+                    ConsoleColor.DarkYellow);
+            }
+            if (UseTLS)
+                TLSCertificate = LoadTLSCertificate(configuration);
+
+            MessageQueueManager = new MessageQueueManager(
+                this,
+                configuration.NbQueueThreads,
+                configuration.MessageQueueCapacity > 0 ? configuration.MessageQueueCapacity : 8192,
+                configuration.WorkerStopTimeoutMilliseconds > 0
+                    ? configuration.WorkerStopTimeoutMilliseconds : 5000);
             Statistics = new ServerStatisticsManager();
             // register client sync time
             Dispatcher.AddHeadAction(NetSquareMessageID.ClientSynchronizeTime, "ClientSyncTime", (message) =>
@@ -154,9 +191,57 @@ namespace NetSquare.Server
                     reply.Set((float)serverTime);
                 message.Reply(reply);
             });
+            Dispatcher.AddHeadAction(NetSquareMessageID.Heartbeat, "ClientHeartbeat", ClientHeartbeat);
             Dispatcher.AddHeadAction(NetSquareMessageID.Disconnecting, "ClientDisconnecting", ClientDisconnecting);
             // set default client ID generator, can be override later by user
-            GetNewClientID = () => { return ++ClientIDCounter; };
+            GetNewClientID = GetNextSequentialClientID;
+        }
+
+        /// <summary>
+        /// Loads and validates the private certificate configured for TLS listeners.
+        /// </summary>
+        /// <param name="configuration">Active server configuration.</param>
+        /// <returns>The certificate containing the server private key.</returns>
+        private static X509Certificate2 LoadTLSCertificate(NetSquareConfiguration configuration)
+        {
+            // Fail during server construction instead of accepting sockets with an unusable TLS setup.
+            if (configuration == null)
+                throw new ArgumentNullException(nameof(configuration));
+            if (string.IsNullOrWhiteSpace(configuration.TLSCertificatePath))
+            {
+                throw new InvalidOperationException(
+                    "TLSCertificatePath is required when UseTLS is enabled.");
+            }
+            if (!File.Exists(configuration.TLSCertificatePath))
+            {
+                throw new FileNotFoundException(
+                    "The configured TLS certificate file was not found.",
+                    configuration.TLSCertificatePath);
+            }
+
+            X509Certificate2 certificate = new X509Certificate2(
+                configuration.TLSCertificatePath,
+                configuration.TLSCertificatePassword ?? string.Empty);
+            if (!certificate.HasPrivateKey)
+                throw new InvalidOperationException("The configured TLS certificate has no private key.");
+            return certificate;
+        }
+
+        /// <summary>
+        /// Generates the next non-zero client ID atomically.
+        /// </summary>
+        /// <returns>The next sequential client ID.</returns>
+        private uint GetNextSequentialClientID()
+        {
+            // Interlocked prevents concurrent handshake threads from receiving the same ID.
+            uint clientID;
+            do
+            {
+                clientID = unchecked((uint)Interlocked.Increment(ref clientIDCounter));
+            }
+            while (clientID == 0);
+
+            return clientID;
         }
 
         /// <summary>
@@ -168,84 +253,81 @@ namespace NetSquare.Server
         /// <param name="CheckBlackList"> Check black list </param>
         private void ServerRoutine(int port, bool allowLocalIP, bool bindDispatcher, bool CheckBlackList)
         {
+            // Reuse the concrete project configuration through its NetSquare base contract.
+            NetSquareConfiguration configuration = NetSquareConfigurationManager.Get<NetSquareConfiguration>();
             Writer.StartDisplayLog();
             // Start by drawing header
             DrawHeader("v" + Assembly.GetAssembly(typeof(NetSquareServer)).GetName().Version);
-            BeforeLoadConfiguration_StepOne?.Invoke();
 
-            // Load Configuration
-            Writer.Write_Server("Loading Configuration...", ConsoleColor.DarkYellow, false);
-            if (NetSquareConfigurationManager.Configuration != null)
+            // Display the configuration that was explicitly initialized by the consuming project.
+            Writer.Write_Server("Configuration...", ConsoleColor.DarkYellow, false);
+            if (configuration.LockConsole)
             {
-                // Lock console if wanted to prevent selection thread sleep
-                if (NetSquareConfigurationManager.Configuration.LockConsole)
+                try
                 {
-                    try
-                    {
-                        const uint ENABLE_QUICK_EDIT = 0x0040;
-                        IntPtr consoleHandle = GetStdHandle(-10);
-                        uint consoleMode;
-                        GetConsoleMode(consoleHandle, out consoleMode);
-                        consoleMode &= ~ENABLE_QUICK_EDIT;
-                        SetConsoleMode(consoleHandle, consoleMode);
-                    }
-                    catch { Writer.Write("Fail to set Console unselectable. Don't worry, everything is OK.", ConsoleColor.DarkGray); }
+                    const uint ENABLE_QUICK_EDIT = 0x0040;
+                    IntPtr consoleHandle = GetStdHandle(-10);
+                    uint consoleMode;
+                    GetConsoleMode(consoleHandle, out consoleMode);
+                    consoleMode &= ~ENABLE_QUICK_EDIT;
+                    SetConsoleMode(consoleHandle, consoleMode);
                 }
+                catch { Writer.Write("Fail to set Console unselectable. Don't worry, everything is OK.", ConsoleColor.DarkGray); }
+            }
 
-                Writer.Write("OK", ConsoleColor.Green);
-                Writer.Write(NetSquareConfigurationManager.Configuration.ToString(), ConsoleColor.Yellow, false);
-
-                AfterLoadConfiguration_StepTwo?.Invoke();
+            Writer.Write("OK", ConsoleColor.Green);
+            Writer.Write(configuration.ToString(), ConsoleColor.Yellow, false);
+            if (CheckBlackList)
                 BlackListManager.Initialize();
 
-                if (bindDispatcher)
-                {
-                    Writer.Write_Server("Loading Network Methods...", ConsoleColor.DarkYellow, false);
-                    if (Dispatcher == null)
-                        Dispatcher = new NetSquareDispatcher();
-                    Dispatcher.AutoBindHeadActionsFromAttributes();
-                    Writer.Write(Dispatcher.Count.ToString(), ConsoleColor.Green);
-                }
-
-                port = port > 0 ? port : NetSquareConfigurationManager.Configuration.Port;
-                BindServerIP(allowLocalIP);
-
-                // Start TCP server
-                if (!StartTCPServer(port, CheckBlackList))
-                {
-                    Writer.Write("ERROR : Can't Start TCP Server...", ConsoleColor.Red);
-                    return;
-                }
-
-                // start update loop
-                Writer.Write_Server("Starting Update Loop...", ConsoleColor.DarkYellow, false);
-                serverTickRate = 1f / NetSquareConfigurationManager.Configuration.UpdateFrequencyHz;
-                serverClock.Restart();
-                Time = 0f;
-                Thread updateThread = new Thread(UpdateLoop);
-                updateThread.Start();
-                Writer.Write("Started", ConsoleColor.Green);
-
-                // start message queue
-                Writer.Write_Server("Starting Message Queues...", ConsoleColor.DarkYellow, false);
-                MessageQueueManager.StartQueues();
-                Statistics.StartReceivingStatistics(this);
-                Writer.Write("Started", ConsoleColor.Green);
-            }
-            else
+            if (bindDispatcher)
             {
-                NetSquareConfiguration Configuration = new NetSquareConfiguration();
-                NetSquareConfigurationManager.SaveConfiguration(Configuration);
-                Writer.Write("No configuration file finded.", ConsoleColor.Red);
-                Writer.Write("A new configuration file have been created. Please restart the server.", ConsoleColor.DarkYellow);
+                Writer.Write_Server("Loading Network Methods...", ConsoleColor.DarkYellow, false);
+                if (Dispatcher == null)
+                    Dispatcher = new NetSquareDispatcher();
+                Dispatcher.AutoBindHeadActionsFromAttributes();
+                Writer.Write(Dispatcher.Count.ToString(), ConsoleColor.Green);
             }
+
+            Interlocked.Exchange(ref stopStarted, 0);
+            serverStopCancellation = new CancellationTokenSource();
+
+            port = port > 0 ? port : configuration.Port;
+            BindServerIP(allowLocalIP);
+
+            // Queues must accept messages before the first listener completes a handshake.
+            Writer.Write_Server("Starting Message Queues...", ConsoleColor.DarkYellow, false);
+            MessageQueueManager.StartQueues();
+
+            // Start TCP server
+            if (!StartTCPServer(port, CheckBlackList))
+            {
+                MessageQueueManager.StopQueues();
+                Writer.Write("ERROR : Can't Start TCP Server...", ConsoleColor.Red);
+                return;
+            }
+
+            // start update loop
+            Writer.Write_Server("Starting Update Loop...", ConsoleColor.DarkYellow, false);
+            serverTickRate = 1f / Math.Max(0.1f, configuration.UpdateFrequencyHz);
+            serverClock.Restart();
+            Time = 0f;
+            CancellationToken updateToken = serverStopCancellation.Token;
+            updateThread = new Thread(() => UpdateLoop(updateToken));
+            updateThread.IsBackground = true;
+            updateThread.Name = "NetSquare server update";
+            updateThread.Start();
+            Writer.Write("Started", ConsoleColor.Green);
+
+            Statistics.StartReceivingStatistics(this);
+            Writer.Write("Started", ConsoleColor.Green);
         }
 
         #region Update Loop
         /// <summary>
         /// Update loop of the server
         /// </summary>
-        private void UpdateLoop()
+        private void UpdateLoop(CancellationToken cancellationToken)
         {
             if (!serverClock.IsRunning)
                 serverClock.Restart();
@@ -253,7 +335,7 @@ namespace NetSquare.Server
             float lastTime = Time;
             try
             {
-                while (IsStarted)
+                while (!cancellationToken.IsCancellationRequested && IsStarted)
                 {
                     Time = (float)GetCurrentServerTimeSeconds();
                     if (Time - lastTime >= serverTickRate)
@@ -261,7 +343,8 @@ namespace NetSquare.Server
                         lastTime = Time;
                         OnTimeLoop?.Invoke(Time);
                     }
-                    Thread.Sleep(1);
+                    if (cancellationToken.WaitHandle.WaitOne(1))
+                        return;
                 }
             }
             finally
@@ -280,6 +363,31 @@ namespace NetSquare.Server
             return serverClock.IsRunning ? serverClock.Elapsed.TotalSeconds : Time;
         }
 
+        /// <summary>
+        /// Handles a client heartbeat and returns server time for RTT measurement.
+        /// </summary>
+        private void ClientHeartbeat(NetworkMessage message)
+        {
+            ConnectedClient client = message.Client ?? SafeGetClient(message.ClientID);
+            if (client != null)
+            {
+                client.MarkMessageReceived();
+                try
+                {
+                    if (message.Serializer.CanGetByte())
+                        message.Serializer.GetByte();
+
+                    if (message.Serializer.CanGetUShort())
+                        client.Ping = message.Serializer.GetUShort();
+                }
+                catch (Exception ex)
+                {
+                    Writer.Write("Invalid heartbeat from client " + client.ID + " : " + ex.Message, ConsoleColor.DarkYellow);
+                }
+            }
+
+            message.Reply(new NetworkMessage().Set(GetCurrentServerTimeSeconds()));
+        }
         /// <summary>
         /// Returns whether the client asked for the high precision time synchronization payload.
         /// </summary>
@@ -386,65 +494,136 @@ namespace NetSquare.Server
         /// </summary>
         public void Stop()
         {
-            try { Statistics?.Stop(); } catch { }
-            Listeners.ForEach(l => l.Stop());
-            while (Listeners.Any(l => l.Listener.Active))
+            if (Interlocked.Exchange(ref stopStarted, 1) != 0)
+                return;
+
+            serverStopCancellation?.Cancel();
+            try { Statistics?.Stop(); }
+            catch (Exception ex) { Writer.Write("Statistics worker shutdown failed: " + ex, ConsoleColor.DarkYellow); }
+
+            bool listenersStopped = true;
+            foreach (TcpListener listener in Listeners)
             {
-                Thread.Sleep(100);
-            };
-            NotifyClientsDisconnecting();
-            try { MessageQueueManager?.StopQueues(); } catch { }
+                try { listenersStopped &= listener.Stop(); }
+                catch (Exception ex)
+                {
+                    listenersStopped = false;
+                    Writer.Write("TCP listener shutdown failed: " + ex, ConsoleColor.DarkYellow);
+                }
+            }
+            if (!listenersStopped)
+                Writer.Write("One or more TCP listeners exceeded their shutdown timeout.", ConsoleColor.DarkYellow);
+            NotifyClientsDisconnecting(new DisconnectInfo(DisconnectReason.ServerShutdown));
+            try
+            {
+                if (MessageQueueManager != null && !MessageQueueManager.StopQueues())
+                    Writer.Write("One or more message workers exceeded their shutdown timeout.", ConsoleColor.DarkYellow);
+            }
+            catch (Exception ex) { Writer.Write("Message queue shutdown failed: " + ex, ConsoleColor.DarkYellow); }
+            Thread threadToJoin = updateThread;
+            if (threadToJoin != null && threadToJoin != Thread.CurrentThread)
+            {
+                int configuredTimeout = NetSquareConfigurationManager
+                    .Get<NetSquareConfiguration>().WorkerStopTimeoutMilliseconds;
+                int timeout = configuredTimeout > 0 ? configuredTimeout : 5000;
+                if (!threadToJoin.Join(timeout))
+                    Writer.Write("Server update worker did not stop in time.", ConsoleColor.DarkYellow);
+            }
+            updateThread = null;
             DisconnectAllClientsWithoutNotice();
             Listeners.Clear();
         }
 
         /// <summary>
-        /// Disconnect a client from the server.
+        /// Disconnects a client with the default server-request reason.
         /// </summary>
-        /// <param name="clientID">The client ID.</param>
+        /// <param name="clientID">Client ID.</param>
         public void DisconnectClient(uint clientID)
         {
-            ConnectedClient client;
-            if (Clients.TryGetValue(clientID, out client))
-                DisconnectClient(client);
+            DisconnectClient(clientID, DisconnectReason.ServerRequest);
         }
 
         /// <summary>
-        /// Disconnect a client from the server.
+        /// Disconnects a client with a typed reason.
         /// </summary>
-        /// <param name="client">The client.</param>
+        /// <param name="clientID">Client ID.</param>
+        /// <param name="reason">Reason sent before closing the socket.</param>
+        public void DisconnectClient(uint clientID, DisconnectReason reason)
+        {
+            DisconnectClient(clientID, new DisconnectInfo(reason));
+        }
+
+        /// <summary>
+        /// Disconnects a client with complete typed feedback.
+        /// </summary>
+        /// <param name="clientID">Client ID.</param>
+        /// <param name="info">Feedback sent before closing the socket.</param>
+        public void DisconnectClient(uint clientID, DisconnectInfo info)
+        {
+            ConnectedClient client;
+            if (Clients.TryGetValue(clientID, out client))
+                DisconnectClient(client, info);
+        }
+
+        /// <summary>
+        /// Disconnects a client with the default server-request reason.
+        /// </summary>
+        /// <param name="client">Client to disconnect.</param>
         public void DisconnectClient(ConnectedClient client)
         {
-            DisconnectClientInternal(client, true);
+            DisconnectClient(client, DisconnectReason.ServerRequest);
+        }
+
+        /// <summary>
+        /// Disconnects a client with a typed reason.
+        /// </summary>
+        /// <param name="client">Client to disconnect.</param>
+        /// <param name="reason">Reason sent before closing the socket.</param>
+        public void DisconnectClient(ConnectedClient client, DisconnectReason reason)
+        {
+            DisconnectClient(client, new DisconnectInfo(reason));
+        }
+
+        /// <summary>
+        /// Disconnects a client with complete typed feedback.
+        /// </summary>
+        /// <param name="client">Client to disconnect.</param>
+        /// <param name="info">Feedback sent before closing the socket.</param>
+        public void DisconnectClient(ConnectedClient client, DisconnectInfo info)
+        {
+            DisconnectClientInternal(client, true, info);
         }
         #endregion
 
         #region Disconnection Notices
         /// <summary>
-        /// Disconnect a client.
+        /// Disconnects a client and optionally sends typed feedback first.
         /// </summary>
-        /// <param name="client">The client.</param>
+        /// <param name="client">Client to disconnect.</param>
         /// <param name="notifyRemote">If true, send a disconnect notice before closing.</param>
-        private void DisconnectClientInternal(ConnectedClient client, bool notifyRemote)
+        /// <param name="info">Feedback sent to the client.</param>
+        private void DisconnectClientInternal(ConnectedClient client, bool notifyRemote, DisconnectInfo info)
         {
             if (client == null)
                 return;
 
-            if (notifyRemote && EnqueueDisconnectingNotice(client))
+            info = info ?? new DisconnectInfo(DisconnectReason.Unknown);
+            if (notifyRemote && EnqueueDisconnectingNotice(client, info))
                 client.WaitForPendingTCPMessages(DisconnectNoticeTimeoutMs);
 
             Server_ClientDisconnected(client);
         }
 
         /// <summary>
-        /// Notify all clients that the server is disconnecting.
+        /// Notifies all clients that the server is disconnecting.
         /// </summary>
-        private void NotifyClientsDisconnecting()
+        /// <param name="info">Feedback sent to every connected client.</param>
+        private void NotifyClientsDisconnecting(DisconnectInfo info)
         {
             List<ConnectedClient> notifiedClients = new List<ConnectedClient>();
             foreach (ConnectedClient client in Clients.Values.ToList())
             {
-                if (EnqueueDisconnectingNotice(client))
+                if (EnqueueDisconnectingNotice(client, info))
                     notifiedClients.Add(client);
             }
 
@@ -460,18 +639,19 @@ namespace NetSquare.Server
         }
 
         /// <summary>
-        /// Enqueue the disconnecting notice to a client.
+        /// Enqueues typed disconnection feedback to a client.
         /// </summary>
-        /// <param name="client">The client.</param>
-        /// <returns>true if the notice was enqueued</returns>
-        private bool EnqueueDisconnectingNotice(ConnectedClient client)
+        /// <param name="client">Client to notify.</param>
+        /// <param name="info">Feedback sent before closure.</param>
+        /// <returns>True when the notice was enqueued.</returns>
+        private bool EnqueueDisconnectingNotice(ConnectedClient client, DisconnectInfo info)
         {
             if (client == null || client.TcpSocket == null || !client.TcpSocket.Connected)
                 return false;
 
             try
             {
-                client.AddTCPMessage(new NetworkMessage(NetSquareMessageID.Disconnecting));
+                client.AddTCPMessage(ConnectionFeedbackProtocol.CreateDisconnectMessage(info, client.ID));
                 return true;
             }
             catch (Exception ex)
@@ -487,7 +667,7 @@ namespace NetSquare.Server
         private void DisconnectAllClientsWithoutNotice()
         {
             foreach (ConnectedClient client in Clients.Values.ToList())
-                DisconnectClientInternal(client, false);
+                DisconnectClientInternal(client, false, null);
         }
         #endregion
 
@@ -551,16 +731,6 @@ namespace NetSquare.Server
         }
 
         /// <summary>
-        /// Send a message to a client
-        /// </summary>
-        /// <param name="message"> The message </param>
-        /// <param name="clientID"> The client ID </param>
-        public void SendToClient(NetworkMessage message, UInt24 clientID)
-        {
-            SendToClient(message, clientID.UInt32);
-        }
-
-        /// <summary>
         /// Send a message to some clients
         /// </summary>
         /// <param name="message"> The message </param>
@@ -583,14 +753,11 @@ namespace NetSquare.Server
         public void SendToClients(NetworkMessage message, IEnumerable<uint> clients)
         {
             byte[] data = message.Serialize();
-            lock (clients)
+            foreach (uint clientID in clients)
             {
-                foreach (uint clientID in clients)
-                {
-                    ConnectedClient client;
-                    if (Clients.TryGetValue(clientID, out client))
-                        client.AddTCPMessage(data);
-                }
+                ConnectedClient client;
+                if (Clients.TryGetValue(clientID, out client))
+                    client.AddTCPMessage(data);
             }
         }
 
@@ -601,14 +768,11 @@ namespace NetSquare.Server
         /// <param name="clients"> The clients </param>
         public void SendToClients(byte[] message, IEnumerable<uint> clients)
         {
-            lock (clients)
+            foreach (uint clientID in clients)
             {
-                foreach (uint clientID in clients)
-                {
-                    ConnectedClient client;
-                    if (Clients.TryGetValue(clientID, out client))
-                        client.AddTCPMessage(message);
-                }
+                ConnectedClient client;
+                if (Clients.TryGetValue(clientID, out client))
+                    client.AddTCPMessage(message);
             }
         }
 
@@ -619,15 +783,8 @@ namespace NetSquare.Server
         public void Broadcast(NetworkMessage message)
         {
             byte[] data = message.Serialize();
-            lock (Clients)
-            {
-                foreach (var pair in Clients)
-                {
-                    ConnectedClient client;
-                    if (Clients.TryGetValue(pair.Key, out client))
-                        client.AddTCPMessage(data);
-                }
-            }
+            foreach (KeyValuePair<uint, ConnectedClient> pair in Clients)
+                pair.Value?.AddTCPMessage(data);
         }
 
         /// <summary>
@@ -637,11 +794,19 @@ namespace NetSquare.Server
         /// <param name="clients"> The clients </param>
         public void SendToClientsUnreliable(NetworkMessage message, IEnumerable<uint> clients)
         {
-            lock (clients)
+            if (message == null)
+                throw new ArgumentNullException(nameof(message));
+            if (clients == null)
+                throw new ArgumentNullException(nameof(clients));
+
+            // One immutable serialized buffer is safe to share across every per-client UDP queue.
+            ushort headID = message.HeadID;
+            byte[] data = message.Serialize();
+            foreach (uint clientID in clients)
             {
-                foreach (uint clientID in clients)
-                    if (Clients.ContainsKey(clientID))
-                        SendToClientUnreliable(message, Clients[clientID]);
+                ConnectedClient client;
+                if (Clients.TryGetValue(clientID, out client))
+                    client.AddUnreliableMessage(headID, data);
             }
         }
 
@@ -664,8 +829,9 @@ namespace NetSquare.Server
         /// <param name="clientID"> The client ID </param>
         public void SendToClientUnreliable(ushort headID, byte[] message, uint clientID)
         {
-            if (Clients.ContainsKey(clientID))
-                GetClient(clientID).AddUnreliableMessage(headID, message);
+            ConnectedClient client;
+            if (Clients.TryGetValue(clientID, out client))
+                client.AddUnreliableMessage(headID, message);
         }
 
         /// <summary>
@@ -675,19 +841,12 @@ namespace NetSquare.Server
         /// <param name="clientID"> The client ID </param>
         public void SendToClientUnreliable(NetworkMessage message, uint clientID)
         {
-            message.Client = GetClient(clientID);
-            if (message.Client != null)
-                message.Client.AddUnreliableMessage(message);
-        }
+            ConnectedClient client;
+            if (!Clients.TryGetValue(clientID, out client))
+                return;
 
-        /// <summary>
-        /// Send a message to some clients using UDP protocol
-        /// </summary>
-        /// <param name="message"> The message </param>
-        /// <param name="clientID"> The client ID </param>
-        public void SendToClientUnreliable(NetworkMessage message, UInt24 clientID)
-        {
-            SendToClientUnreliable(message, clientID.UInt32);
+            message.Client = client;
+            client.AddUnreliableMessage(message);
         }
 
         /// <summary>
@@ -698,11 +857,11 @@ namespace NetSquare.Server
         /// <param name="clients"> The clients </param>
         public void SendToClientsUnreliable(ushort headID, byte[] message, IEnumerable<uint> clients)
         {
-            lock (clients)
+            foreach (uint clientID in clients)
             {
-                foreach (uint clientID in clients)
-                    if (Clients.ContainsKey(clientID))
-                        SendToClientUnreliable(headID, message, Clients[clientID]);
+                ConnectedClient client;
+                if (Clients.TryGetValue(clientID, out client))
+                    client.AddUnreliableMessage(headID, message);
             }
         }
 
@@ -746,12 +905,38 @@ namespace NetSquare.Server
                 client.OnMessageReceived -= MessageReceived;
                 client.OnMessageSend -= MessageSended;
                 // try clean disconnect if not already
-                try { client.TcpSocket.Disconnect(false); } catch { }
+                client.CloseTcpTransport();
                 Writer.Write("Client " + client.ID + " disconnected", ConsoleColor.Green);
                 //Writer.Write(Environment.StackTrace, ConsoleColor.Gray);
             }
         }
 
+
+        /// <summary>
+        /// Removes a client that failed transport validation before OnClientConnected was published.
+        /// </summary>
+        /// <param name="client">Pending client to remove.</param>
+        internal void RemovePendingClient(ConnectedClient client)
+        {
+            // Pending clients must not emit a misleading public disconnection event.
+            if (client == null)
+                return;
+
+            ConnectedClient removedClient;
+            if (Clients.TryRemove(client.ID, out removedClient))
+            {
+                removedClient.UDP?.UnregisterServerClient();
+                removedClient.OnMessageReceived -= MessageReceived;
+                removedClient.OnMessageSend -= MessageSended;
+                removedClient.OnDisconected -= Client_OnDisconected;
+            }
+            else
+            {
+                removedClient = client;
+            }
+
+            removedClient.CloseTcpTransport();
+        }
         /// <summary>
         /// Event when a client is connected
         /// </summary>
@@ -791,6 +976,10 @@ namespace NetSquare.Server
         /// <param name="message"> The message </param>
         internal void MessageReceived(NetworkMessage message)
         {
+            // The server-side connection is authoritative; never trust the sender-controlled header ID.
+            if (message.Client != null)
+                message.ClientID = message.Client.ID;
+
             MessageQueueManager.MessageReceived(message);
             OnMessageReceived?.Invoke(message);
         }
@@ -866,9 +1055,33 @@ namespace NetSquare.Server
         /// <returns> The client ID </returns>
         public uint AddClient(ConnectedClient client)
         {
-            client.ID = GetNewClientID();
-            while (!Clients.TryAdd(client.ID, client))
-                Thread.Sleep(1);
+            if (client == null)
+                throw new ArgumentNullException(nameof(client));
+
+            Func<uint> clientIDGenerator = GetNewClientID;
+            if (clientIDGenerator == null)
+                throw new InvalidOperationException("No client ID generator is configured.");
+
+            const int maxGenerationAttempts = 1024;
+            bool added = false;
+            for (int attempt = 0; attempt < maxGenerationAttempts; attempt++)
+            {
+                // Use one stable generator for the complete allocation attempt.
+                uint clientID = clientIDGenerator();
+                if (clientID == 0)
+                    continue;
+
+                client.ID = clientID;
+                if (Clients.TryAdd(clientID, client))
+                {
+                    added = true;
+                    break;
+                }
+            }
+
+            if (!added)
+                throw new InvalidOperationException("Unable to allocate a unique non-zero client ID.");
+
             client.UDP?.RegisterServerClient();
             client.OnMessageReceived += MessageReceived;
             client.OnMessageSend += MessageSended;

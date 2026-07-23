@@ -32,6 +32,18 @@ namespace NetSquare.Server.Worlds
         /// Stores the static entities lock value.
         /// </summary>
         private readonly object staticEntitiesLock = new object();
+        /// <summary>
+        /// Stores the reusable clients snapshot for spatialization ticks.
+        /// </summary>
+        private readonly List<SpatialClient> spatializationClients = new List<SpatialClient>();
+        /// <summary>
+        /// Stores the reusable static-entity snapshot for spatialization ticks.
+        /// </summary>
+        private readonly List<StaticEntity> spatializationStaticEntities = new List<StaticEntity>();
+        /// <summary>
+        /// Stores the reusable visibility buffer for synchronization ticks.
+        /// </summary>
+        private readonly List<uint> synchronizationVisibleClientIDs = new List<uint>();
 
         /// <summary>
         /// Instantiate a new simple spatializer based on distance between clients
@@ -95,42 +107,60 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         protected override void SpatializationLoop()
         {
-            foreach (var client in Clients)
+            // Build shared reusable snapshots once per tick instead of once for every client.
+            spatializationClients.Clear();
+            foreach (KeyValuePair<uint, SpatialClient> client in Clients)
+                spatializationClients.Add(client.Value);
+
+            spatializationStaticEntities.Clear();
+            lock (staticEntitiesLock)
+                spatializationStaticEntities.AddRange(StaticEntities);
+
+            foreach (SpatialClient client in spatializationClients)
             {
-                client.Value.ProcessVisibleClients();
-                client.Value.ProcessVisibleStaticEntities();
+                client.ProcessVisibleClients(spatializationClients);
+                client.ProcessVisibleStaticEntities(spatializationStaticEntities);
             }
         }
-
         /// <summary>
         /// Synchronization loop that pack and send visible clients to the clients
         /// </summary>
         protected override unsafe void SynchLoop()
         {
             Dictionary<uint, List<INetSquareSynchFrame>> frameSnapshot = DrainStoredFrames();
-            if (frameSnapshot.Count == 0)
-                return;
-
-            foreach (var client in Clients)
+            try
             {
-                // get visible clients
-                HashSet<uint> visibleClients = GetVisibleClients(client.Key);
-                // create new synch message
-                NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
+                if (frameSnapshot.Count == 0)
+                    return;
 
-                // add visible clients to the message
-                foreach (var visibleClient in visibleClients)
+                // Reuse one sequential visibility buffer for the whole synchronization pass.
+                List<uint> visibleClientIDs = synchronizationVisibleClientIDs;
+                foreach (KeyValuePair<uint, SpatialClient> client in Clients)
                 {
-                    List<INetSquareSynchFrame> frames;
-                    if (frameSnapshot.TryGetValue(visibleClient, out frames) && frames.Count > 0)
-                        NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleClient, frames);
+                    visibleClientIDs.Clear();
+                    lock (client.Value.SyncRoot)
+                        visibleClientIDs.AddRange(client.Value.VisibleIDs);
+
+                    if (visibleClientIDs.Count == 0)
+                        continue;
+
+                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
+                    foreach (uint visibleClientID in visibleClientIDs)
+                    {
+                        List<INetSquareSynchFrame> frames;
+                        if (frameSnapshot.TryGetValue(visibleClientID, out frames) && frames.Count > 0)
+                            NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleClientID, frames);
+                    }
+
+                    if (synchMessage.HasWriteData)
+                        World.server.SendToClient(synchMessage, client.Key);
                 }
-                // send message to client
-                if (synchMessage.HasWriteData)
-                    World.server.SendToClient(synchMessage, client.Key);
+            }
+            finally
+            {
+                ReturnDrainedFrames(frameSnapshot);
             }
         }
-
         /// <summary>
         /// Executes the for each operation.
         /// </summary>
@@ -170,7 +200,7 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         internal List<SpatialClient> GetClientsSnapshot()
         {
-            List<SpatialClient> snapshot = new List<SpatialClient>();
+            List<SpatialClient> snapshot = new List<SpatialClient>(Clients.Count);
             foreach (var pair in Clients)
                 snapshot.Add(pair.Value);
             return snapshot;

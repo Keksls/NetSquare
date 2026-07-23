@@ -7,6 +7,7 @@
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>10.0</LangVersion>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <EnableDefaultItems>false</EnableDefaultItems>
   </PropertyGroup>
@@ -53,8 +54,8 @@
 
   <ItemGroup>
     <Compile Include="Utils\Extentions.cs" />
-    <Compile Include="Utils\NetSquareJsonSerializer.cs" />
     <Compile Include="Utils\NetSquareServerConfigGenerator.cs" />
+    <Compile Include="Utils\NetSquareConfigurationManager.cs" />
     <Compile Include="Worlds\Spatialization\Bounds.cs" />
     <Compile Include="Worlds\Spatialization\ChunkedClient.cs" />
     <Compile Include="Worlds\Spatialization\ChunkedSpatializer.cs" />
@@ -70,13 +71,30 @@
     <Compile Include="Worlds\Synchronizer.cs" />
     <Compile Include="NetSquareServer.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Server\BlackList.cs" />
+    <Compile Include="Server\BlackListManager.cs" />
+    <Compile Include="Server\BlackListBanEntry.cs" />
+    <Compile Include="Server\BlackListBanType.cs" />
+    <Compile Include="Server\BlackListConnectionFeedback.cs" />
+    <Compile Include="Server\BlackListEscalationStage.cs" />
+    <Compile Include="Server\BlackListHitCounter.cs" />
+    <Compile Include="Server\BlackListHitResult.cs" />
+    <Compile Include="Server\BlackListPolicy.cs" />
+    <Compile Include="Server\BlackListPersistentState.cs" />
+    <Compile Include="Server\BlackListStatus.cs" />
+    <Compile Include="Server\BlackListSubject.cs" />
+    <Compile Include="Server\BlackListSubjectEntry.cs" />
+    <Compile Include="Server\IPAddressUtilities.cs" />
+    <Compile Include="Server\IPNetworkRange.cs" />
+    <Compile Include="Server\Reputation\*.cs" />
     <Compile Include="Server\MessageQueue.cs" />
     <Compile Include="Server\ServerStatistics.cs" />
     <Compile Include="Server\TcpListener.cs" />
     <Compile Include="Server\TcpListenerEx.cs" />
     <Compile Include="Utils\NetSquareConfiguration.cs" />
     <Compile Include="Utils\Writer.cs" />
+    <Compile Include="Utils\WriterCategories.cs" />
+    <Compile Include="Utils\WriterInterpolation.cs" />
+    <Compile Include="Utils\Logging\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

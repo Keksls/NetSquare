@@ -41,6 +41,14 @@ namespace NetSquare.Server.Worlds
         /// Stores the clients value.
         /// </summary>
         private ConcurrentDictionary<uint, ChunkedClient> Clients;
+        /// <summary>
+        /// Stores the reusable clients snapshot for spatialization ticks.
+        /// </summary>
+        private readonly List<ChunkedClient> spatializationClients = new List<ChunkedClient>();
+        /// <summary>
+        /// Stores the reusable visibility buffer for synchronization ticks.
+        /// </summary>
+        private readonly List<uint> synchronizationVisibleClientIDs = new List<uint>();
 
         /// <summary>
         /// Initializes a new instance of the chunked spatializer class.
@@ -126,11 +134,11 @@ namespace NetSquare.Server.Worlds
             if (Clients == null)
                 return;
 
-            List<ChunkedClient> snapshot = GetClientsSnapshot();
-            foreach (ChunkedClient client in snapshot)
+            GetClientsSnapshot(spatializationClients);
+            foreach (ChunkedClient client in spatializationClients)
                 RefreshClientChunk(client);
 
-            foreach (ChunkedClient client in snapshot)
+            foreach (ChunkedClient client in spatializationClients)
                 ProcessVisible(client);
         }
 
@@ -143,45 +151,56 @@ namespace NetSquare.Server.Worlds
                 return;
 
             Dictionary<uint, List<INetSquareSynchFrame>> frameSnapshot = DrainStoredFrames();
-            if (frameSnapshot.Count == 0)
-                return;
-
-            syncStopWatch.Restart();
-            foreach (ChunkedClient client in GetClientsSnapshot())
+            try
             {
-                HashSet<uint> visibleIDs;
-                lock (client.SyncRoot)
-                    visibleIDs = new HashSet<uint>(client.VisibleIDs);
+                if (frameSnapshot.Count == 0)
+                    return;
 
-                if (visibleIDs.Count == 0)
-                    continue;
-
-                NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
-                foreach (uint visibleID in visibleIDs)
+                syncStopWatch.Restart();
+                // Reuse one visibility buffer for all clients in this synchronization pass.
+                List<uint> visibleClientIDs = synchronizationVisibleClientIDs;
+                foreach (KeyValuePair<uint, ChunkedClient> clientPair in Clients)
                 {
-                    List<INetSquareSynchFrame> frames;
-                    if (frameSnapshot.TryGetValue(visibleID, out frames) && frames.Count > 0)
-                        NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleID, frames);
+                    ChunkedClient client = clientPair.Value;
+                    visibleClientIDs.Clear();
+                    lock (client.SyncRoot)
+                        visibleClientIDs.AddRange(client.VisibleIDs);
+
+                    if (visibleClientIDs.Count == 0)
+                        continue;
+
+                    NetworkMessage synchMessage = new NetworkMessage(NetSquareMessageID.SetSynchFramesPacked);
+                    foreach (uint visibleClientID in visibleClientIDs)
+                    {
+                        List<INetSquareSynchFrame> frames;
+                        if (frameSnapshot.TryGetValue(visibleClientID, out frames) && frames.Count > 0)
+                            NetSquareSynchFramesUtils.SerializePackedFrames(synchMessage, visibleClientID, frames);
+                    }
+
+                    if (synchMessage.HasWriteData)
+                        World.server.SendToClient(synchMessage, client.ClientID);
                 }
-
-                if (synchMessage.HasWriteData)
-                    World.server.SendToClient(synchMessage, client.ClientID);
+                syncStopWatch.Stop();
+                UpdateSynchFrequency((int)syncStopWatch.ElapsedMilliseconds);
             }
-            syncStopWatch.Stop();
-            UpdateSynchFrequency((int)syncStopWatch.ElapsedMilliseconds);
+            finally
+            {
+                if (syncStopWatch.IsRunning)
+                    syncStopWatch.Stop();
+                ReturnDrainedFrames(frameSnapshot);
+            }
         }
-
         /// <summary>
         /// Executes the get clients snapshot operation.
         /// </summary>
-        private List<ChunkedClient> GetClientsSnapshot()
+        private void GetClientsSnapshot(List<ChunkedClient> snapshot)
         {
-            List<ChunkedClient> snapshot = new List<ChunkedClient>();
-            foreach (var pair in Clients)
+            snapshot.Clear();
+            if (snapshot.Capacity < Clients.Count)
+                snapshot.Capacity = Clients.Count;
+            foreach (KeyValuePair<uint, ChunkedClient> pair in Clients)
                 snapshot.Add(pair.Value);
-            return snapshot;
         }
-
         /// <summary>
         /// Executes the refresh client chunk operation.
         /// </summary>
@@ -261,18 +280,18 @@ namespace NetSquare.Server.Worlds
                 if (client.VisibleIDs.Count == 0)
                     return;
 
-                leaving = new HashSet<uint>(client.VisibleIDs);
-                client.VisibleIDs.Clear();
+                leaving = client.VisibleIDs;
+                client.NextVisibleIDs.Clear();
+                client.VisibleIDs = client.NextVisibleIDs;
+                client.NextVisibleIDs = leaving;
             }
 
             NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
             foreach (uint oldVisible in leaving)
-                leavingMessage.Set(new UInt24(oldVisible));
+                leavingMessage.Set(oldVisible);
 
-            if (leavingMessage.HasWriteData)
-                World.server.SendToClient(leavingMessage, client.ClientID);
+            World.server.SendToClient(leavingMessage, client.ClientID);
         }
-
         /// <summary>
         /// Executes the process visible operation.
         /// </summary>
@@ -285,52 +304,62 @@ namespace NetSquare.Server.Worlds
                 return;
             }
 
-            HashSet<uint> currentVisible = new HashSet<uint>(chunk.Clients.Keys);
-            HashSet<uint> oldVisible;
+            HashSet<uint> currentVisible = client.NextVisibleIDs;
+            currentVisible.Clear();
+            foreach (uint visibleClientID in chunk.Clients.Keys)
+                currentVisible.Add(visibleClientID);
+
+            HashSet<uint> previousVisible;
             lock (client.SyncRoot)
-                oldVisible = new HashSet<uint>(client.VisibleIDs);
+            {
+                previousVisible = client.VisibleIDs;
+                client.VisibleIDs = currentVisible;
+                client.NextVisibleIDs = previousVisible;
+            }
 
-            // leaving clients
-            NetworkMessage leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
-            foreach (uint oldVisibleClient in oldVisible)
-                if (!currentVisible.Contains(oldVisibleClient))
-                    leavingMessage.Set(new UInt24(oldVisibleClient));
+            NetworkMessage leavingMessage = null;
+            foreach (uint previousVisibleClientID in previousVisible)
+            {
+                if (currentVisible.Contains(previousVisibleClientID))
+                    continue;
 
-            if (leavingMessage.HasWriteData)
+                if (leavingMessage == null)
+                    leavingMessage = new NetworkMessage(NetSquareMessageID.ClientsLeaveWorld);
+                leavingMessage.Set(previousVisibleClientID);
+            }
+
+            if (leavingMessage != null)
                 World.server.SendToClient(leavingMessage, client.ClientID);
 
-            // joining clients
-            NetworkMessage joiningPacked = new NetworkMessage(NetSquareMessageID.ClientsJoinWorld);
-            List<NetworkMessage> joiningClientMessages = new List<NetworkMessage>();
-            foreach (uint clientID in currentVisible)
+            List<NetworkMessage> joiningClientMessages = null;
+            foreach (uint visibleClientID in currentVisible)
             {
-                if (oldVisible.Contains(clientID))
+                if (previousVisible.Contains(visibleClientID))
                     continue;
 
                 NetsquareTransformFrame transform;
-                if (!World.Clients.TryGetValue(clientID, out transform))
+                if (!World.Clients.TryGetValue(visibleClientID, out transform))
                     continue;
 
-                NetworkMessage joiningClientMessage = new NetworkMessage(0, clientID);
+                NetworkMessage joiningClientMessage = new NetworkMessage(0, visibleClientID);
                 transform.Serialize(joiningClientMessage);
-                World.server.Worlds.Fire_OnSendWorldClients(World.ID, clientID, joiningClientMessage);
+                World.server.Worlds.Fire_OnSendWorldClients(World.ID, visibleClientID, joiningClientMessage);
+                if (joiningClientMessages == null)
+                    joiningClientMessages = new List<NetworkMessage>();
                 joiningClientMessages.Add(joiningClientMessage);
             }
 
-            if (joiningClientMessages.Count > 0)
+            if (joiningClientMessages != null)
             {
+                NetworkMessage joiningPacked = new NetworkMessage(NetSquareMessageID.ClientsJoinWorld);
                 joiningPacked.Pack(joiningClientMessages);
                 World.server.SendToClient(joiningPacked, client.ClientID);
             }
 
-            lock (client.SyncRoot)
-                client.VisibleIDs = currentVisible;
-
             NetsquareTransformFrame clientTransform;
             if (World.Clients.TryGetValue(client.ClientID, out clientTransform) && !clientTransform.Equals(client.LastPosition))
-                client.LastPosition = clientTransform;
+                client.LastPosition.Set(clientTransform);
         }
-
         /// <summary>
         /// Executes the get chunk for position operation.
         /// </summary>
@@ -487,7 +516,7 @@ namespace NetSquare.Server.Worlds
                         X = x,
                         Y = y,
                         ClientCount = chunk.Clients.Count,
-                        StaticEntityCount = chunk.GetStaticEntitiesSnapshot().Count
+                        StaticEntityCount = chunk.StaticEntityCount
                     });
                 }
 

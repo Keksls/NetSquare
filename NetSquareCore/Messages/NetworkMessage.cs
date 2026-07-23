@@ -1,6 +1,7 @@
 using NetSquare.Core;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace NetSquare.Core
 {
@@ -9,6 +10,10 @@ namespace NetSquare.Core
     /// </summary>
     public class NetworkMessage
     {
+        /// <summary>
+        /// Stores the maximum accepted message size after decompression and decryption.
+        /// </summary>
+        public static int MaxDecodedMessageSize = 16 * 1024 * 1024;
         /// <summary>
         /// Gets or sets the client id value.
         /// </summary>
@@ -188,7 +193,8 @@ namespace NetSquare.Core
             if (Serializer.CanGetUInt24())
             {
                 UInt24 blockSize = new UInt24(Serializer.Buffer, Serializer.Position);
-                return Serializer.CanReadFor(blockSize.UInt32);
+                return blockSize.UInt32 <= int.MaxValue - 7 &&
+                    Serializer.CanReadFor((int)blockSize.UInt32 + 7);
             }
             return false;
         }
@@ -202,7 +208,8 @@ namespace NetSquare.Core
             if (Serializer.CanGetUInt24())
             {
                 UInt24 blockSize = new UInt24(Serializer.Buffer, Serializer.Position);
-                bool canGetNextBlock = Serializer.CanReadFor(blockSize.UInt32);
+                bool canGetNextBlock = blockSize.UInt32 <= int.MaxValue - 7 &&
+                    Serializer.CanReadFor((int)blockSize.UInt32 + 7);
                 if (canGetNextBlock)
                     Serializer.Position += 3;
                 return canGetNextBlock;
@@ -232,7 +239,7 @@ namespace NetSquare.Core
         /// <returns>size of the head of the message</returns>
         public int GetHeadSize()
         {
-            return MsgType == (byte)NetSquareMessageType.Reply ? 13 : 10;
+            return MsgType == (byte)NetSquareMessageType.Reply ? 14 : 11;
         }
 
         /// <summary>
@@ -240,16 +247,17 @@ namespace NetSquare.Core
         /// </summary>
         private static int GetMinimumHeadSize()
         {
-            return 10;
+            return 11;
         }
 
         /// <summary>
         /// Just set Data, no decryption / decompression, no head reading
         /// </summary>
         /// <param name="data">data to set</param>
-        public void SetDataUnsafe(byte[] data)
+        /// <param name="length">Logical message length inside the backing buffer.</param>
+        public void SetDataUnsafe(byte[] data, int length = 0)
         {
-            Serializer.StartReading(data);
+            Serializer.StartReading(data, length);
             RestartRead();
         }
 
@@ -299,36 +307,50 @@ namespace NetSquare.Core
         /// Decrypt and decompress data
         /// </summary>
         /// <param name="data"> data to decrypt and decompress</param>
-        internal void DecryptDecompressData(ref byte[] data)
+        /// <param name="length">Logical encrypted message length inside the backing buffer.</param>
+        internal void DecryptDecompressData(ref byte[] data, int length = 0)
         {
+            int effectiveLength = length > 0 ? length : (data?.Length ?? 0);
+            int maxDecodedMessageSize = MaxDecodedMessageSize;
+            if (maxDecodedMessageSize < GetMinimumHeadSize())
+                throw new InvalidOperationException("MaxDecodedMessageSize is below the minimum message header size.");
+            if (data == null ||
+                effectiveLength > data.Length ||
+                effectiveLength < 4 ||
+                effectiveLength > maxDecodedMessageSize)
+                throw new InvalidDataException("Invalid network message buffer.");
+
             if (ProtocoleManager.NoCompressorOrEncryptor)
                 return;
-            if (data == null || data.Length < 4)
-                throw new Exception("Invalid encrypted network message buffer");
-            byte[] encrypted = new byte[data.Length - 4];
+
+            byte[] encrypted = new byte[effectiveLength - 4];
             Buffer.BlockCopy(data, 4, encrypted, 0, encrypted.Length);
-            encrypted = ProtocoleManager.Decompress(encrypted);
+            encrypted = ProtocoleManager.Decompress(encrypted, maxDecodedMessageSize);
             data = ProtocoleManager.Decrypt(encrypted);
+            if (data == null || data.Length > maxDecodedMessageSize)
+                throw new InvalidDataException("The decoded network message exceeds the configured limit.");
         }
 
         /// <summary>
         /// Read the head of the message
         /// </summary>
         /// <param name="data"> data to read</param>
-        internal void ReadHead(byte[] data)
+        /// <param name="length">Logical message length inside the backing buffer.</param>
+        internal void ReadHead(byte[] data, int length = 0)
         {
-            if (data == null || data.Length < GetMinimumHeadSize())
+            int effectiveLength = length > 0 ? length : (data?.Length ?? 0);
+            if (data == null || effectiveLength > data.Length || effectiveLength < GetMinimumHeadSize())
                 throw new Exception("Invalid network message header");
             MessageLength = BitConverter.ToInt32(data, 0);
-            if (MessageLength < GetMinimumHeadSize() || MessageLength > data.Length)
+            if (MessageLength < GetMinimumHeadSize() || MessageLength > effectiveLength)
                 throw new Exception("Invalid network message length");
-            ClientID = UInt24.GetUInt(data, 4);
-            HeadID = BitConverter.ToUInt16(data, 7);
-            MsgType = data[9];
-            if (GetHeadSize() > data.Length)
+            ClientID = BitConverter.ToUInt32(data, 4);
+            HeadID = BitConverter.ToUInt16(data, 8);
+            MsgType = data[10];
+            if (GetHeadSize() > effectiveLength)
                 throw new Exception("Invalid network message header");
             if (MsgType == (byte)NetSquareMessageType.Reply)
-                ReplyID = UInt24.GetUInt(data, 10);
+                ReplyID = UInt24.GetUInt(data, 11);
             else
                 ReplyID = 0;
         }
@@ -356,17 +378,18 @@ namespace NetSquare.Core
             data[4] = (byte)((ClientID) & 0xFF);
             data[5] = (byte)((ClientID >> 8) & 0xFF);
             data[6] = (byte)((ClientID >> 16) & 0xFF);
+            data[7] = (byte)((ClientID >> 24) & 0xFF);
             // write Head Action
-            data[7] = (byte)((HeadID) & 0xFF);
-            data[8] = (byte)((HeadID >> 8) & 0xFF);
+            data[8] = (byte)((HeadID) & 0xFF);
+            data[9] = (byte)((HeadID >> 8) & 0xFF);
             // write Type ID
-            data[9] = MsgType;
+            data[10] = MsgType;
             // write Reply ID if needed
             if (MsgType == (byte)NetSquareMessageType.Reply)
             {
-                data[10] = (byte)((ReplyID) & 0xFF);
-                data[11] = (byte)((ReplyID >> 8) & 0xFF);
-                data[12] = (byte)((ReplyID >> 16) & 0xFF);
+                data[11] = (byte)((ReplyID) & 0xFF);
+                data[12] = (byte)((ReplyID >> 8) & 0xFF);
+                data[13] = (byte)((ReplyID >> 16) & 0xFF);
             }
         }
         #endregion
@@ -377,21 +400,31 @@ namespace NetSquare.Core
         /// </summary>
         public bool SafeSetDatagram(byte[] data)
         {
+            return SafeSetDatagram(data, data?.Length ?? 0);
+        }
+
+        /// <summary>
+        /// Reads one NetworkMessage stored at the beginning of a larger authenticated datagram buffer.
+        /// </summary>
+        /// <param name="data">Datagram backing buffer.</param>
+        /// <param name="dataLength">Authenticated NetworkMessage length without the MAC trailer.</param>
+        /// <returns>True when the message header and logical length are valid.</returns>
+        public bool SafeSetDatagram(byte[] data, int dataLength)
+        {
             try
             {
-                // check if at least we got full head
-                if (data == null || data.Length < GetMinimumHeadSize())
+                if (data == null || dataLength < GetMinimumHeadSize() || dataLength > data.Length)
                     return false;
-                DecryptDecompressData(ref data);
-                if (data.Length < GetMinimumHeadSize())
+                bool transformsData = !ProtocoleManager.NoCompressorOrEncryptor;
+                DecryptDecompressData(ref data, dataLength);
+                if (transformsData)
+                    dataLength = data.Length;
+                if (dataLength < GetMinimumHeadSize())
                     return false;
-                // read head
-                ReadHead(data);
-                // check if lenght == to datagram lenght
-                if ((int)MessageLength != data.Length)
+                ReadHead(data, dataLength);
+                if (MessageLength != dataLength)
                     return false;
-                // set data from datagram
-                SetDataUnsafe(data);
+                SetDataUnsafe(data, dataLength);
                 return true;
             }
             catch { return false; }
@@ -622,8 +655,8 @@ namespace NetSquare.Core
         ///     - ClientID :        Int32   4 bytes
         ///     - HeadAction :      Int16   2 bytes
         ///     - MsgType :         byte    1 bytes
-        ///     - ReplyID :         Int32   4 bytes (only if MsgType == 1)
-        ///     - Data :            var     FullMessageSize - 12 bytes or 15 if MsgType == 1
+        ///     - ReplyID :         Int24   3 bytes (only if MsgType == 1)
+        ///     - Data :            var     FullMessageSize - 11 bytes or 14 if MsgType == 1
         ///     
         /// Data Definition :
         ///     - Primitive type, size by type => Function Enum to Size
@@ -678,40 +711,50 @@ namespace NetSquare.Core
         /// <returns> packed message</returns>
         public NetworkMessage Pack(IEnumerable<NetworkMessage> messages, bool alreadySerialized = false)
         {
+            if (messages == null)
+                throw new ArgumentNullException(nameof(messages));
+
             // Packed message will be as follow
             // ======== HEAD =========
             //  - FullMessageSize : Int32   4 bytes
-            //  - ClientID :        Int24   3 bytes
+            //  - ClientID :        UInt32  4 bytes
             //  - HeadAction :      Int16   2 bytes
             //  - MsgType :          byte    1 bytes
             //  - ReplyID :         Int24   3 bytes (only if MsgType == 1)
             // ======== DATA =========  <= For each message
             //  - BlockSize :       Int24   3 bytes
-            //  - ClientID :        Int24   3 bytes
+            //  - ClientID :        UInt32  4 bytes
             //  - Data :            var     BlockSize bytes
 
             int prefixLength = 0;
             if (!IsSerialized && Serializer.Length > 0)
                 prefixLength = Serializer.Length;
 
-            // count packed message lenght
+            // Materialize once so one-shot enumerables cannot change between sizing and serialization.
+            List<NetworkMessage> blocks = new List<NetworkMessage>();
             int headSize = GetHeadSize();
-            int lenght = headSize + prefixLength; // headSize (10 bits or 13 bits if MsgType == 1)
-            int nb = 0;
+            int length = checked(headSize + prefixLength);
             foreach (NetworkMessage message in messages)
             {
+                if (message == null)
+                    throw new InvalidDataException("Packed messages cannot contain null entries.");
+                if (blocks.Count >= NetSquareSerializer.MaxCollectionLength)
+                    throw new InvalidDataException("The packed message contains too many blocks.");
+
                 int blockLength = GetPackBlockLength(message, alreadySerialized);
-                if (blockLength > UInt24.MaxValue)
-                    throw new Exception("Packed message block is too large");
-                lenght += blockLength + 6; // blockSize (3 bits) + clientID (3 bits)
-                nb++;
+                if (blockLength < 0 || blockLength > UInt24.MaxValue)
+                    throw new InvalidDataException("Packed message block is too large.");
+
+                length = checked(length + blockLength + 7);
+                if (length > MaxDecodedMessageSize)
+                    throw new InvalidDataException("The packed message exceeds the configured decoded size limit.");
+                blocks.Add(message);
             }
 
-            if (nb == 0 && prefixLength == 0)
+            if (blocks.Count == 0 && prefixLength == 0)
                 return this;
 
-            // create full empty array
-            byte[] data = new byte[lenght];
+            byte[] data = new byte[length];
             // index start at headSize, because the head will be written at the end
             int index = headSize;
             if (prefixLength > 0)
@@ -720,7 +763,7 @@ namespace NetSquare.Core
                 index += prefixLength;
             }
             // Write Blocks
-            foreach (NetworkMessage message in messages)
+            foreach (NetworkMessage message in blocks)
             {
                 // Write block Lenght
                 int blockLength = GetPackBlockLength(message, alreadySerialized);
@@ -733,6 +776,7 @@ namespace NetSquare.Core
                 data[index++] = (byte)((message.ClientID) & 0xFF);
                 data[index++] = (byte)((message.ClientID >> 8) & 0xFF);
                 data[index++] = (byte)((message.ClientID >> 16) & 0xFF);
+                data[index++] = (byte)((message.ClientID >> 24) & 0xFF);
 
                 int sourceOffset = alreadySerialized ? message.GetHeadSize() : 0;
                 Buffer.BlockCopy(message.Serializer.Buffer, sourceOffset, data, index, blockLength);
@@ -771,16 +815,17 @@ namespace NetSquare.Core
         {
             // ======== DATA =========  <= For each message
             //  - BlockSize :       Int24   3 bytes
-            //  - ClientID :        Int24   3 bytes
+            //  - ClientID :        UInt32  4 bytes
             //  - Data :            var     BlockSize bytes
             List<NetworkMessage> messages = new List<NetworkMessage>();
-            // reading each packed blocks
             while (CanGetNextBlock())
             {
+                if (messages.Count >= NetSquareSerializer.MaxCollectionLength)
+                    throw new InvalidDataException("The packed message contains too many blocks.");
                 // get block size
                 int size = (int)Serializer.GetUInt24().UInt32;
                 // get clientID
-                uint clientID = Serializer.GetUInt24().UInt32;
+                uint clientID = Serializer.GetUInt();
                 // create message
                 NetworkMessage message = new NetworkMessage(HeadID, clientID);
                 message.MsgType = MsgType;
@@ -796,6 +841,8 @@ namespace NetSquare.Core
                 messages.Add(message);
             }
 
+            if (!Serializer.EndOfStream)
+                throw new InvalidDataException("The packed message contains a truncated block.");
             return messages;
         }
     }

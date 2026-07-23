@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using NetSquare.Core;
+using NetSquare.Core.Configuration;
 using NetSquare.Server.Utils;
 using NetSquare.Server.Worlds;
 
@@ -19,8 +20,9 @@ namespace NetSquare.Server
         /// <returns>Generated configuration model.</returns>
         public static NetSquareGeneratedServerConfig CreateDefault()
         {
+            // Generate an independent base template without requiring runtime configuration initialization.
             NetSquareGeneratedServerConfig config = new NetSquareGeneratedServerConfig();
-            config.Server = NetSquareConfigurationManager.Configuration ?? new NetSquareConfiguration();
+            config.Server = new NetSquareConfiguration();
             config.Protocol = NetSquareProtocoleType.TCP_AND_UDP.ToString();
             config.Worlds.Add(new NetSquareGeneratedWorldConfig
             {

@@ -27,13 +27,23 @@ namespace NetSquare.Core.Compression
         /// </summary>
         public override byte[] Decompress(byte[] data)
         {
-            MemoryStream input = new MemoryStream(data);
-            MemoryStream output = new MemoryStream();
+            return Decompress(data, int.MaxValue);
+        }
+
+        /// <summary>
+        /// Decompresses Deflate data while enforcing an absolute output limit.
+        /// </summary>
+        /// <param name="data">Compressed input bytes.</param>
+        /// <param name="maxOutputLength">Maximum accepted decompressed length.</param>
+        /// <returns>The decompressed bytes.</returns>
+        public override byte[] Decompress(byte[] data, int maxOutputLength)
+        {
+            ValidateDecompressionArguments(data, maxOutputLength);
+            using (MemoryStream input = new MemoryStream(data))
             using (DeflateStream dstream = new DeflateStream(input, CompressionMode.Decompress))
             {
-                dstream.CopyTo(output);
+                return ReadBounded(dstream, maxOutputLength);
             }
-            return output.ToArray();
         }
     }
 }

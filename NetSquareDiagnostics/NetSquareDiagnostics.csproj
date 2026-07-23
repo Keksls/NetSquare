@@ -12,6 +12,7 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
+    <LangVersion>10.0</LangVersion>
     <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -59,6 +60,8 @@
     </Compile>
     <Compile Include="LoadScenarioRunner.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="WriterBenchmarkOutput.cs" />
+    <Compile Include="WriterPerformanceBenchmark.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -68,8 +71,20 @@
     <Compile Include="..\NetSquareClient\*.cs" Exclude="..\NetSquareClient\Properties\**\*;..\NetSquareClient\obj\**\*">
       <Link>NetSquareClient\%(Filename)%(Extension)</Link>
     </Compile>
-    <Compile Include="..\NetSquareServer\**\*.cs" Exclude="..\NetSquareServer\Properties\**\*;..\NetSquareServer\obj\**\*">
+    <Compile Include="..\NetSquareClient\Handshake\*.cs">
+      <Link>NetSquareClient\Handshake\%(Filename)%(Extension)</Link>
+    </Compile>
+    <Compile Include="..\NetSquareServer\**\*.cs" Exclude="..\NetSquareServer\Properties\**\*;..\NetSquareServer\obj\**\*;..\NetSquareServer\Utils\Logging\**\*.cs;..\NetSquareServer\Utils\WriterCategories.cs;..\NetSquareServer\Utils\WriterInterpolation.cs">
       <Link>NetSquareServer\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
+    <Compile Include="..\NetSquareServer\Utils\WriterCategories.cs">
+      <Link>NetSquareServer\Utils\WriterCategories.cs</Link>
+    </Compile>
+    <Compile Include="..\NetSquareServer\Utils\WriterInterpolation.cs">
+      <Link>NetSquareServer\Utils\WriterInterpolation.cs</Link>
+    </Compile>
+    <Compile Include="..\NetSquareServer\Utils\Logging\*.cs">
+      <Link>NetSquareServer\Utils\Logging\%(Filename)%(Extension)</Link>
     </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

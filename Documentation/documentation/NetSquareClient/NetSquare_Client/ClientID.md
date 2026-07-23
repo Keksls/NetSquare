@@ -1,7 +1,7 @@
 # NetSquare_Client.ClientID property
 
 ```csharp
-public UInt24 ClientID { get; }
+public uint ClientID { get; }
 ```
 
 ## See Also
