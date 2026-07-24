@@ -1,17 +1,17 @@
 # NetSquare.Core
 
-`NetSquare.Core` contains the protocol and data types shared by `NetSquare.Client` and `NetSquare.Server`: network messages, binary serialization, dispatcher routing, configuration persistence, connection feedback, compression and encryption abstractions, scheduling, UDP transport support, and synchronization frames.
+`NetSquare.Core` contains the protocol and data types shared by `NetSquare.Client` and `NetSquare.Server`: network messages, binary serialization, dispatcher routing, configuration persistence, connection feedback, conditional compression, scheduling, UDP transport support, and synchronization frames.
 
 The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It is installed automatically with current Client and Server packages.
 
 ## Installation
 
 ```powershell
-NuGet\$11.0.15
+Install-Package NetSquare.Core -Version 1.0.16
 ```
 
 ```bash
-$11.0.15
+dotnet add package NetSquare.Core --version 1.0.16
 ```
 
 Install Core directly when building shared contracts or tools. Applications normally install `NetSquare.Client` or `NetSquare.Server`, which reference the exact matching Core version.
@@ -149,11 +149,25 @@ Frequencies passed as `int` are milliseconds. Frequencies passed as `float` are 
 
 The reason enums distinguish temporary and permanent bans. `IsBanned`, `IsTemporaryBan`, and `IsPermanentBan` simplify client handling.
 
-## Compression and encryption
+## Message compression
 
-Core includes compression and payload transformation implementations such as `NoCompression`, `GZipCompressor`, `DeflateCompressor`, `NoEncryption`, `AES_Encryptor`, and `XOR_Encryptor`.
+Compression is disabled by default. Enable the shared Deflate policy before creating or sending messages:
 
-Application-level payload encryption does not authenticate the server or replace TLS. Use TLS when the TCP session needs confidentiality, integrity, and server identity validation.
+```csharp
+using NetSquare.Core.Compression;
+
+NetworkMessageCompression.Enabled = true;
+NetworkMessageCompression.MinimumBodyLength = 256;
+NetworkMessageCompression.MinimumSavings = 16;
+```
+
+Each message carries an explicit compression flag. NetSquare uses the fast Deflate level only when the body reaches the configured threshold and the final representation saves at least `MinimumSavings` bytes. Small and incompressible messages retain the pooled uncompressed path.
+
+Decompression always validates the declared output size against `NetworkMessage.MaxDecodedMessageSize`, regardless of whether local sending compression is enabled.
+
+Do not place secrets and attacker-controlled values in the same compressed message when its encoded length is observable. TLS protects message contents but does not remove compression length side channels.
+
+Application-level encryption was removed. Use TLS for authenticated TCP confidentiality. Authenticated UDP intentionally provides integrity and replay protection without confidentiality.
 
 ## Synchronization frames
 

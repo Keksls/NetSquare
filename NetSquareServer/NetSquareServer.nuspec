@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Server</id>
-    <version>1.0.15</version>
+    <version>1.0.16</version>
     <title>NetSquare.Server</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -11,18 +11,18 @@
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
     <description>NetSquare server networking with TCP, authenticated UDP, dispatching, client management, blacklist policies, worlds, and spatialization.</description>
-    <releaseNotes>Reduces synchronization and spatialization allocations, adds visibility and chunk hysteresis, bounds retained frames, and uses the shared scheduler for periodic work.</releaseNotes>
+    <releaseNotes>Updates to NetSquare.Core 1.0.16 with wire protocol version 3, TLS-only application confidentiality, and conditional low-latency message compression.</releaseNotes>
     <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
     <dependencies>
       <group targetFramework="netstandard2.0">
-        <dependency id="NetSquare.Core" version="[1.0.15]" />
+        <dependency id="NetSquare.Core" version="[1.0.16]" />
       </group>
       <group targetFramework="net8.0-windows7.0">
-        <dependency id="NetSquare.Core" version="[1.0.15]" />
+        <dependency id="NetSquare.Core" version="[1.0.16]" />
       </group>
       <group targetFramework="net48">
-        <dependency id="NetSquare.Core" version="[1.0.15]" />
+        <dependency id="NetSquare.Core" version="[1.0.16]" />
       </group>
     </dependencies>
   </metadata>

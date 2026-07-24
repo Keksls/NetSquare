@@ -1,4 +1,5 @@
 using NetSquare.Core;
+using NetSquare.Core.Compression;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,8 +11,21 @@ namespace NetSquare.Core
     /// </summary>
     public class NetworkMessage
     {
+        #region Wire Format
+        private const int LengthOffset = 0;
+        private const int ClientIdOffset = 4;
+        private const int HeadIdOffset = 8;
+        private const int MessageTypeOffset = 10;
+        private const int FlagsOffset = 11;
+        private const int ReplyIdOffset = 12;
+        private const int MinimumHeaderSize = 12;
+        private const int ReplyHeaderSize = 15;
+        private const int CompressedBodyLengthSize = 4;
+        private const NetworkMessageFlags SupportedFlags = NetworkMessageFlags.Compressed;
+        #endregion
+
         /// <summary>
-        /// Stores the maximum accepted message size after decompression and decryption.
+        /// Stores the maximum accepted message size after decompression.
         /// </summary>
         public static int MaxDecodedMessageSize = 16 * 1024 * 1024;
         /// <summary>
@@ -137,7 +151,7 @@ namespace NetSquare.Core
             if (data == null || data.Length < GetMinimumHeadSize())
                 throw new Exception("Invalid network message buffer");
             Serializer = new NetSquareSerializer();
-            DecryptDecompressData(ref data);
+            DecompressData(ref data);
             if (data.Length < GetMinimumHeadSize())
                 throw new Exception("Invalid network message buffer");
             ReadHead(data);
@@ -239,19 +253,32 @@ namespace NetSquare.Core
         /// <returns>size of the head of the message</returns>
         public int GetHeadSize()
         {
-            return MsgType == (byte)NetSquareMessageType.Reply ? 14 : 11;
+            return GetHeadSize(MsgType);
         }
 
         /// <summary>
-        /// Executes the get minimum head size operation.
+        /// Gets the header size encoded by one message type.
         /// </summary>
+        /// <param name="messageType">Wire message type.</param>
+        /// <returns>Header size including the per-message flags byte.</returns>
+        private static int GetHeadSize(byte messageType)
+        {
+            return messageType == (byte)NetSquareMessageType.Reply
+                ? ReplyHeaderSize
+                : MinimumHeaderSize;
+        }
+
+        /// <summary>
+        /// Gets the minimum wire header size.
+        /// </summary>
+        /// <returns>Minimum message header size.</returns>
         private static int GetMinimumHeadSize()
         {
-            return 11;
+            return MinimumHeaderSize;
         }
 
         /// <summary>
-        /// Just set Data, no decryption / decompression, no head reading
+        /// Sets data without decompression or header parsing.
         /// </summary>
         /// <param name="data">data to set</param>
         /// <param name="length">Logical message length inside the backing buffer.</param>
@@ -283,32 +310,61 @@ namespace NetSquare.Core
         }
 
         /// <summary>
-        /// Encrypt and compress data
+        /// Compresses the message body when doing so reduces the encoded size.
         /// </summary>
-        /// <param name="data"> data to encrypt and compress</param>
-        internal void EncryptCompressData(ref byte[] data)
+        /// <param name="data">Buffer containing a complete uncompressed message.</param>
+        /// <param name="length">Logical message length inside the buffer.</param>
+        /// <returns>True when the buffer was replaced by a compressed representation.</returns>
+        internal bool TryCompressData(ref byte[] data, int length = 0)
         {
-            if (ProtocoleManager.NoCompressorOrEncryptor)
-                return;
-            byte[] encrypted = ProtocoleManager.Encrypt(data);
-            encrypted = ProtocoleManager.Compress(encrypted);
-            byte[] Data = new byte[encrypted.Length + 4];
-            // write lenght
-            MessageLength = Data.Length;
-            Data[0] = (byte)((MessageLength) & 0xFF);
-            Data[1] = (byte)((MessageLength >> 8) & 0xFF);
-            Data[2] = (byte)((MessageLength >> 16) & 0xFF);
-            Data[3] = (byte)((MessageLength >> 24) & 0xFF);
-            Buffer.BlockCopy(encrypted, 0, Data, 4, encrypted.Length);
-            data = Data;
+            int effectiveLength = length > 0 ? length : (data?.Length ?? 0);
+            if (data == null ||
+                effectiveLength > data.Length ||
+                effectiveLength < GetMinimumHeadSize())
+                throw new InvalidDataException("Invalid network message buffer.");
+            if (ReadInt32(data, LengthOffset) != effectiveLength ||
+                data[FlagsOffset] != (byte)NetworkMessageFlags.None)
+                throw new InvalidDataException("Only complete untransformed messages can be compressed.");
+
+            int headerSize = GetHeadSize(data[MessageTypeOffset]);
+            if (headerSize > effectiveLength)
+                throw new InvalidDataException("Invalid network message header.");
+
+            int bodyLength = effectiveLength - headerSize;
+            byte[] compressedBody;
+            if (!NetworkMessageCompression.TryCompress(
+                    data,
+                    headerSize,
+                    bodyLength,
+                    CompressedBodyLengthSize,
+                    out compressedBody))
+                return false;
+
+            int compressedLength = checked(headerSize + CompressedBodyLengthSize + compressedBody.Length);
+            byte[] compressedMessage = new byte[compressedLength];
+            Buffer.BlockCopy(data, 0, compressedMessage, 0, headerSize);
+            WriteInt32(compressedMessage, LengthOffset, compressedLength);
+            compressedMessage[FlagsOffset] = (byte)NetworkMessageFlags.Compressed;
+            WriteInt32(compressedMessage, headerSize, bodyLength);
+            Buffer.BlockCopy(
+                compressedBody,
+                0,
+                compressedMessage,
+                headerSize + CompressedBodyLengthSize,
+                compressedBody.Length);
+
+            MessageLength = compressedLength;
+            data = compressedMessage;
+            return true;
         }
 
         /// <summary>
-        /// Decrypt and decompress data
+        /// Decompresses a message body when its wire flags request it.
         /// </summary>
-        /// <param name="data"> data to decrypt and decompress</param>
-        /// <param name="length">Logical encrypted message length inside the backing buffer.</param>
-        internal void DecryptDecompressData(ref byte[] data, int length = 0)
+        /// <param name="data">Message backing buffer.</param>
+        /// <param name="length">Logical wire length inside the backing buffer.</param>
+        /// <returns>True when the input was compressed and replaced.</returns>
+        internal bool DecompressData(ref byte[] data, int length = 0)
         {
             int effectiveLength = length > 0 ? length : (data?.Length ?? 0);
             int maxDecodedMessageSize = MaxDecodedMessageSize;
@@ -316,19 +372,44 @@ namespace NetSquare.Core
                 throw new InvalidOperationException("MaxDecodedMessageSize is below the minimum message header size.");
             if (data == null ||
                 effectiveLength > data.Length ||
-                effectiveLength < 4 ||
+                effectiveLength < GetMinimumHeadSize() ||
                 effectiveLength > maxDecodedMessageSize)
                 throw new InvalidDataException("Invalid network message buffer.");
+            if (ReadInt32(data, LengthOffset) != effectiveLength)
+                throw new InvalidDataException("Network message length mismatch.");
 
-            if (ProtocoleManager.NoCompressorOrEncryptor)
-                return;
+            NetworkMessageFlags flags = (NetworkMessageFlags)data[FlagsOffset];
+            if ((flags & ~SupportedFlags) != 0)
+                throw new InvalidDataException("The network message contains unsupported flags.");
+            if ((flags & NetworkMessageFlags.Compressed) == 0)
+                return false;
 
-            byte[] encrypted = new byte[effectiveLength - 4];
-            Buffer.BlockCopy(data, 4, encrypted, 0, encrypted.Length);
-            encrypted = ProtocoleManager.Decompress(encrypted, maxDecodedMessageSize);
-            data = ProtocoleManager.Decrypt(encrypted);
-            if (data == null || data.Length > maxDecodedMessageSize)
-                throw new InvalidDataException("The decoded network message exceeds the configured limit.");
+            int headerSize = GetHeadSize(data[MessageTypeOffset]);
+            if (headerSize > effectiveLength - CompressedBodyLengthSize)
+                throw new InvalidDataException("Invalid compressed network message.");
+
+            int decodedBodyLength = ReadInt32(data, headerSize);
+            if (decodedBodyLength < 0 ||
+                decodedBodyLength > maxDecodedMessageSize - headerSize)
+                throw new InvalidDataException("The decompressed payload exceeds the configured limit.");
+
+            int compressedOffset = headerSize + CompressedBodyLengthSize;
+            int compressedLength = effectiveLength - compressedOffset;
+            if (compressedLength <= 0)
+                throw new InvalidDataException("The compressed network message has no payload.");
+
+            byte[] decodedBody = NetworkMessageCompression.DecompressExact(
+                data,
+                compressedOffset,
+                compressedLength,
+                decodedBodyLength);
+            byte[] decodedMessage = new byte[headerSize + decodedBodyLength];
+            Buffer.BlockCopy(data, 0, decodedMessage, 0, headerSize);
+            Buffer.BlockCopy(decodedBody, 0, decodedMessage, headerSize, decodedBody.Length);
+            decodedMessage[FlagsOffset] = (byte)NetworkMessageFlags.None;
+            WriteInt32(decodedMessage, LengthOffset, decodedMessage.Length);
+            data = decodedMessage;
+            return true;
         }
 
         /// <summary>
@@ -341,16 +422,18 @@ namespace NetSquare.Core
             int effectiveLength = length > 0 ? length : (data?.Length ?? 0);
             if (data == null || effectiveLength > data.Length || effectiveLength < GetMinimumHeadSize())
                 throw new Exception("Invalid network message header");
-            MessageLength = BitConverter.ToInt32(data, 0);
+            MessageLength = ReadInt32(data, LengthOffset);
             if (MessageLength < GetMinimumHeadSize() || MessageLength > effectiveLength)
                 throw new Exception("Invalid network message length");
-            ClientID = BitConverter.ToUInt32(data, 4);
-            HeadID = BitConverter.ToUInt16(data, 8);
-            MsgType = data[10];
+            ClientID = BitConverter.ToUInt32(data, ClientIdOffset);
+            HeadID = BitConverter.ToUInt16(data, HeadIdOffset);
+            MsgType = data[MessageTypeOffset];
+            if (data[FlagsOffset] != (byte)NetworkMessageFlags.None)
+                throw new Exception("Network message transformations were not decoded");
             if (GetHeadSize() > effectiveLength)
                 throw new Exception("Invalid network message header");
             if (MsgType == (byte)NetSquareMessageType.Reply)
-                ReplyID = UInt24.GetUInt(data, 11);
+                ReplyID = UInt24.GetUInt(data, ReplyIdOffset);
             else
                 ReplyID = 0;
         }
@@ -369,28 +452,58 @@ namespace NetSquare.Core
         /// </summary>
         internal void WriteHead(byte[] data, int messageLength)
         {
-            // write message Size
-            data[0] = (byte)((messageLength) & 0xFF);
-            data[1] = (byte)((messageLength >> 8) & 0xFF);
-            data[2] = (byte)((messageLength >> 16) & 0xFF);
-            data[3] = (byte)((messageLength >> 24) & 0xFF);
-            // write Client ID
-            data[4] = (byte)((ClientID) & 0xFF);
-            data[5] = (byte)((ClientID >> 8) & 0xFF);
-            data[6] = (byte)((ClientID >> 16) & 0xFF);
-            data[7] = (byte)((ClientID >> 24) & 0xFF);
-            // write Head Action
-            data[8] = (byte)((HeadID) & 0xFF);
-            data[9] = (byte)((HeadID >> 8) & 0xFF);
-            // write Type ID
-            data[10] = MsgType;
-            // write Reply ID if needed
+            // Keep routing fields visible so authenticated UDP can select the associated connection.
+            WriteInt32(data, LengthOffset, messageLength);
+            WriteUInt32(data, ClientIdOffset, ClientID);
+            data[HeadIdOffset] = (byte)HeadID;
+            data[HeadIdOffset + 1] = (byte)(HeadID >> 8);
+            data[MessageTypeOffset] = MsgType;
+            data[FlagsOffset] = (byte)NetworkMessageFlags.None;
             if (MsgType == (byte)NetSquareMessageType.Reply)
             {
-                data[11] = (byte)((ReplyID) & 0xFF);
-                data[12] = (byte)((ReplyID >> 8) & 0xFF);
-                data[13] = (byte)((ReplyID >> 16) & 0xFF);
+                data[ReplyIdOffset] = (byte)ReplyID;
+                data[ReplyIdOffset + 1] = (byte)(ReplyID >> 8);
+                data[ReplyIdOffset + 2] = (byte)(ReplyID >> 16);
             }
+        }
+
+        /// <summary>
+        /// Reads a signed 32-bit integer encoded in little-endian order.
+        /// </summary>
+        /// <param name="buffer">Source buffer.</param>
+        /// <param name="offset">Integer offset.</param>
+        /// <returns>Decoded integer.</returns>
+        private static int ReadInt32(byte[] buffer, int offset)
+        {
+            return buffer[offset] |
+                (buffer[offset + 1] << 8) |
+                (buffer[offset + 2] << 16) |
+                (buffer[offset + 3] << 24);
+        }
+
+        /// <summary>
+        /// Writes a signed 32-bit integer in little-endian order.
+        /// </summary>
+        /// <param name="buffer">Destination buffer.</param>
+        /// <param name="offset">Integer offset.</param>
+        /// <param name="value">Integer value.</param>
+        private static void WriteInt32(byte[] buffer, int offset, int value)
+        {
+            WriteUInt32(buffer, offset, unchecked((uint)value));
+        }
+
+        /// <summary>
+        /// Writes an unsigned 32-bit integer in little-endian order.
+        /// </summary>
+        /// <param name="buffer">Destination buffer.</param>
+        /// <param name="offset">Integer offset.</param>
+        /// <param name="value">Integer value.</param>
+        private static void WriteUInt32(byte[] buffer, int offset, uint value)
+        {
+            buffer[offset] = (byte)value;
+            buffer[offset + 1] = (byte)(value >> 8);
+            buffer[offset + 2] = (byte)(value >> 16);
+            buffer[offset + 3] = (byte)(value >> 24);
         }
         #endregion
 
@@ -415,9 +528,8 @@ namespace NetSquare.Core
             {
                 if (data == null || dataLength < GetMinimumHeadSize() || dataLength > data.Length)
                     return false;
-                bool transformsData = !ProtocoleManager.NoCompressorOrEncryptor;
-                DecryptDecompressData(ref data, dataLength);
-                if (transformsData)
+                bool wasCompressed = DecompressData(ref data, dataLength);
+                if (wasCompressed)
                     dataLength = data.Length;
                 if (dataLength < GetMinimumHeadSize())
                     return false;
@@ -655,8 +767,9 @@ namespace NetSquare.Core
         ///     - ClientID :        Int32   4 bytes
         ///     - HeadAction :      Int16   2 bytes
         ///     - MsgType :         byte    1 bytes
+        ///     - Flags :           byte    1 bytes
         ///     - ReplyID :         Int24   3 bytes (only if MsgType == 1)
-        ///     - Data :            var     FullMessageSize - 11 bytes or 14 if MsgType == 1
+        ///     - Data :            var     FullMessageSize - 12 bytes or 15 if MsgType == 1
         ///     
         /// Data Definition :
         ///     - Primitive type, size by type => Function Enum to Size
@@ -676,9 +789,9 @@ namespace NetSquare.Core
             WriteHead(ref data);
             // Write body
             Serializer.CopyTo(data, currentIndex);
-            // Encrypt and compress data
-            if (!ProtocoleManager.NoCompressorOrEncryptor && !ignoreCompression)
-                EncryptCompressData(ref data);
+            // Compression is selected independently only when it reduces this message's wire size.
+            if (!ignoreCompression)
+                TryCompressData(ref data);
             // set data ready to read
             Serializer.StartReading(data);
             return data;
@@ -692,14 +805,22 @@ namespace NetSquare.Core
             if (IsSerialized)
                 return PooledByteBuffer.Wrap(Serializer.ToArray());
 
-            if (!ProtocoleManager.NoCompressorOrEncryptor && !ignoreCompression)
-                return PooledByteBuffer.Wrap(Serialize(ignoreCompression));
-
             int currentIndex = GetHeadSize();
             MessageLength = currentIndex + Serializer.Length;
             PooledByteBuffer data = PooledByteBuffer.Rent(MessageLength);
             WriteHead(data.Buffer, MessageLength);
             Serializer.CopyTo(data.Buffer, currentIndex);
+
+            if (!ignoreCompression &&
+                NetworkMessageCompression.ShouldAttempt(Serializer.Length))
+            {
+                byte[] buffer = data.Buffer;
+                if (TryCompressData(ref buffer, MessageLength))
+                {
+                    data.Dispose();
+                    return PooledByteBuffer.Wrap(buffer);
+                }
+            }
             return data;
         }
 
@@ -800,9 +921,8 @@ namespace NetSquare.Core
 
             // Write head
             WriteHead(ref data);
-            // Encrypt and compress data
-            if (!ProtocoleManager.NoCompressorOrEncryptor)
-                EncryptCompressData(ref data);
+            // Packed payloads use the same conditional per-message compression policy.
+            TryCompressData(ref data);
 
             // set data ready to read
             Serializer.StartReading(data);

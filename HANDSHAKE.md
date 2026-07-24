@@ -76,7 +76,7 @@ UDP remains unreliable: authenticated datagrams may still be lost, delayed, dupl
 
 Handshake V2 currently requires exact equality of the `NetSquare.Core` assembly version. `NetSquare.Core`, `NetSquare.Client`, and `NetSquare.Server` must therefore share the same release version.
 
-The wire protocol version is tracked separately from the package version. NetSquare `1.0.15` does not change the handshake wire version or authenticated UDP capability bit.
+The wire protocol version is tracked separately from the Handshake V2 frame format. Wire version 3 adds an explicit per-message flags byte used by conditional Deflate compression. The authenticated UDP capability and MAC64 envelope are unchanged.
 
 ## Server tuning
 

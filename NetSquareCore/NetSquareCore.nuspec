@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Core</id>
-    <version>1.0.15</version>
+    <version>1.0.16</version>
     <title>NetSquare.Core</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -10,8 +10,8 @@
     <icon>images\NetSquareIcon.png</icon>
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
-    <description>Core message, serialization, dispatcher, compression, encryption and synchronization primitives for NetSquare.</description>
-    <releaseNotes>Reduces hot-path allocations with shared scheduler workers, reusable buffers, and lower-overhead message packing, while hardening UDP shutdown behavior.</releaseNotes>
+    <description>Core message, serialization, dispatcher, conditional compression and synchronization primitives for NetSquare.</description>
+    <releaseNotes>Removes legacy application encryption, adds conditional low-latency message compression, and introduces wire protocol version 3 while preserving TLS and authenticated UDP behavior.</releaseNotes>
     <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity Core</tags>
     <dependencies>

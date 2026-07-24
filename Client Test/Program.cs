@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 
-#region Source
 namespace Client_Test
 {
     /// <summary>
@@ -13,9 +12,7 @@ namespace Client_Test
     /// </summary>
     internal class Program
     {
-        #region Fields
         private static ClientsMonitor.Form1 monitor;
-        #endregion
 
         #region Entry Point
         /// <summary>
@@ -167,4 +164,3 @@ namespace Client_Test
         #endregion
     }
 }
-#endregion

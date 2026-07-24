@@ -1,4 +1,5 @@
 using NetSquare.Core;
+using NetSquare.Core.Compression;
 using NetSquare.Server;
 using NetSquare.Server.Server;
 using NetSquare.Server.Utils;
@@ -29,6 +30,10 @@ namespace Server_Test
             config.NbQueueThreads = 4;
             config.SynchronizingFrequency = 10;
             config.UpdateFrequencyHz = 10;
+
+            config.UseTLS = true;
+            config.TLSCertificatePath = "C:\\Users\\Keks\\AppData\\Local\\NetSquare\\certificates\\netsquare-localhost.pfx";
+            config.TLSCertificatePassword = "superpswd";
             NetSquareConfigurationManager.Save();
 
             // Instantiate NetSquare Server
@@ -43,9 +48,8 @@ namespace Server_Test
             //world.SetSpatializer(Spatializer.GetSimpleSpatializer(world, 2f, 4f, 50f));
             world.Spatializer.SetAdaptiveSynchFrequency(10, 1000, 50, 5); // start adaptative synch frequency
 
-            // Optionnal, set encryption and compression protocole
-            //ProtocoleManager.SetEncryptor(NetSquare.Core.Encryption.eEncryption.OneToZeroBit);
-            //ProtocoleManager.SetCompressor(NetSquare.Core.Compression.eCompression.DeflateCompression);
+            // Optional per-message compression keeps small or incompressible payloads unchanged.
+            NetworkMessageCompression.Enabled = true;
 
             // Start Server
             //Writer.StartRecordingLog();

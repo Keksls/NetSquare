@@ -7,11 +7,11 @@ The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It instal
 ## Installation
 
 ```powershell
-NuGet\$11.0.15
+Install-Package NetSquare.Client -Version 1.0.16
 ```
 
 ```bash
-$11.0.15
+dotnet add package NetSquare.Client --version 1.0.16
 ```
 
 The Server and Client must use the same package version.

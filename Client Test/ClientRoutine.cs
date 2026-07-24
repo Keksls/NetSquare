@@ -4,7 +4,6 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 
-#region Source
 namespace Client_Test
 {
     /// <summary>
@@ -77,6 +76,9 @@ namespace Client_Test
                 0f,
                 1f,
                 0f);
+
+            client.UseTLS = true;
+            client.TLSServerName = "localhost";
 
             ConnectionResult result;
             try
@@ -293,4 +295,3 @@ namespace Client_Test
         WelcomeMessage = 0
     }
 }
-#endregion

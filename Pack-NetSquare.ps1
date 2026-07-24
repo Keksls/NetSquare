@@ -103,11 +103,11 @@ foreach ($readmePath in $readmePaths)
     $readmeContent = [System.Text.RegularExpressions.Regex]::Replace(
         $readmeContent,
         '(Install-Package\s+NetSquare\.[A-Za-z]+\s+-Version\s+)\d+\.\d+\.\d+',
-        "`$1$targetVersionText")
+        "`${1}$targetVersionText")
     $readmeContent = [System.Text.RegularExpressions.Regex]::Replace(
         $readmeContent,
         '(dotnet\s+add\s+package\s+NetSquare\.[A-Za-z]+\s+--version\s+)\d+\.\d+\.\d+',
-        "`$1$targetVersionText")
+        "`${1}$targetVersionText")
     [System.IO.File]::WriteAllText($readmePath, $readmeContent, $utf8WithoutBom)
 }
 

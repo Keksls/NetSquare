@@ -7,7 +7,6 @@
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <EnableUnsafeBinaryFormatterSerialization>true</EnableUnsafeBinaryFormatterSerialization>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <EnableDefaultItems>false</EnableDefaultItems>
   </PropertyGroup>
@@ -47,30 +46,13 @@
     <Compile Include="Configuration\NetSquareConfiguration.cs" />
     <Compile Include="Configuration\NetSquareConfigurationStore.cs" />
     <Compile Include="Configuration\NetSquareJsonSerializer.cs" />
-    <Compile Include="Compression\DeflateCompressor.cs" />
+    <Compile Include="Compression\NetworkMessageCompression.cs" />
     <Compile Include="Client\ConnectedClient.cs" />
     <Compile Include="Connection\ConnectionFeedbackProtocol.cs" />
     <Compile Include="Connection\ConnectionRejectionInfo.cs" />
     <Compile Include="Connection\ConnectionRejectionReason.cs" />
     <Compile Include="Connection\DisconnectInfo.cs" />
     <Compile Include="Connection\DisconnectReason.cs" />
-    <Compile Include="Encryption\AES_Encryptor.cs" />
-    <Compile Include="Encryption\CaesarChipher_Encryptor.cs" />
-    <Compile Include="Encryption\CustomSBC_Encryptor.cs" />
-    <Compile Include="Encryption\Encryption.cs" />
-    <Compile Include="Encryption\EncryptionEnum.cs" />
-    <Compile Include="Encryption\Encryptor.cs" />
-    <Compile Include="Encryption\KeyIV.cs" />
-    <Compile Include="Encryption\NoEncryption.cs" />
-    <Compile Include="Compression\CompressionEnum.cs" />
-    <Compile Include="Compression\Compressor.cs" />
-    <Compile Include="Compression\NoCompression.cs" />
-    <Compile Include="Compression\GZipCompressor.cs" />
-    <Compile Include="Encryption\OneToZeroByte_Encryptor.cs" />
-    <Compile Include="Encryption\ReverseByte_Encryptor.cs" />
-    <Compile Include="Encryption\Rijndael_Encryptor.cs" />
-    <Compile Include="Encryption\SimplePasswordedCipher_Encryptor.cs" />
-    <Compile Include="Encryption\XOR_Encryptor.cs" />
     <Compile Include="NetSquareProtocoleType.cs" />
     <Compile Include="NetSquareBufferPool.cs" />
     <Compile Include="PooledByteBuffer.cs" />
@@ -88,6 +70,7 @@
     <Compile Include="Messages\UInt24.cs" />
     <Compile Include="NetSquareDispatcher.cs" />
     <Compile Include="Messages\NetworkMessage.cs" />
+    <Compile Include="Messages\NetworkMessageFlags.cs" />
     <Compile Include="NetSquareActionAttribute.cs" />
     <Compile Include="NetSquareHeadAction.cs" />
     <Compile Include="NetSquareScheduler.cs" />
@@ -100,7 +83,6 @@
     <Compile Include="SynchFrames\NetSquareSynchFramesUtils.cs" />
     <Compile Include="SynchFrames\NetsquareTransformFrame.cs" />
     <Compile Include="SynchFrames\NetSquareTraceRecorder.cs" />
-    <Compile Include="ProtocoleManager.cs" />
     <Compile Include="Client\UDPClient.cs" />
   </ItemGroup>
 

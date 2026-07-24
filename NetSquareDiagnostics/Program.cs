@@ -355,10 +355,15 @@ namespace NetSquareDiagnostics
         private static void TestDecompressionLimitRejectsExpansion()
         {
             int previousLimit = NetworkMessage.MaxDecodedMessageSize;
+            bool previousCompressionEnabled = NetworkMessageCompression.Enabled;
+            int previousMinimumBodyLength = NetworkMessageCompression.MinimumBodyLength;
+            int previousMinimumSavings = NetworkMessageCompression.MinimumSavings;
             try
             {
                 NetworkMessage.MaxDecodedMessageSize = 1024;
-                ProtocoleManager.SetCompressor(NetSquareCompression.GZipCompression);
+                NetworkMessageCompression.Enabled = true;
+                NetworkMessageCompression.MinimumBodyLength = 0;
+                NetworkMessageCompression.MinimumSavings = 0;
 
                 byte[] expansionPayload = new byte[16 * 1024];
                 byte[] compressedMessage = new NetworkMessage(4, 1)
@@ -371,7 +376,9 @@ namespace NetSquareDiagnostics
             }
             finally
             {
-                ProtocoleManager.SetCompressor(NetSquareCompression.NoCompression);
+                NetworkMessageCompression.Enabled = previousCompressionEnabled;
+                NetworkMessageCompression.MinimumBodyLength = previousMinimumBodyLength;
+                NetworkMessageCompression.MinimumSavings = previousMinimumSavings;
                 NetworkMessage.MaxDecodedMessageSize = previousLimit;
             }
         }

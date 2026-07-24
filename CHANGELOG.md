@@ -2,6 +2,22 @@
 
 Notable changes to NetSquare are documented here. Versions follow Semantic Versioning, and all three NuGet packages are released together because the handshake currently requires exact Core version equality.
 
+## [1.0.16] - 2026-07-24
+
+### Changed
+
+- Removed the legacy application-level encryption API, key persistence and unsafe `BinaryFormatter` usage.
+- Replaced global GZip/Deflate transforms with optional per-message Deflate compression optimized for realtime latency.
+- Compression now applies only to message bodies and retains uncompressed messages unless the configured minimum saving is reached.
+- Added an explicit wire flags byte and increased the message wire protocol version to 3.
+- Preserved TLS for authenticated TCP confidentiality and left UDP MAC64 authentication unchanged.
+
+### Compatibility
+
+- `NetSquare.Client`, `NetSquare.Server`, and `NetSquare.Core` must all use version `1.0.16`.
+- Version 1.0.16 intentionally removes the legacy encryption and compressor-selection public APIs.
+- Handshake V2 remains unchanged; message wire version 3 rejects older peers before connection establishment.
+
 ## [1.0.15] - 2026-07-24
 
 ### Improved

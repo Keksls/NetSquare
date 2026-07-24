@@ -15,7 +15,7 @@ namespace NetSquare.Core
         #region Protocol constants
         public const byte HandshakeVersion = 2;
         public const int FrameMarkerLength = 8;
-        public const ushort WireProtocolVersion = 2;
+        public const ushort WireProtocolVersion = 3;
         public const int NonceLength = 16;
         public const int HashLength = 32;
         public const int ClientHelloLength = 42;

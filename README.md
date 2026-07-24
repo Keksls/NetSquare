@@ -15,8 +15,8 @@ Install the package that matches the process you are building:
 `NetSquare.Client` and `NetSquare.Server` install the matching `NetSquare.Core` version automatically. All three packages must use the same version because the current handshake requires exact Core version equality.
 
 ```bash
-dotnet add package NetSquare.Client --version 1.0.15
-dotnet add package NetSquare.Server --version 1.0.15
+dotnet add package NetSquare.Client --version 1.0.16
+dotnet add package NetSquare.Server --version 1.0.16
 ```
 
 ## Quick start
@@ -116,6 +116,7 @@ Initialize configuration before constructing the client or server. The generated
 
 ## Documentation
 
+- [Client and server configuration](CONFIGURATION.md)
 - [Client guide](NetSquareClient/README.md)
 - [Server guide](NetSquareServer/README.md)
 - [Core and serialization guide](NetSquareCore/README.md)

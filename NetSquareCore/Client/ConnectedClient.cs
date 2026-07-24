@@ -16,7 +16,7 @@ namespace NetSquare.Core
         /// <summary>
         /// Defines the min tcp message size constant.
         /// </summary>
-        public const int MinTcpMessageSize = 11;
+        public const int MinTcpMessageSize = 12;
         /// <summary>
         /// Stores the max tcp message size value.
         /// </summary>

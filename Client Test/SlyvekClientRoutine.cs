@@ -2,7 +2,6 @@ using NetSquare.Client;
 using NetSquare.Core;
 using System;
 
-#region Source
 namespace Client_Test
 {
     /// <summary>
@@ -22,6 +21,10 @@ namespace Client_Test
             client.OnConnectionFail += Client_ConnectionFail;
             client.OnDisconected += Client_Disconected;
             client.WorldsManager.OnClientJoinWorld += WorldsManager_OnClientJoinWorld;
+
+            client.UseTLS = true;
+            client.TLSServerName = "localhost";
+
             client.Connect("127.0.0.1", 5555);
         }
 
@@ -73,4 +76,3 @@ namespace Client_Test
         }
     }
 }
-#endregion
