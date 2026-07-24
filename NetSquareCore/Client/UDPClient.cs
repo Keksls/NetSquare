@@ -261,7 +261,7 @@ namespace NetSquare.Core
             RemoteEndPoint = new IPEndPoint(remoteTcpEndPoint.Address, remoteTcpEndPoint.Port + 1);
             connection = new UdpClient(new IPEndPoint(localTcpEndPoint.Address, 0));
             connection.Connect(RemoteEndPoint);
-            connection.BeginReceive(OnReceiveUDP, RemoteEndPoint);
+            connection.BeginReceive(OnReceiveUDP, connection);
             SendRegistration();
         }
 
@@ -459,9 +459,13 @@ namespace NetSquare.Core
         /// <param name="res">Asynchronous receive result.</param>
         private void OnReceiveUDP(IAsyncResult res)
         {
+            UdpClient receiveConnection = res != null ? res.AsyncState as UdpClient : null;
+            if (receiveConnection == null || Volatile.Read(ref closed) != 0)
+                return;
+
             try
             {
-                byte[] datagram = connection.EndReceive(res, ref RemoteEndPoint);
+                byte[] datagram = receiveConnection.EndReceive(res, ref RemoteEndPoint);
                 Interlocked.Add(ref receivedBytes, datagram.Length);
 
                 int payloadLength;
@@ -487,9 +491,16 @@ namespace NetSquare.Core
             }
             catch (ObjectDisposedException) { }
             catch (SocketException) { }
+            catch (NullReferenceException) when (Volatile.Read(ref closed) != 0)
+            {
+                // .NET Framework's UdpClient can clear its internal socket before EndReceive observes Close.
+            }
             finally
             {
-                try { connection.BeginReceive(OnReceiveUDP, RemoteEndPoint); } catch { }
+                if (Volatile.Read(ref closed) == 0)
+                {
+                    try { receiveConnection.BeginReceive(OnReceiveUDP, receiveConnection); } catch { }
+                }
             }
         }
 

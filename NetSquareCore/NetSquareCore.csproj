@@ -73,6 +73,7 @@
     <Compile Include="Encryption\XOR_Encryptor.cs" />
     <Compile Include="NetSquareProtocoleType.cs" />
     <Compile Include="NetSquareBufferPool.cs" />
+    <Compile Include="PooledByteBuffer.cs" />
     <Compile Include="Handshake\HandshakeCapabilities.cs" />
     <Compile Include="Handshake\HandshakeClientHello.cs" />
     <Compile Include="Handshake\HandshakeClientProof.cs" />
@@ -90,6 +91,7 @@
     <Compile Include="NetSquareActionAttribute.cs" />
     <Compile Include="NetSquareHeadAction.cs" />
     <Compile Include="NetSquareScheduler.cs" />
+    <Compile Include="NetSquareSchedulerEngine.cs" />
     <Compile Include="Serialization\NetSquareSerializationMode.cs" />
     <Compile Include="Serialization\NetSquareSerializer.cs" />
     <Compile Include="Serialization\INetSquareSerializable.cs" />

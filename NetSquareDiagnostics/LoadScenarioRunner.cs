@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 
 #region Source
@@ -30,9 +31,9 @@ namespace NetSquareDiagnostics
             int clientCount = GetIntArgValue(args, "--clients", 16);
             int durationSeconds = GetIntArgValue(args, "--duration-seconds", 10);
             int tickMs = GetIntArgValue(args, "--tick-ms", 50);
-            int port = GetIntArgValue(args, "--port", GetFreeTcpPort());
-            ushort worldID = (ushort)Math.Min(ushort.MaxValue, GetIntArgValue(args, "--world-id", 1));
             bool useUdp = HasArg(args, "--udp");
+            int port = GetIntArgValue(args, "--port", useUdp ? GetFreeTcpUdpPortPair() : GetFreeTcpPort());
+            ushort worldID = (ushort)Math.Min(ushort.MaxValue, GetIntArgValue(args, "--world-id", 1));
             bool simpleSpatializer = HasArg(args, "--simple-spatializer");
 
             NetSquare.Server.NetSquareServer server = null;
@@ -40,6 +41,7 @@ namespace NetSquareDiagnostics
             List<NetSquare.Client.NetSquareClient> clients = new List<NetSquare.Client.NetSquareClient>();
             long sentFrames = 0;
             long receivedFrames = 0;
+            int originalPerAddressHandshakeLimit = NetSquare.Server.TcpListener.MaxConcurrentHandshakesPerAddress;
 
             try
             {
@@ -47,6 +49,9 @@ namespace NetSquareDiagnostics
                 Writer.StartDisplayLog();
                 Writer.StopDisplayTitle();
 
+                // Local bots share one IP; keep the anti-DoS limit from contaminating spatialization measurements.
+                NetSquare.Server.TcpListener.MaxConcurrentHandshakesPerAddress =
+                    Math.Max(originalPerAddressHandshakeLimit, clientCount);
                 server = new NetSquare.Server.NetSquareServer(useUdp ? NetSquareProtocoleType.TCP_AND_UDP : NetSquareProtocoleType.TCP, true);
                 server.DrawHeaderOverrideCallback = delegate { };
                 NetSquareWorld world = server.Worlds.AddWorld(worldID, "load-scenario", (ushort)Math.Min(ushort.MaxValue, Math.Max(128, clientCount + 8)));
@@ -138,6 +143,7 @@ namespace NetSquareDiagnostics
 
                 if (serverThread != null && serverThread.IsAlive)
                     serverThread.Join(1000);
+                NetSquare.Server.TcpListener.MaxConcurrentHandshakesPerAddress = originalPerAddressHandshakeLimit;
             }
         }
         /// <summary>
@@ -224,11 +230,16 @@ namespace NetSquareDiagnostics
         /// <returns>Movement frame.</returns>
         private static NetsquareTransformFrame CreateMovementFrame(int index, float time, int count)
         {
-            float lane = (index % Math.Max(1, count / 4 + 1)) * 2.5f;
+            int safeCount = Math.Max(1, count);
+            int columns = (int)Math.Ceiling(Math.Sqrt(safeCount));
+            int rows = (safeCount + columns - 1) / columns;
+            const float spacing = 4f;
+            float baseX = ((index % columns) - ((columns - 1) * 0.5f)) * spacing;
+            float baseZ = ((index / columns) - ((rows - 1) * 0.5f)) * spacing;
             float angle = time * 0.8f + index * 0.35f;
-            float radius = 8f + (index % 5);
-            float x = (float)Math.Cos(angle) * radius + lane;
-            float z = (float)Math.Sin(angle) * radius - lane;
+            float radius = 1f + ((index % 5) * 0.25f);
+            float x = baseX + ((float)Math.Cos(angle) * radius);
+            float z = baseZ + ((float)Math.Sin(angle) * radius);
             return new NetsquareTransformFrame(x, 0f, z, 0f, 0f, 0f, 1f, time);
         }
 
@@ -264,24 +275,21 @@ namespace NetSquareDiagnostics
         private static NetSquare.Client.NetSquareClient ConnectClient(int port, bool useUdp, int index)
         {
             NetSquare.Client.NetSquareClient client = new NetSquare.Client.NetSquareClient(false);
-            ManualResetEventSlim connected = new ManualResetEventSlim(false);
-            ManualResetEventSlim failed = new ManualResetEventSlim(false);
-            client.OnConnected += delegate { connected.Set(); };
-            client.OnConnectionFail += delegate { failed.Set(); };
-            client.Connect("127.0.0.1", port, useUdp ? NetSquareProtocoleType.TCP_AND_UDP : NetSquareProtocoleType.TCP, useUdp);
+            NetSquare.Client.ConnectionResult result = client.ConnectAsync(
+                "127.0.0.1",
+                port,
+                useUdp ? NetSquareProtocoleType.TCP_AND_UDP : NetSquareProtocoleType.TCP,
+                useUdp,
+                10000).GetAwaiter().GetResult();
+            if (result.IsConnected)
+                return client;
 
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            while (stopwatch.ElapsedMilliseconds < 10000)
-            {
-                if (connected.IsSet)
-                    return client;
-                if (failed.IsSet)
-                    throw new InvalidOperationException("scenario client " + index + " failed to connect");
-
-                Thread.Sleep(5);
-            }
-
-            throw new TimeoutException("scenario client " + index + " did not connect");
+            string detail = result.Status.ToString();
+            if (result.RejectionInfo != null)
+                detail += ": " + result.RejectionInfo.Reason;
+            if (result.Exception != null)
+                detail += ": " + result.Exception.Message;
+            throw new InvalidOperationException("scenario client " + index + " failed to connect: " + detail);
         }
         #endregion
 
@@ -335,6 +343,42 @@ namespace NetSquareDiagnostics
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
             listener.Stop();
             return port;
+        }
+
+        /// <summary>
+        /// Gets adjacent free local ports for the scenario TCP listener and its UDP transport.
+        /// </summary>
+        /// <returns>Free TCP port whose following port is also available for UDP.</returns>
+        private static int GetFreeTcpUdpPortPair()
+        {
+            for (int attempt = 0; attempt < 128; attempt++)
+            {
+                System.Net.Sockets.TcpListener tcpListener =
+                    new System.Net.Sockets.TcpListener(IPAddress.Any, 0);
+                UdpClient udpListener = null;
+                try
+                {
+                    tcpListener.Start();
+                    int tcpPort = ((IPEndPoint)tcpListener.LocalEndpoint).Port;
+                    if (tcpPort >= ushort.MaxValue)
+                        continue;
+
+                    udpListener = new UdpClient(new IPEndPoint(IPAddress.Any, tcpPort + 1));
+                    return tcpPort;
+                }
+                catch (SocketException)
+                {
+                    // Retry when the adjacent UDP port is already owned by another process.
+                }
+                finally
+                {
+                    if (udpListener != null)
+                        udpListener.Close();
+                    tcpListener.Stop();
+                }
+            }
+
+            throw new InvalidOperationException("Unable to reserve adjacent TCP and UDP ports for diagnostics.");
         }
 
         /// <summary>
