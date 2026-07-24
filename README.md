@@ -1,107 +1,132 @@
-# NetSquare - a C# Tcp solution
+# NetSquare
 
-## Server
-First Import NetSquareCore.dll and NetSquareServer.dll to your project.
-Instantiate a NetSquare_Server object by doing :
-```
-NetSquare_Server server = new NetSquare_Server();
-```
-Then start the server by giving it a port
-```
-server.Start(5555);
-```
+NetSquare is a C# client/server networking library for applications and real-time games. It combines reliable TCP messaging, optional authenticated UDP, request/reply callbacks, typed connection feedback, JSON configuration, time synchronization, and world spatialization behind a small API.
 
-### Dispatcher
-NetSquare provide a dispatching system that will invoke methods for you.
-Just tag Methods with the NetSquareActionAttribute and give a unique ID.
-On server start, the dispatcher will map every methods that have this attribute and delegate them for being invoked when a client will send message that correspond to the given ID.
-All methods mapped by the attribut must be public and static, and must have a NetworkMessage parameter only.
-```
-[NetSquareAction(0)]
-public static void ClientSendText(NetworkMessage message)
-{
-    MessageBox.Show(message.GetString());
-}
+## Packages
+
+Install the package that matches the process you are building:
+
+| Package | Purpose | Target frameworks |
+| --- | --- | --- |
+| `NetSquare.Client` | Client connections, messaging, time sync, and world sync | .NET Standard 2.0, .NET 8, .NET Framework 4.8 |
+| `NetSquare.Server` | Server listener, dispatching, worlds, blacklist, and spatialization | .NET Standard 2.0, .NET 8 for Windows, .NET Framework 4.8 |
+| `NetSquare.Core` | Shared protocol, serialization, and message contracts | .NET Standard 2.0, .NET 8, .NET Framework 4.8 |
+
+`NetSquare.Client` and `NetSquare.Server` install the matching `NetSquare.Core` version automatically. All three packages must use the same version because the current handshake requires exact Core version equality.
+
+```bash
+dotnet add package NetSquare.Client --version 1.0.15
+dotnet add package NetSquare.Server --version 1.0.15
 ```
 
-You can manualy add NetSquareAction to the dispatcher by doing the following 
-```
-server.Dispatcher.AddHeadAction(1, "Ping", ClientPingMe);
-```
-Where ClientPingMe is a method that can be private and non static, but must still have a NetworkMessage parameter only.
+## Quick start
 
-### NetworkMessage
-NetSquare use a custom data model for sharing messages between clients and server.
-These are NetworkMessage. They handle serialization, Encryption and Compression for you (see 'Protocole' section for more about Compression and Encryption).
-NetworkMessage can serialize anything you want. It Handle primitive types and complex objects. Complex objects are serialized using Bson format. It's quite fast, but alwas prefere primitive types if you can (sending some positions or rotations must be sended with x, y and z as 3 float instead of sending a vector3. The message will be smaller and faster to serialize/deserialize).
+Define message identifiers shared by the client and server:
 
-#### Sending a message
-Server can send message to Specific client, using TcpClient instance or ClientID.
-When a client is connected to the server, the event will give you the network ID of the client. It will be unique, and NetSquare will handle it for you.
-It can send message to a ist of client or broadcast to anyone.
-Eg: sending a text message to a specific client :
-```
-server.SendToClient(new NetworkMessage(0).Set("Welcome to my NetSquare server"), clientID);
-```
-***this will send a string ("Welcome to my NetSquare server") to the client 'clientID'***
-You must give the message ID to the NertworkMessage Constructor. It's the ID that will help the dispatcher to invoke the right method. You can call 'Set' anytime you want. Set can take anything as parameter, primitive and complex types, and can be Stacked.
-```
-eg: .set([int]).set([string]).set([customType])
-```
-
-#### Reading a message
-
-#### Configuration
-You can use configuration system to specify persistants parameters
 ```csharp
-public sealed class GameConfiguration : NetSquareConfiguration
+public enum GameMessage : ushort
 {
-    public int MaxPlayers { get; set; } = 100;
+    Chat = 1,
+    Welcome = 2
 }
-
-NetSquareConfigurationManager.Initialize<GameConfiguration>();
-GameConfiguration config = NetSquareConfigurationManager.Get<GameConfiguration>();
-config.BlackListFilePath = @"[current]\blackList.bl";
-config.LockConsole = false;
-config.Port = 5050;
-config.NbQueueThreads = 8;
-config.MaxPlayers = 250;
-NetSquareConfigurationManager.Save();
 ```
-###### BlackListFilePath
-Path to the persisted generic blacklist state. NetSquare stores account/IP escalation history, active hit windows, and temporary or permanent bans, and migrates older IP-only documents automatically.
-Applications can report abusive behavior for project-defined subjects such as accounts, or use the automatic IP adapters. AbuseIPDB, BlockList.de, Spamhaus DROP, and DShield remain IP-only, optional, and disabled by default.
 
-###### LockConsole
-If LockConsole is set to True and your server run to a Windows Console, the console will be locked for preventing user selection that lock main thread
+Create and start the server:
 
-###### Port
-The port you want to start server on
+```csharp
+using NetSquare.Core;
+using NetSquare.Server;
 
-###### ProcessOffsetTime
-Sleep time to wait in ms before checking received message queues. minimum 1. the more this number is low, the more fast will be the server
+NetSquareConfigurationManager.Initialize<NetSquareConfiguration>();
 
-###### NbReceivingThreads
-Number of thread that will handle client message reading. keep this number between 1 and the number of core of your chip. (1-4 is greate, default is 1. Change it for large number of clients).
+NetSquareServer server = new NetSquareServer(NetSquareProtocoleType.TCP_AND_UDP);
 
-###### NbQueueThreads
-Number of thread that will process received messages. After client send message, thos will be stored into some queues, waiting to be processed by dispatcher. This number represent the number of parralles traitments dispatcher will performe.
-Same as 'NbReceivingThreads', keep this number between 1 and the number of core of your chip. (1-4 is greate, default is 1. Change it for large number of clients).
+server.OnClientConnected += clientID =>
+{
+    server.SendToClient(
+        new NetworkMessage(GameMessage.Welcome)
+            .Set("Welcome")
+            .Set(clientID),
+        clientID);
+};
 
-#### Writer
-NetSquare provide a Writing solution for display debug informations into console and save logs.
-Instade of using Console.Write(), use Writer.Write().
+server.Dispatcher.AddHeadAction(GameMessage.Chat, "Chat", message =>
+{
+    string text = message.Serializer.GetString();
+    server.Broadcast(
+        new NetworkMessage(GameMessage.Chat)
+            .Set(message.ClientID)
+            .Set(text));
+});
 
+server.Start(port: 5555);
 ```
-Writer.StartRecordingLog();
-Writer.StartDisplayTitle();
-Writer.StopDisplayLog();
+
+Connect a client:
+
+```csharp
+using NetSquare.Client;
+using NetSquare.Core;
+
+NetSquareClient client = new NetSquareClient(autoBindNetsquareActions: false);
+
+client.OnConnected += clientID =>
+{
+    client.SendMessage(
+        new NetworkMessage(GameMessage.Chat).Set("Hello server"));
+};
+
+client.Dispatcher.AddHeadAction(GameMessage.Welcome, "Welcome", message =>
+{
+    string text = message.Serializer.GetString();
+    uint clientID = message.Serializer.GetUInt();
+    Console.WriteLine(text + " - client " + clientID);
+});
+
+client.Dispatcher.AddHeadAction(GameMessage.Chat, "Chat", message =>
+{
+    uint senderID = message.Serializer.GetUInt();
+    string text = message.Serializer.GetString();
+    Console.WriteLine(senderID + ": " + text);
+});
+
+client.Connect("127.0.0.1", 5555, NetSquareProtocoleType.TCP_AND_UDP);
 ```
-###### Start/StopRecordingLog()
-The Writer will start recording log into a specific thread for keeping smooth performances.
 
-###### Start/StopDisplayTitle()
-The Writer will display debug informations into console title. A bit performance costly but not to mutch.
+Values must be read in the same order and with the same types used to write them.
 
-###### Start/StopDisplayLog()
-The Writer will display debug informations into console. Windows console Write is incredibly slow, use it only for debug.
+## Choose the right transport
+
+- Use TCP for commands, inventory, authentication, chat, and any message that must arrive in order.
+- Use UDP for replaceable, time-sensitive state such as frequent positions. UDP messages may be lost, duplicated, or reordered.
+- Enabling TCP plus UDP keeps the TCP session as the source of client identity. UDP datagrams are authenticated with per-session keys negotiated during the handshake.
+- Enable TLS when server identity, TCP confidentiality, and protection of the negotiated UDP session key are required.
+
+See [HANDSHAKE.md](HANDSHAKE.md) for the connection sequence, TLS setup, authenticated UDP behavior, compatibility rules, and server tuning.
+
+## Configuration
+
+Client and server settings are persisted as strongly typed JSON:
+
+- the client uses `NetSquareClientConfigurationManager` and defaults to `client.config.json`;
+- the server uses `NetSquareConfigurationManager` and defaults to `config.json`;
+- applications can derive their own configuration type to store project settings beside the NetSquare settings.
+
+Initialize configuration before constructing the client or server. The generated file contains complete defaults and can then be edited or updated through the typed configuration object.
+
+## Documentation
+
+- [Client guide](NetSquareClient/README.md)
+- [Server guide](NetSquareServer/README.md)
+- [Core and serialization guide](NetSquareCore/README.md)
+- [Handshake, TLS, and authenticated UDP](HANDSHAKE.md)
+- [Packaging and publishing](PACKAGING.md)
+- [Release history](CHANGELOG.md)
+
+## Threading
+
+Network callbacks and dispatcher handlers can run on background threads. Keep handlers short and marshal UI or game-engine work to the appropriate main thread. Protect shared application state with locks, concurrent collections, or your engine's main-thread queue.
+
+## License
+
+NetSquare is licensed under the MIT License.

@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Client</id>
-    <version>1.0.14</version>
+    <version>1.0.15</version>
     <title>NetSquare.Client</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -10,29 +10,26 @@
     <icon>images\NetSquareIcon.png</icon>
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
-    <description>NetSquare as a verry fast and easy to use .NET Tcp/Udp solution for Server/client developpment. Unity compatible</description>
-    <releaseNotes>Adds ConnectAsync with typed results, timeout and cancellation, plus typed rejection and disconnection events.</releaseNotes>
-    <copyright>Copyright © 2022</copyright>
+    <description>NetSquare client networking with TCP, authenticated UDP, typed connections, request/reply messaging, time synchronization, and world synchronization.</description>
+    <releaseNotes>Updates to NetSquare.Core 1.0.15 for lower-allocation scheduling, message packing, and more reliable authenticated UDP lifecycle handling.</releaseNotes>
+    <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
     <dependencies>
       <group targetFramework="netstandard2.0">
-        <dependency id="NetSquare.Core" version="[1.0.14]" />
+        <dependency id="NetSquare.Core" version="[1.0.15]" />
       </group>
       <group targetFramework="net8.0">
-        <dependency id="NetSquare.Core" version="[1.0.14]" />
+        <dependency id="NetSquare.Core" version="[1.0.15]" />
       </group>
       <group targetFramework="net48">
-        <dependency id="NetSquare.Core" version="[1.0.14]" />
+        <dependency id="NetSquare.Core" version="[1.0.15]" />
       </group>
     </dependencies>
   </metadata>
   <files>
     <file src="$AssemblyRoot$\netstandard2.0\NetSquareClient.dll" target="lib\netstandard2.0" />
-
     <file src="$AssemblyRoot$\net8.0\NetSquareClient.dll" target="lib\net8.0" />
-
     <file src="$AssemblyRoot$\net48\NetSquareClient.dll" target="lib\net48" />
-
     <file src="NetSquareIcon.png" target="images" />
     <file src="README.md" target="" />
   </files>

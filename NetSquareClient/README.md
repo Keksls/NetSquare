@@ -1,123 +1,68 @@
 # NetSquare.Client
 
-`NetSquare.Client` is the client-side package for NetSquare. It provides a TCP client with optional UDP messaging, request/reply callbacks, dispatcher-based message routing, server time synchronization, and world synchronization helpers.
+`NetSquare.Client` provides TCP connections, optional authenticated UDP, request/reply callbacks, dispatcher routing, typed connection results, server time synchronization, and world synchronization.
 
-The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It includes `NetSquareClient.dll` and depends on `NetSquare.Core`.
+The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It installs the exact matching `NetSquare.Core` version automatically.
 
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Client -Version 1.0.14
+NuGet\$11.0.15
 ```
-
-or:
 
 ```bash
-dotnet add package NetSquare.Client --version 1.0.14
+$11.0.15
 ```
 
-## Basic Client
+The Server and Client must use the same package version.
+
+## Quick start
 
 ```csharp
-using System;
 using NetSquare.Client;
 using NetSquare.Core;
 
 public enum GameMessage : ushort
 {
     Chat = 1,
-    Ping = 2,
-    Welcome = 3
+    Welcome = 2,
+    Ping = 3,
+    Transform = 4
 }
 
-public static class Program
+NetSquareClient client = new NetSquareClient(autoBindNetsquareActions: false);
+
+client.OnConnected += clientID =>
 {
-    public static void Main()
-    {
-        NetSquareClient client = new NetSquareClient(autoBindNetsquareActions: false);
+    Console.WriteLine("Connected as " + clientID);
+    client.SendMessage(
+        new NetworkMessage(GameMessage.Chat).Set("Hello server"));
+};
 
-        client.OnConnected += clientID =>
-        {
-            Console.WriteLine("Connected as " + clientID);
-            client.SendMessage(new NetworkMessage(GameMessage.Chat).Set("Hello server"));
-        };
+client.OnDisconnected += info =>
+    Console.WriteLine("Disconnected: " + info.Reason);
 
-        client.OnDisconected += () => Console.WriteLine("Disconnected");
-        client.OnConnectionFail += () => Console.WriteLine("Connection failed");
-        client.OnException += ex => Console.WriteLine(ex);
+client.OnConnectionFail += () =>
+    Console.WriteLine("The transport connection failed");
 
-        client.Dispatcher.AddHeadAction(GameMessage.Welcome, "Welcome", message =>
-        {
-            string text = message.Serializer.GetString();
-            uint assignedClientID = message.Serializer.GetUInt();
-            Console.WriteLine(text + " - assigned ID: " + assignedClientID);
-        });
+client.OnException += exception =>
+    Console.WriteLine(exception);
 
-        client.Dispatcher.AddHeadAction(GameMessage.Chat, "Chat", message =>
-        {
-            uint senderID = message.Serializer.GetUInt();
-            string text = message.Serializer.GetString();
-            Console.WriteLine(senderID + ": " + text);
-        });
-
-        client.Connect("127.0.0.1", 5555, NetSquareProtocoleType.TCP_AND_UDP);
-
-        Console.WriteLine("Press Enter to disconnect.");
-        Console.ReadLine();
-        client.Disconnect();
-    }
-}
-```
-
-## JSON Configuration
-
-Client and server configuration files use the same loader from `NetSquare.Core`, but keep separate strongly typed contracts and files. Initialize the client manager once, then pass its configuration to the client:
-
-```csharp
-NetSquareClientConfigurationManager.Initialize<NetSquareClientConfiguration>();
-NetSquareClientConfiguration configuration =
-    NetSquareClientConfigurationManager.Get<NetSquareClientConfiguration>();
-
-NetSquareClient client = new NetSquareClient(configuration);
-client.Connect();
-```
-
-The default client path is `client.config.json`. It is created with complete defaults when missing. A typical file is:
-
-```json
+client.Dispatcher.AddHeadAction(GameMessage.Welcome, "Welcome", message =>
 {
-  "Host": "game.example.com",
-  "Port": 5555,
-  "ProtocoleType": 1,
-  "UseTLS": true,
-  "TLSServerName": "game.example.com",
-  "ConnectionTimeoutMilliseconds": 30000,
-  "HeartbeatEnabled": true,
-  "HeartbeatIntervalMilliseconds": 10000,
-  "HeartbeatTimeoutMilliseconds": 30000,
-  "SmoothServerTimeOffset": true,
-  "ServerTimeOffsetSmoothingSpeed": 8,
-  "TimeSynchronizationRequestTimeoutMilliseconds": 1500,
-  "TimeSynchronizationMaxAttempts": 0,
-  "SynchronizationTransport": 1,
-  "MaxStoredSynchronizationFrames": 256,
-  "AutoSendSynchronizationFrames": true
-}
+    string text = message.Serializer.GetString();
+    uint assignedClientID = message.Serializer.GetUInt();
+    Console.WriteLine(text + " - client " + assignedClientID);
+});
+
+client.Connect("127.0.0.1", 5555, NetSquareProtocoleType.TCP_AND_UDP);
 ```
 
-`ProtocoleType` uses `0` for TCP and `1` for TCP plus UDP. `SynchronizationTransport` uses `0` for reliable TCP and `1` for unreliable UDP. UDP synchronization requires the TCP-plus-UDP protocol.
+Call `Disconnect()` during application shutdown.
 
-`TLSServerName` is optional. Leave it empty to validate the certificate against `Host`, or set it when connecting by IP to a certificate issued for a DNS name. Custom certificate callbacks remain code-only:
+## Async connection
 
-```csharp
-client.TLSCertificateValidationCallback = ValidatePrivateCertificate;
-```
-
-Call `NetSquareClientConfigurationManager.Save()` after changing settings that should be persisted. Custom projects may derive from `NetSquareClientConfiguration` and initialize the manager with their derived type.
-
-## Async Connection
-
-`ConnectAsync` returns one typed result instead of splitting control flow between exceptions and events:
+`ConnectAsync` reports success, rejection, timeout, cancellation, and transport errors through one typed result:
 
 ```csharp
 using System.Threading;
@@ -125,8 +70,10 @@ using System.Threading;
 using CancellationTokenSource cancellation = new CancellationTokenSource();
 
 ConnectionResult result = await client.ConnectAsync(
-    "127.0.0.1",
+    "game.example.com",
     5555,
+    NetSquareProtocoleType.TCP_AND_UDP,
+    synchronizeUsingUDP: true,
     timeoutMilliseconds: 10000,
     cancellationToken: cancellation.Token);
 
@@ -151,74 +98,110 @@ switch (result.Status)
 }
 ```
 
-Set `ConnectionTimeoutMilliseconds` to change the default 30-second timeout, pass a `CancellationToken`, call `CancelConnectionAttempt()`, or call `Disconnect()` while the attempt is pending. Only one connection attempt can run at a time.
+Only one connection attempt can run at a time. Cancel it with the supplied token, `CancelConnectionAttempt()`, or `Disconnect()`.
 
-The existing `Connect()` methods remain available as non-blocking compatibility wrappers. They use `ConnectAsync` internally and publish the existing connection events from its typed result.
-## Sending Messages
+The non-blocking `Connect()` overloads remain available and publish the existing connection events.
 
-Use `NetworkMessage` to write values in the order the receiver will read them.
+## JSON configuration
+
+Initialize the configuration manager once, then pass the configuration to the client:
+
+```csharp
+NetSquareClientConfigurationManager.Initialize<NetSquareClientConfiguration>();
+
+NetSquareClientConfiguration configuration =
+    NetSquareClientConfigurationManager.Get<NetSquareClientConfiguration>();
+
+NetSquareClient client = new NetSquareClient(configuration);
+client.Connect();
+```
+
+The default file is `client.config.json`. It is created with complete defaults when missing:
+
+```json
+{
+  "Host": "game.example.com",
+  "Port": 5555,
+  "ProtocoleType": 1,
+  "UseTLS": true,
+  "TLSServerName": "game.example.com",
+  "ConnectionTimeoutMilliseconds": 30000,
+  "HeartbeatEnabled": true,
+  "HeartbeatIntervalMilliseconds": 10000,
+  "HeartbeatTimeoutMilliseconds": 30000,
+  "SmoothServerTimeOffset": true,
+  "ServerTimeOffsetSmoothingSpeed": 8,
+  "TimeSynchronizationRequestTimeoutMilliseconds": 1500,
+  "TimeSynchronizationMaxAttempts": 0,
+  "SynchronizationTransport": 1,
+  "MaxStoredSynchronizationFrames": 256,
+  "AutoSendSynchronizationFrames": true
+}
+```
+
+`ProtocoleType` uses `0` for TCP and `1` for TCP plus UDP. `SynchronizationTransport` uses `0` for TCP and `1` for UDP. UDP synchronization requires TCP plus UDP.
+
+Call `NetSquareClientConfigurationManager.Save()` after changing settings that should persist. Applications may derive from `NetSquareClientConfiguration` to store their own settings in the same file.
+
+## TLS
+
+Set `UseTLS` on both peers. `TLSServerName` is optional: leave it empty to validate against `Host`, or set it when connecting by IP to a certificate issued for a DNS name.
+
+Private certificate authorities can use a code-only validation callback:
+
+```csharp
+client.TLSCertificateValidationCallback = ValidatePrivateCertificate;
+```
+
+Production code must not accept every certificate. TLS authenticates and encrypts TCP and protects the UDP session key negotiated during the handshake.
+
+## Messages and replies
+
+Write values with `Set(...)` and read them in the same order:
 
 ```csharp
 client.SendMessage(
     new NetworkMessage(GameMessage.Chat)
         .Set("hello")
-        .Set(123)
-        .Set(true));
+        .Set(123));
 ```
 
-Read values from `message.Serializer` in the same order:
-
-```csharp
-string text = message.Serializer.GetString();
-int number = message.Serializer.GetInt();
-bool enabled = message.Serializer.GetBool();
-```
-
-Supported helpers include numeric primitives, strings, chars, booleans, byte arrays, numeric arrays, `INetSquareSerializable` objects, lists, and dictionaries.
-
-## Request and Reply
-
-Use the callback overload of `SendMessage` when the server should answer a specific request.
+Use the callback overload when the Server will call `Reply`:
 
 ```csharp
 client.SendMessage(new NetworkMessage(GameMessage.Ping).Set("ping"), reply =>
 {
     string response = reply.Serializer.GetString();
-    Console.WriteLine("Server replied: " + response);
+    Console.WriteLine(response);
 });
 ```
 
-The server must call `server.Reply(originalMessage, replyMessage)` for this callback to run.
-
 ## TCP and UDP
 
-TCP is reliable and ordered:
+Use TCP for data that must arrive reliably and in order:
 
 ```csharp
-client.SendMessage(new NetworkMessage(GameMessage.Chat).Set("reliable payload"));
+client.SendMessage(
+    new NetworkMessage(GameMessage.Chat).Set("reliable"));
 ```
 
-UDP is faster but unreliable:
+Use UDP only for replaceable, time-sensitive state:
 
 ```csharp
-client.SendMessageUDP(new NetworkMessage(GameMessage.Chat).Set("unreliable payload"));
+client.SendMessageUDP(
+    new NetworkMessage(GameMessage.Transform)
+        .Set(10f)
+        .Set(0f)
+        .Set(5f));
 ```
 
-Connect with `NetSquareProtocoleType.TCP_AND_UDP` to enable both transports:
+UDP may be lost or reordered. When sends outpace the socket, NetSquare keeps the newest pending payload per route instead of growing the queue without bound.
 
-```csharp
-client.Connect("127.0.0.1", 5555, NetSquareProtocoleType.TCP_AND_UDP);
-```
+With current TCP-plus-UDP connections, datagrams carry a sequence and truncated HMAC derived from a per-session key. The TCP session remains the source of client identity.
 
-If world synchronization should use UDP, keep `synchronizeUsingUDP` enabled:
+## Dispatcher and main thread
 
-```csharp
-client.Connect("127.0.0.1", 5555, NetSquareProtocoleType.TCP_AND_UDP, synchronizeUsingUDP: true);
-```
-
-## Dispatcher
-
-Register callbacks manually:
+Register callbacks manually or enable `NetSquareActionAttribute` binding through the constructor:
 
 ```csharp
 client.Dispatcher.AddHeadAction(GameMessage.Chat, "Chat", message =>
@@ -227,31 +210,9 @@ client.Dispatcher.AddHeadAction(GameMessage.Chat, "Chat", message =>
 });
 ```
 
-Or auto-bind public static methods with `NetSquareActionAttribute`:
+Callbacks can run on NetSquare worker threads. UI frameworks and Unity normally require main-thread work:
 
 ```csharp
-using NetSquare.Core;
-
-public static class ClientHandlers
-{
-    [NetSquareAction(GameMessage.Chat)]
-    public static void OnChat(NetworkMessage message)
-    {
-        string text = message.Serializer.GetString();
-    }
-}
-```
-
-Enable auto-binding by constructing the client with `autoBindNetsquareActions: true`.
-
-## Main Thread Dispatching
-
-Callbacks can run from NetSquare worker threads. UI frameworks and Unity usually require work to run on the main thread. Use `SetMainThreadCallback` to marshal dispatch callbacks.
-
-```csharp
-using System;
-using System.Collections.Concurrent;
-
 ConcurrentQueue<Action> mainThreadQueue = new ConcurrentQueue<Action>();
 
 client.Dispatcher.SetMainThreadCallback((action, message) =>
@@ -259,35 +220,29 @@ client.Dispatcher.SetMainThreadCallback((action, message) =>
     mainThreadQueue.Enqueue(() => action(message));
 });
 
-// Run this from your UI loop or Unity Update method.
+// Run from the UI loop or Unity Update.
 while (mainThreadQueue.TryDequeue(out Action callback))
-{
     callback();
-}
 ```
 
-## Server Time Synchronization
+## Server time synchronization
 
-`SyncTime` estimates server time from a monotonic client clock and round-trip delay. Use an unscaled `Stopwatch` time source so local clock changes do not affect synchronization.
+Use an unscaled monotonic clock:
 
 ```csharp
-using System.Diagnostics;
-
 Stopwatch stopwatch = Stopwatch.StartNew();
 
 client.SyncTime(
     getClientTime: () => (float)stopwatch.Elapsed.TotalSeconds,
     precision: 5,
     timeBetweenSyncs: 1000,
-    onServerTimeGet: serverTime => Console.WriteLine("Server time: " + serverTime),
-    onLog: Console.WriteLine);
+    onServerTimeGet: serverTime => Console.WriteLine(serverTime));
 
-float synchronizedTime = client.GetServerTime((float)stopwatch.Elapsed.TotalSeconds);
+float serverTime =
+    client.GetServerTime((float)stopwatch.Elapsed.TotalSeconds);
 ```
 
-`SmoothServerTimeOffset` is enabled by default so offset changes are applied gradually. `TimeSynchronizationRequestTimeoutMs` bounds each request, and `TimeSynchronizationMaxAttempts` can cap retries when packets or replies are lost.
-
-For long sessions, keep time synchronized automatically with a low-rate background refresh:
+For long sessions:
 
 ```csharp
 client.StartAutoSyncTime(
@@ -297,75 +252,55 @@ client.StartAutoSyncTime(
     intervalMs: 30000);
 
 bool fresh = client.IsServerTimeSynchronizationFresh(45000);
-
 client.StopAutoSyncTime();
 ```
 
-## World Synchronization
+## World synchronization
 
-Join a server world and send transform frames:
+Join a world and publish transform frames:
 
 ```csharp
-client.WorldsManager.TryJoinWorld(1, new NetsquareTransformFrame(0, 0, 0), joined =>
-{
-    Console.WriteLine("Joined world: " + joined);
-});
-
-client.WorldsManager.OnClientJoinWorld += (clientID, transform, message) =>
-{
-    Console.WriteLine("Client joined world: " + clientID + " at " + transform);
-};
-
-client.WorldsManager.OnClientLeaveWorld += clientID =>
-{
-    Console.WriteLine("Client left world: " + clientID);
-};
+client.WorldsManager.TryJoinWorld(
+    1,
+    new NetsquareTransformFrame(0, 0, 0),
+    joined => Console.WriteLine("Joined: " + joined));
 
 client.WorldsManager.OnReceiveSynchFrames += (clientID, frames) =>
 {
     foreach (INetSquareSynchFrame frame in frames)
-        Console.WriteLine("Frame from " + clientID + ": " + frame.SynchFrameType);
+        Console.WriteLine(clientID + ": " + frame.SynchFrameType);
 };
 
 client.WorldsManager.SendSynchFrame(
     new NetsquareTransformFrame(_x: 10, _y: 0, _z: 5, _time: 1.25f));
 ```
 
-You can queue frames and send them as a batch:
+Batch multiple frames with `StoreSynchFrame(...)` followed by `SendFrames()`. Configure `MaxStoredSynchronizationFrames` to bound client-side pending state.
 
-```csharp
-client.WorldsManager.StoreSynchFrame(new NetsquareTransformFrame(_x: 1, _y: 0, _z: 0));
-client.WorldsManager.StoreSynchFrame(new NetsquareTransformFrame(_x: 2, _y: 0, _z: 0));
-client.WorldsManager.SendFrames();
-```
-
-## Typed Connection Feedback
-
-Connection refusal and disconnection feedback is delivered before the server closes the socket:
+## Typed connection feedback
 
 ```csharp
 client.OnConnectionRejected += info =>
 {
-    Console.WriteLine("Connection rejected: " + info.Reason);
+    Console.WriteLine("Rejected: " + info.Reason);
     if (info.ExpiresUtc.HasValue)
-        Console.WriteLine("Ban expires at: " + info.ExpiresUtc.Value);
+        Console.WriteLine("Expires: " + info.ExpiresUtc.Value);
 };
 
 client.OnDisconnected += info =>
-{
     Console.WriteLine("Disconnected: " + info.Reason);
-};
 ```
 
-`ConnectionRejectionReason` and `DisconnectReason` distinguish temporary and permanent bans through `BannedTemporary` and `BannedPermanent`. The existing `OnConnectionFail` event remains reserved for transport failures that do not include server feedback.
-## Useful Client Properties
+`OnConnectionFail` is reserved for transport failures without typed Server feedback.
 
-- `ClientID`: current server-assigned ID.
-- `ConnectionTimeoutMilliseconds`: default timeout used by `Connect` and `ConnectAsync`.
-- `IsConnected`: whether the TCP socket is connected.
-- `NbSendingMessages`: pending outgoing messages.
-- `NbProcessingMessages`: queued incoming messages waiting for dispatch.
-- `ServerTimeOffset`: current estimated server time offset.
+## Useful properties
+
+- `ClientID`: current Server-assigned ID.
+- `IsConnected`: whether the TCP connection is active.
+- `ConnectionTimeoutMilliseconds`: default connection timeout.
+- `NbSendingMessages`: pending outgoing TCP messages.
+- `NbProcessingMessages`: received messages waiting for dispatch.
+- `ServerTimeOffset`: estimated Server time offset.
 - `WorldsManager`: world membership and synchronization API.
 
 ## License

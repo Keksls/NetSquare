@@ -1,23 +1,26 @@
-# NetSquare handshake V2
+# NetSquare handshake and transport security
 
-NetSquare uses a strict client-first handshake. The legacy public `Random` challenge is not supported.
+NetSquare performs its own version and capability handshake before raising a connected event. TLS, when enabled, runs first and protects the complete TCP session.
 
 ## Connection sequence
 
-1. The client sends a fixed-size hello containing its Core assembly version, wire protocol range, requested transport, capabilities, and a cryptographic nonce.
-2. The server validates blacklist and handshake capacity limits, then checks the exact NetSquare version and required capabilities.
-3. The server returns a cryptographic challenge. Proof of work is zero-cost below the configured activation threshold and uses leading SHA-256 zero bits above it.
-4. The client sends a proof bound to the hello and challenge.
-5. The server returns the negotiated transport, capabilities, transcript hash, and a random 128-bit UDP session key.
-6. The client validates the transcript and sends `ReadyAck`.
-7. The server allocates the client ID and returns a confirmation bound to `ReadyAck`.
-8. For TCP and UDP connections, the client and server exchange empty MAC-authenticated UDP registration frames before either public connected event is raised.
+1. The Client opens TCP.
+2. If `UseTLS` is enabled, the Client validates the Server certificate and both peers establish TLS 1.2.
+3. The Client sends its handshake version, Core assembly version, requested transport, capabilities, and a random nonce.
+4. The Server validates protocol compatibility, capacity, blacklist state, and transport requirements.
+5. The Server returns the negotiated transport, capabilities, transcript hash, and a random 128-bit UDP session key.
+6. The Client proves that it received the Server challenge.
+7. The Server assigns the authenticated TCP session its Client ID.
+8. For TCP-plus-UDP connections, both peers exchange empty MAC-authenticated UDP registration frames.
+9. Connected events are raised only after every required step succeeds.
 
-Malformed first frames and capacity excesses are closed silently. Recognized NetSquare clients continue to receive typed rejection feedback such as `ProtocolMismatch` and `HandshakeTimeout`.
+Malformed first frames and capacity excesses are closed silently. Recognized NetSquare Clients receive typed rejection feedback for failures such as protocol mismatch, timeout, temporary ban, or permanent ban.
+
+The handshake identifies a compatible NetSquare peer. It does not authenticate an application account.
 
 ## TLS
 
-`UseTLS` applies to the complete TCP connection. When enabled, TLS 1.2 authenticates and encrypts the TCP channel before the first NetSquare handshake frame is sent.
+`UseTLS` must match on both peers. When enabled, TLS authenticates and encrypts TCP before the first NetSquare handshake frame is sent.
 
 Server configuration:
 
@@ -25,7 +28,7 @@ Server configuration:
 {
   "UseTLS": true,
   "TLSCertificatePath": "[current]\\certificates\\netsquare.pfx",
-  "TLSCertificatePassword": "change-me"
+  "TLSCertificatePassword": "load-this-from-an-appropriate-secret-source"
 }
 ```
 
@@ -42,44 +45,50 @@ Client configuration:
 }
 ```
 
-```csharp
-NetSquareClientConfigurationManager.Initialize<NetSquareClientConfiguration>();
-NetSquareClientConfiguration configuration =
-    NetSquareClientConfigurationManager.Get<NetSquareClientConfiguration>();
+The Client validates the certificate chain and checks `TLSServerName`, or `Host` when it is empty, against the certificate.
 
-NetSquareClient client = new NetSquareClient(configuration);
-client.Connect();
+A private certificate authority can use a code-only validation callback:
+
+```csharp
+client.TLSCertificateValidationCallback = ValidatePrivateCertificate;
 ```
 
-The client validates the certificate chain and checks `TLSServerName`, or `Host` when it is empty, against the certificate. `TLSCertificateValidationCallback` is available in code for a private certificate authority; production code should not use it to accept every certificate.
+Production code must not accept every certificate. Doing so removes Server identity validation and makes TLS vulnerable to interception.
 
-`UseTLS` must match on both peers. When disabled, NetSquare preserves its raw Socket transport. TLS protects TCP and the UDP session key carried by the handshake, while UDP datagrams keep their separate MAC authentication.
+When TLS is disabled, NetSquare uses its raw socket transport. UDP authentication still detects forged or modified datagrams, but an on-path attacker can observe the UDP session key while it crosses the unencrypted TCP handshake.
 
-## Authenticated UDP datagrams
+## Authenticated UDP
 
-Every UDP `NetworkMessage` keeps its serialized `ClientID` header. The server uses that value only to select a candidate session, verifies the datagram MAC, then replaces it with the client ID owned by the authenticated TCP connection.
+Every UDP `NetworkMessage` retains its serialized `ClientID` header. The Server uses that value only to locate a candidate session, validates the datagram, and then replaces it with the Client ID owned by the authenticated TCP connection.
 
-Each datagram appends a 32-bit sequence followed by a 64-bit truncated HMAC-SHA256 tag, for a fixed 12-byte overhead. Client-to-server and server-to-client keys are derived independently from the handshake session key. A 64-datagram sliding window rejects duplicates while allowing normal UDP reordering.
+Each datagram appends:
 
-Registration contains no session key in its UDP body. Invalid tags, invalid sequences and unknown client IDs are dropped silently; they do not disconnect a legitimate client because UDP source addresses can be spoofed.
+- a 32-bit sequence;
+- a 64-bit truncated HMAC-SHA256 tag.
 
-When `UseTLS` is false, an on-path attacker can still observe the UDP session key carried by the TCP handshake. When TLS is enabled, the key remains confidential on TCP and is never transmitted directly in an UDP registration body.
+The fixed overhead is 12 bytes. Client-to-Server and Server-to-Client keys are derived independently from the handshake session key. A 64-datagram sliding window rejects duplicates while allowing normal reordering.
+
+UDP endpoint registration never sends the session key in the UDP body. Invalid tags, invalid sequences, and unknown Client IDs are dropped silently. They do not disconnect a legitimate Client because UDP source addresses can be spoofed.
+
+UDP remains unreliable: authenticated datagrams may still be lost, delayed, duplicated before filtering, or reordered. Use TCP for information that must arrive.
 
 ## Compatibility
 
-Handshake V2 currently requires exact equality of the `NetSquare.Core` assembly version. The centralized release version therefore needs to remain identical across Core, Client, Server, and their NuGet packages.
+Handshake V2 currently requires exact equality of the `NetSquare.Core` assembly version. `NetSquare.Core`, `NetSquare.Client`, and `NetSquare.Server` must therefore share the same release version.
 
-The wire protocol version is tracked separately from the package version so a future release can introduce an explicit compatibility range without weakening the current checks. The authenticated UDP capability retains its existing wire bit; this change does not increment the protocol or package version.
+The wire protocol version is tracked separately from the package version. NetSquare `1.0.15` does not change the handshake wire version or authenticated UDP capability bit.
 
 ## Server tuning
 
-The following `TcpListener` static settings can be changed before starting a server:
+The Server exposes these handshake controls:
 
-- `ClientHelloTimeoutMilliseconds`, default `2000`;
-- `HandshakeTimeoutMilliseconds`, default `5000` after a valid hello;
-- `MaxConcurrentHandshakes`, default `256`;
-- `MaxConcurrentHandshakesPerAddress`, default `4`;
-- `ProofOfWorkActivationThreshold`, default `32`;
-- `ProofOfWorkDifficulty`, default `18`, capped by the protocol at `24`.
+- `ListenBacklog`: pending socket backlog, default `1024`;
+- `ClientHelloTimeoutMilliseconds`: maximum time to receive the first Client hello, default `2000`;
+- `HandshakeTimeoutMilliseconds`: maximum time after a valid hello, default `5000`;
+- `MaxConcurrentHandshakes`: global in-progress limit, default `256`;
+- `MaxConcurrentHandshakesPerAddress`: per-address in-progress limit, default `4`;
+- `ProofOfWorkActivationThreshold`: load threshold that enables handshake proof of work, default `32`.
 
-This handshake filters generic crawlers and makes connection floods more expensive. It does not authenticate a user account or replace TLS when server identity, TCP integrity, or confidentiality is required.
+Choose limits from expected traffic and deployment topology. If many legitimate users share a NAT address, keep per-address limits high enough for that environment.
+
+These controls make generic connection floods more expensive. They do not replace operating-system limits, a reverse proxy, rate limiting at the network edge, application authentication, or TLS.

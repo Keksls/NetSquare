@@ -1,92 +1,54 @@
 # NetSquare.Core
 
-`NetSquare.Core` contains the shared primitives used by `NetSquare.Client` and `NetSquare.Server`: network messages, serialization helpers, dispatcher routing, compression and encryption abstractions, protocol helpers, UDP client support, and synchronization frames.
+`NetSquare.Core` contains the protocol and data types shared by `NetSquare.Client` and `NetSquare.Server`: network messages, binary serialization, dispatcher routing, configuration persistence, connection feedback, compression and encryption abstractions, scheduling, UDP transport support, and synchronization frames.
 
-The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It is installed automatically when you install current `NetSquare.Client` or `NetSquare.Server` packages.
+The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It is installed automatically with current Client and Server packages.
 
 ## Installation
 
 ```powershell
-NuGet\Install-Package NetSquare.Core -Version 1.0.14
+NuGet\$11.0.15
 ```
-
-or:
 
 ```bash
-dotnet add package NetSquare.Core --version 1.0.14
+$11.0.15
 ```
 
-## Shared JSON Configuration
+Install Core directly when building shared contracts or tools. Applications normally install `NetSquare.Client` or `NetSquare.Server`, which reference the exact matching Core version.
 
-`NetSquareConfigurationStore<TConfiguration>` is the common strongly typed JSON persistence layer used by the client and server packages. Each consumer owns its store, so client and server configurations can coexist in the same process without sharing static state.
+## Version compatibility
 
-```csharp
-using NetSquare.Core.Configuration;
+Client, Server, and Core must use the same package version. The current handshake compares the Core assembly version exactly and rejects mismatched peers before the connected event is raised.
 
-NetSquareConfigurationStore<MyConfiguration> store =
-    new NetSquareConfigurationStore<MyConfiguration>("application.config.json");
+## Network messages
 
-MyConfiguration configuration = store.Configuration;
-configuration.UseTLS = true;
-store.Save();
-```
-
-Configuration contracts derive from `NetSquareConfiguration`, which contains settings shared by both endpoints. Client-only settings remain in `NetSquareClientConfiguration`; certificates, blacklist policy, listener sizing, and other server-only settings remain in the server contract.
-
-## Network Messages
-
-Use `NetworkMessage` to write values in the order the receiver will read them.
+Every message has a route identifier (`HeadID`) and an ordered payload. Write and read values in exactly the same order and with matching types:
 
 ```csharp
 using NetSquare.Core;
 
 public enum GameMessage : ushort
 {
-    Chat = 1,
-    Ping = 2
+    Chat = 1
 }
 
-NetworkMessage message = new NetworkMessage(GameMessage.Chat)
+NetworkMessage outgoing = new NetworkMessage(GameMessage.Chat)
     .Set("hello")
     .Set(123)
     .Set(true);
 
-string text = message.Serializer.GetString();
-int number = message.Serializer.GetInt();
-bool enabled = message.Serializer.GetBool();
+string text = outgoing.Serializer.GetString();
+int score = outgoing.Serializer.GetInt();
+bool ready = outgoing.Serializer.GetBool();
 ```
 
-Supported helpers include numeric primitives, strings, chars, booleans, byte arrays, numeric arrays, `INetSquareSerializable` objects, lists, and dictionaries.
+The serializer supports numeric primitives, strings, characters, booleans, byte and numeric arrays, lists, dictionaries, and `INetSquareSerializable` objects.
 
-## Dispatcher
+Do not reuse a received message after its callback returns unless your application owns all referenced state. Create a new `NetworkMessage` when forwarding or changing a payload.
 
-Register handlers manually:
+## Custom serialization
 
-```csharp
-NetSquareDispatcher dispatcher = new NetSquareDispatcher();
-
-dispatcher.AddHeadAction(GameMessage.Chat, "Chat", message =>
-{
-    string text = message.Serializer.GetString();
-});
-```
-
-Or auto-bind public static methods with `NetSquareActionAttribute`:
-
-```csharp
-public static class Handlers
-{
-    [NetSquareAction(GameMessage.Chat)]
-    public static void OnChat(NetworkMessage message)
-    {
-        string text = message.Serializer.GetString();
-    }
-}
-```
-
-## Serialization
-
-Implement `INetSquareSerializable` when a type should control its own binary representation.
+Implement `INetSquareSerializable` when a type should control its compact binary representation:
 
 ```csharp
 public sealed class PlayerState : INetSquareSerializable
@@ -108,16 +70,94 @@ public sealed class PlayerState : INetSquareSerializable
 }
 ```
 
-## Connection Feedback Contracts
+Both peers must use the same schema. Add fields compatibly or coordinate a version change when the wire representation changes.
 
-`ConnectionRejectionInfo` and `DisconnectInfo` expose a typed reason, optional human-readable message, and optional UTC expiration date. The related enums include `BannedTemporary` and `BannedPermanent`, and the `IsBanned`, `IsTemporaryBan`, and `IsPermanentBan` helpers simplify client handling.
-## Compression and Encryption
+## Dispatcher
 
-`NetSquare.Core` includes reusable compression and encryption implementations such as `NoCompression`, `GZipCompressor`, `DeflateCompressor`, `NoEncryption`, `AES_Encryptor`, and `XOR_Encryptor`.
+Register a handler manually:
 
-## Synchronization Frames
+```csharp
+NetSquareDispatcher dispatcher = new NetSquareDispatcher();
 
-The synchronization frame types are shared by the client and server world managers.
+dispatcher.AddHeadAction(GameMessage.Chat, "Chat", message =>
+{
+    string text = message.Serializer.GetString();
+});
+```
+
+Or auto-bind public static methods:
+
+```csharp
+public static class Handlers
+{
+    [NetSquareAction(GameMessage.Chat)]
+    public static void OnChat(NetworkMessage message)
+    {
+        string text = message.Serializer.GetString();
+    }
+}
+```
+
+Dispatcher callbacks may run on worker threads. Marshal UI and game-engine work to the required main thread.
+
+## Shared JSON configuration
+
+`NetSquareConfigurationStore<TConfiguration>` is the common strongly typed JSON persistence layer. Client and Server wrap it with package-specific managers and separate configuration files.
+
+```csharp
+using NetSquare.Core.Configuration;
+
+NetSquareConfigurationStore<MyConfiguration> store =
+    new NetSquareConfigurationStore<MyConfiguration>("application.config.json");
+
+MyConfiguration configuration = store.Configuration;
+configuration.UseTLS = true;
+store.Save();
+```
+
+Configuration types derive from `NetSquareConfiguration`. Client-only settings live in `NetSquareClientConfiguration`; certificate, blacklist, listener, and server-worker settings live in the Server configuration contract.
+
+## Scheduler
+
+`NetSquareScheduler` runs named periodic callbacks through a shared coordinator and a bounded worker pool:
+
+```csharp
+NetSquareScheduler.AddAction(
+    name: "game-heartbeat",
+    frequency: 1000,
+    enableSmartFrequencyAdjusting: true,
+    callback: () => Console.WriteLine("tick"));
+
+NetSquareScheduler.StartAction("game-heartbeat");
+
+// Change the interval without restarting the action.
+NetSquareScheduler.SetSchedulerFrequency("game-heartbeat", 500);
+
+NetSquareScheduler.StopAction("game-heartbeat");
+NetSquareScheduler.RemoveAction("game-heartbeat");
+```
+
+Frequencies passed as `int` are milliseconds. Frequencies passed as `float` are hertz. Keep callbacks bounded: a runner never overlaps itself, and an unhandled callback exception stops that schedule.
+
+## Connection feedback contracts
+
+`ConnectionRejectionInfo` and `DisconnectInfo` provide:
+
+- a typed reason;
+- an optional human-readable message;
+- an optional UTC expiration date.
+
+The reason enums distinguish temporary and permanent bans. `IsBanned`, `IsTemporaryBan`, and `IsPermanentBan` simplify client handling.
+
+## Compression and encryption
+
+Core includes compression and payload transformation implementations such as `NoCompression`, `GZipCompressor`, `DeflateCompressor`, `NoEncryption`, `AES_Encryptor`, and `XOR_Encryptor`.
+
+Application-level payload encryption does not authenticate the server or replace TLS. Use TLS when the TCP session needs confidentiality, integrity, and server identity validation.
+
+## Synchronization frames
+
+Frame contracts are shared by Client and Server world managers:
 
 ```csharp
 INetSquareSynchFrame frame = new NetsquareTransformFrame(
@@ -126,6 +166,12 @@ INetSquareSynchFrame frame = new NetsquareTransformFrame(
     _z: 5,
     _time: 1.25f);
 ```
+
+The Server can bound retained frames per client and spatialize delivery; the Client can batch frames and choose TCP or UDP synchronization.
+
+## Security
+
+TLS and authenticated UDP are configured by the Client and Server packages. See the [handshake and transport security guide](https://github.com/Keksls/NetSquare/blob/main/HANDSHAKE.md).
 
 ## License
 

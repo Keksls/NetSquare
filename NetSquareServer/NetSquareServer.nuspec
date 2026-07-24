@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Server</id>
-    <version>1.0.14</version>
+    <version>1.0.15</version>
     <title>NetSquare.Server</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -10,29 +10,26 @@
     <icon>images\NetSquareIcon.png</icon>
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
-    <description>NetSquare as a verry fast and easy to use .NET Tcp/Udp solution for Server/client developpment. Unity compatible</description>
-    <releaseNotes>Adds typed connection and disconnection feedback, reasoned DisconnectClient overloads, and automatic temporary or permanent ban responses.</releaseNotes>
-    <copyright>Copyright © 2022</copyright>
+    <description>NetSquare server networking with TCP, authenticated UDP, dispatching, client management, blacklist policies, worlds, and spatialization.</description>
+    <releaseNotes>Reduces synchronization and spatialization allocations, adds visibility and chunk hysteresis, bounds retained frames, and uses the shared scheduler for periodic work.</releaseNotes>
+    <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
     <dependencies>
       <group targetFramework="netstandard2.0">
-        <dependency id="NetSquare.Core" version="[1.0.14]" />
+        <dependency id="NetSquare.Core" version="[1.0.15]" />
       </group>
       <group targetFramework="net8.0-windows7.0">
-        <dependency id="NetSquare.Core" version="[1.0.14]" />
+        <dependency id="NetSquare.Core" version="[1.0.15]" />
       </group>
       <group targetFramework="net48">
-        <dependency id="NetSquare.Core" version="[1.0.14]" />
+        <dependency id="NetSquare.Core" version="[1.0.15]" />
       </group>
     </dependencies>
   </metadata>
   <files>
     <file src="bin\Release\netstandard2.0\NetSquare_Server.dll" target="lib\netstandard2.0" />
-
     <file src="bin\Release\net8.0-windows7.0\NetSquare_Server.dll" target="lib\net8.0-windows7.0" />
-
     <file src="bin\Release\net48\NetSquare_Server.dll" target="lib\net48" />
-
     <file src="NetSquareIcon.png" target="images" />
     <file src="README.md" target="" />
   </files>

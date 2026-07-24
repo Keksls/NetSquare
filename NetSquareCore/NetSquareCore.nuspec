@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Core</id>
-    <version>1.0.14</version>
+    <version>1.0.15</version>
     <title>NetSquare.Core</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -11,7 +11,7 @@
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
     <description>Core message, serialization, dispatcher, compression, encryption and synchronization primitives for NetSquare.</description>
-    <releaseNotes>Adds typed connection rejection and disconnection contracts with optional ban expiration feedback.</releaseNotes>
+    <releaseNotes>Reduces hot-path allocations with shared scheduler workers, reusable buffers, and lower-overhead message packing, while hardening UDP shutdown behavior.</releaseNotes>
     <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity Core</tags>
     <dependencies>
