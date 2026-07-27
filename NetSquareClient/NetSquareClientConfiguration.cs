@@ -41,28 +41,23 @@ namespace NetSquare.Client
 
         #endregion
 
+        #region Reply callbacks
+        /// <summary>
+        /// Gets or sets the maximum number of requests waiting for a reply.
+        /// </summary>
+        public int MaxPendingReplyCallbacks { get; set; }
+
+        /// <summary>
+        /// Gets or sets how long a reply callback remains pending, in milliseconds.
+        /// </summary>
+        public int ReplyCallbackTimeoutMilliseconds { get; set; }
+        #endregion
+
         #region TLS
         /// <summary>
         /// Gets or sets the optional DNS name validated against the server certificate.
         /// </summary>
         public string TLSServerName { get; set; }
-        #endregion
-
-        #region Heartbeat
-        /// <summary>
-        /// Gets or sets whether the TCP heartbeat is enabled.
-        /// </summary>
-        public bool HeartbeatEnabled { get; set; }
-
-        /// <summary>
-        /// Gets or sets the heartbeat interval in milliseconds.
-        /// </summary>
-        public int HeartbeatIntervalMilliseconds { get; set; }
-
-        /// <summary>
-        /// Gets or sets the heartbeat reply timeout in milliseconds.
-        /// </summary>
-        public int HeartbeatTimeoutMilliseconds { get; set; }
         #endregion
 
         #region Time synchronization
@@ -112,15 +107,14 @@ namespace NetSquare.Client
         {
             MaxQueuedInboundMessages = 8192;
             MessageWorkerStopTimeoutMilliseconds = 5000;
+            MaxPendingReplyCallbacks = 4096;
+            ReplyCallbackTimeoutMilliseconds = 30000;
             // Keep JSON-created clients behaviorally aligned with manually constructed clients.
             Host = "127.0.0.1";
             Port = 5555;
             ProtocoleType = NetSquareProtocoleType.TCP_AND_UDP;
             ConnectionTimeoutMilliseconds = 30000;
             TLSServerName = string.Empty;
-            HeartbeatEnabled = true;
-            HeartbeatIntervalMilliseconds = 10000;
-            HeartbeatTimeoutMilliseconds = 30000;
             SmoothServerTimeOffset = true;
             ServerTimeOffsetSmoothingSpeed = 8f;
             TimeSynchronizationRequestTimeoutMilliseconds = 1500;
@@ -155,18 +149,19 @@ namespace NetSquare.Client
 
             if (ConnectionTimeoutMilliseconds <= 0)
                 throw new InvalidOperationException("ConnectionTimeoutMilliseconds must be greater than zero.");
-            if (HeartbeatEnabled &&
-                (HeartbeatIntervalMilliseconds <= 0 || HeartbeatTimeoutMilliseconds <= 0))
-            {
-                throw new InvalidOperationException(
-                    "Enabled heartbeat intervals and timeouts must be greater than zero.");
-            }
             if (MaxQueuedInboundMessages <= 0)
                 throw new InvalidOperationException("MaxQueuedInboundMessages must be greater than zero.");
             if (MessageWorkerStopTimeoutMilliseconds <= 0)
             {
                 throw new InvalidOperationException(
                     "MessageWorkerStopTimeoutMilliseconds must be greater than zero.");
+            }
+            if (MaxPendingReplyCallbacks <= 0)
+                throw new InvalidOperationException("MaxPendingReplyCallbacks must be greater than zero.");
+            if (ReplyCallbackTimeoutMilliseconds <= 0)
+            {
+                throw new InvalidOperationException(
+                    "ReplyCallbackTimeoutMilliseconds must be greater than zero.");
             }
 
             if (ServerTimeOffsetSmoothingSpeed < 0)

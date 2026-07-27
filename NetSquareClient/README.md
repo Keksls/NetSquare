@@ -7,11 +7,11 @@ The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It instal
 ## Installation
 
 ```powershell
-Install-Package NetSquare.Client -Version 1.0.16
+Install-Package NetSquare.Client -Version 1.0.17
 ```
 
 ```bash
-dotnet add package NetSquare.Client --version 1.0.16
+dotnet add package NetSquare.Client --version 1.0.17
 ```
 
 The Server and Client must use the same package version.
@@ -126,9 +126,8 @@ The default file is `client.config.json`. It is created with complete defaults w
   "UseTLS": true,
   "TLSServerName": "game.example.com",
   "ConnectionTimeoutMilliseconds": 30000,
-  "HeartbeatEnabled": true,
-  "HeartbeatIntervalMilliseconds": 10000,
-  "HeartbeatTimeoutMilliseconds": 30000,
+  "MaxPendingReplyCallbacks": 4096,
+  "ReplyCallbackTimeoutMilliseconds": 30000,
   "SmoothServerTimeOffset": true,
   "ServerTimeOffsetSmoothingSpeed": 8,
   "TimeSynchronizationRequestTimeoutMilliseconds": 1500,
@@ -142,6 +141,8 @@ The default file is `client.config.json`. It is created with complete defaults w
 `ProtocoleType` uses `0` for TCP and `1` for TCP plus UDP. `SynchronizationTransport` uses `0` for TCP and `1` for UDP. UDP synchronization requires TCP plus UDP.
 
 Call `NetSquareClientConfigurationManager.Save()` after changing settings that should persist. Applications may derive from `NetSquareClientConfiguration` to store their own settings in the same file.
+
+Heartbeat settings are not part of the Client configuration. The Server sends its enabled state, interval, and timeout in the final validated handshake frame; the Client applies that policy before starting its heartbeat loop.
 
 ## TLS
 
@@ -175,6 +176,9 @@ client.SendMessage(new NetworkMessage(GameMessage.Ping).Set("ping"), reply =>
     Console.WriteLine(response);
 });
 ```
+Pending reply callbacks are bounded by `MaxPendingReplyCallbacks` and expire after
+`ReplyCallbackTimeoutMilliseconds` unless an internal operation supplies a shorter timeout. A
+late reply never invokes an expired callback, and disconnecting clears every pending callback.
 
 ## TCP and UDP
 

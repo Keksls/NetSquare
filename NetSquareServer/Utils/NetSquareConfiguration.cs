@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text;
+using NetSquare.Core;
 
 #region Source
 namespace NetSquare.Server
@@ -65,6 +66,21 @@ namespace NetSquare.Server
         public int DShieldRefreshHours { get; set; }
         #endregion
 
+        #region Heartbeat
+        /// <summary>
+        /// Gets or sets whether connected clients must send TCP heartbeats.
+        /// </summary>
+        public bool HeartbeatEnabled { get; set; }
+        /// <summary>
+        /// Gets or sets the interval communicated to clients, in milliseconds.
+        /// </summary>
+        public int HeartbeatIntervalMilliseconds { get; set; }
+        /// <summary>
+        /// Gets or sets the maximum accepted TCP silence, in milliseconds.
+        /// </summary>
+        public int HeartbeatTimeoutMilliseconds { get; set; }
+        #endregion
+
         /// <summary>
         /// Number of threads for message action handling
         /// </summary>
@@ -110,11 +126,12 @@ namespace NetSquare.Server
             LockConsole = false;
             BlackListFilePath = Environment.CurrentDirectory + @"\BlackListedIP.json";
             SetBlackListDefaults();
+            SetHeartbeatDefaults();
             UpdateFrequencyHz = 10;
         }
 
         /// <summary>
-        /// Applies blacklist defaults before JSON properties are deserialized.
+        /// Applies defaults before JSON properties are deserialized.
         /// </summary>
         /// <param name="context">Serialization context.</param>
         [OnDeserializing]
@@ -122,6 +139,7 @@ namespace NetSquare.Server
         {
             // Existing config files omit new properties, so seed defaults before applying their stored values.
             SetBlackListDefaults();
+            SetHeartbeatDefaults();
         }
 
         /// <summary>
@@ -157,6 +175,38 @@ namespace NetSquare.Server
             BlackListDefaultPolicyName = "default";
             BlackListMaxTrackedSubjects = 10000;
             BlackListPolicies = new List<BlackListPolicy>();
+        }
+
+        /// <summary>
+        /// Applies the server-owned heartbeat policy defaults.
+        /// </summary>
+        private void SetHeartbeatDefaults()
+        {
+            // Keep the default liveness timeout at three times the heartbeat cadence.
+            HeartbeatEnabled = true;
+            HeartbeatIntervalMilliseconds = 10000;
+            HeartbeatTimeoutMilliseconds = 30000;
+        }
+
+        /// <summary>
+        /// Validates server settings that must be safe before accepting clients.
+        /// </summary>
+        public void Validate()
+        {
+            // Disabled heartbeats do not use their timing values.
+            if (!HeartbeatEnabled)
+                return;
+            if (HeartbeatIntervalMilliseconds < NetSquareHandshakeProtocol.MinimumHeartbeatIntervalMilliseconds)
+            {
+                throw new InvalidOperationException(
+                    "HeartbeatIntervalMilliseconds must be at least " +
+                    NetSquareHandshakeProtocol.MinimumHeartbeatIntervalMilliseconds + ".");
+            }
+            if (HeartbeatTimeoutMilliseconds <= HeartbeatIntervalMilliseconds)
+            {
+                throw new InvalidOperationException(
+                    "HeartbeatTimeoutMilliseconds must be greater than HeartbeatIntervalMilliseconds.");
+            }
         }
 
         /// <summary>

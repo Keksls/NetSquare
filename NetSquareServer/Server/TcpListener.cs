@@ -141,9 +141,8 @@ namespace NetSquare.Server
         /// </summary>
         public bool Stop()
         {
-            if (Interlocked.Exchange(ref started, 0) == 0)
-                return true;
-
+            // Repeated calls must keep waiting for workers that exceeded an earlier timeout.
+            Interlocked.Exchange(ref started, 0);
             stopSignal.Set();
             try { _listener.Stop(); } catch { }
 
@@ -152,9 +151,11 @@ namespace NetSquare.Server
             int timeout = configuredTimeout > 0 ? configuredTimeout : 5000;
 
             bool connectionStopped = connectionThread == null ||
-                connectionThread == Thread.CurrentThread || connectionThread.Join(timeout);
+                (connectionThread != Thread.CurrentThread &&
+                    (!connectionThread.IsAlive || connectionThread.Join(timeout)));
             bool disconnectionStopped = disconnectionThread == null ||
-                disconnectionThread == Thread.CurrentThread || disconnectionThread.Join(timeout);
+                (disconnectionThread != Thread.CurrentThread &&
+                    (!disconnectionThread.IsAlive || disconnectionThread.Join(timeout)));
 
             DateTime deadlineUtc = DateTime.UtcNow.AddMilliseconds(timeout);
             while (Volatile.Read(ref pendingConnectionWorkers) > 0 && DateTime.UtcNow < deadlineUtc)
@@ -507,8 +508,9 @@ namespace NetSquare.Server
                 HandshakeCapabilities selectedCapabilities =
                     clientHello.Capabilities & NetSquareHandshakeProtocol.SupportedCapabilities;
                 HandshakeCapabilities requiredCapabilities =
-                    HandshakeCapabilities.Heartbeat |
                     HandshakeCapabilities.HighPrecisionTimeSynchronization;
+                if (server.HeartbeatEnabled)
+                    requiredCapabilities |= HandshakeCapabilities.Heartbeat;
                 if (selectedTransport == NetSquareProtocoleType.TCP_AND_UDP && server.UseUdpAuthentication)
                     requiredCapabilities |= HandshakeCapabilities.AuthenticatedUdpDatagrams;
                 else
@@ -571,7 +573,11 @@ namespace NetSquare.Server
                 }
 
                 // The client enters the public server collection only after its final ReadyAck is valid.
-                connectedClient = new ConnectedClient();
+                connectedClient = new ConnectedClient
+                {
+                    HeartbeatTimeoutMilliseconds = server.HeartbeatEnabled
+                        ? server.HeartbeatTimeoutMilliseconds : 0
+                };
                 bool enableUdp = selectedTransport == NetSquareProtocoleType.TCP_AND_UDP;
                 connectedClient.SetClient(
                     client,
@@ -588,7 +594,12 @@ namespace NetSquare.Server
 
                 NetSquareHandshakeProtocol.SendAll(
                     clientStream,
-                    NetSquareHandshakeProtocol.CreateServerConnected(clientID, clientReadyFrame));
+                    NetSquareHandshakeProtocol.CreateServerConnected(
+                        clientID,
+                        server.HeartbeatEnabled,
+                        server.HeartbeatIntervalMilliseconds,
+                        server.HeartbeatTimeoutMilliseconds,
+                        clientReadyFrame));
 
                 if (enableUdp)
                     WaitForUdpRegistration(connectedClient, handshakeDeadlineUtc);

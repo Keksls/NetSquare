@@ -82,7 +82,7 @@ namespace NetSquare.Server
         /// <summary>
         /// Gets or sets the is started value.
         /// </summary>
-        public bool IsStarted { get { return Listeners.Any(l => l.Listener.Active); } }
+        public bool IsStarted { get { return Volatile.Read(ref serverLifecycleState) == ServerLifecycleStarted; } }
         /// <summary>
         /// Gets or sets the server i ps value.
         /// </summary>
@@ -107,6 +107,18 @@ namespace NetSquare.Server
         /// Gets whether UDP datagrams require sequence and MAC64 authentication.
         /// </summary>
         internal bool UseUdpAuthentication { get; private set; }
+        /// <summary>
+        /// Gets whether clients must run the server-owned heartbeat policy.
+        /// </summary>
+        internal bool HeartbeatEnabled { get; private set; }
+        /// <summary>
+        /// Gets the heartbeat interval communicated to clients, in milliseconds.
+        /// </summary>
+        internal int HeartbeatIntervalMilliseconds { get; private set; }
+        /// <summary>
+        /// Gets the maximum accepted TCP silence, in milliseconds.
+        /// </summary>
+        internal int HeartbeatTimeoutMilliseconds { get; private set; }
         /// <summary>
         /// Stores the certificate used by TLS listeners.
         /// </summary>
@@ -137,6 +149,30 @@ namespace NetSquare.Server
         public Func<uint> GetNewClientID;
         private long clientIDCounter;
         /// <summary>
+        /// Represents a completely stopped server lifecycle.
+        /// </summary>
+        private const int ServerLifecycleStopped = 0;
+        /// <summary>
+        /// Represents a server currently acquiring its resources.
+        /// </summary>
+        private const int ServerLifecycleStarting = 1;
+        /// <summary>
+        /// Represents a server accepting clients and running workers.
+        /// </summary>
+        private const int ServerLifecycleStarted = 2;
+        /// <summary>
+        /// Represents a server releasing resources or waiting for workers.
+        /// </summary>
+        private const int ServerLifecycleStopping = 3;
+        /// <summary>
+        /// Serializes complete start and stop transitions.
+        /// </summary>
+        private readonly object serverLifecycleLock = new object();
+        /// <summary>
+        /// Stores the current lifecycle state read by public status checks.
+        /// </summary>
+        private int serverLifecycleState = ServerLifecycleStopped;
+        /// <summary>
         /// Cancels the server update worker during shutdown.
         /// </summary>
         private CancellationTokenSource serverStopCancellation;
@@ -144,10 +180,6 @@ namespace NetSquare.Server
         /// Stores the server update worker for deterministic shutdown.
         /// </summary>
         private Thread updateThread;
-        /// <summary>
-        /// Prevents concurrent server shutdown sequences.
-        /// </summary>
-        private int stopStarted;
         #endregion
 
         /// <summary>
@@ -162,8 +194,12 @@ namespace NetSquare.Server
                 Worlds = new WorldsManager(this);
             // Configuration must be explicitly initialized before server services are constructed.
             NetSquareConfiguration configuration = NetSquareConfigurationManager.Get<NetSquareConfiguration>();
+            configuration.Validate();
             UseTLS = configuration.UseTLS;
             UseUdpAuthentication = configuration.UseUdpAuthentication;
+            HeartbeatEnabled = configuration.HeartbeatEnabled;
+            HeartbeatIntervalMilliseconds = configuration.HeartbeatIntervalMilliseconds;
+            HeartbeatTimeoutMilliseconds = configuration.HeartbeatTimeoutMilliseconds;
             if (UseUdpAuthentication && !UseTLS && ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP)
             {
                 Writer.Write(
@@ -289,7 +325,7 @@ namespace NetSquare.Server
                 Writer.Write(Dispatcher.Count.ToString(), ConsoleColor.Green);
             }
 
-            Interlocked.Exchange(ref stopStarted, 0);
+            serverStopCancellation?.Dispose();
             serverStopCancellation = new CancellationTokenSource();
 
             port = port > 0 ? port : configuration.Port;
@@ -301,11 +337,7 @@ namespace NetSquare.Server
 
             // Start TCP server
             if (!StartTCPServer(port, CheckBlackList))
-            {
-                MessageQueueManager.StopQueues();
-                Writer.Write("ERROR : Can't Start TCP Server...", ConsoleColor.Red);
-                return;
-            }
+                throw new InvalidOperationException("The TCP server did not start on any configured interface.");
 
             // start update loop
             Writer.Write_Server("Starting Update Loop...", ConsoleColor.DarkYellow, false);
@@ -335,7 +367,7 @@ namespace NetSquare.Server
             float lastTime = Time;
             try
             {
-                while (!cancellationToken.IsCancellationRequested && IsStarted)
+                while (!cancellationToken.IsCancellationRequested)
                 {
                     Time = (float)GetCurrentServerTimeSeconds();
                     if (Time - lastTime >= serverTickRate)
@@ -347,9 +379,20 @@ namespace NetSquare.Server
                         return;
                 }
             }
+            catch (Exception ex)
+            {
+                // Cleanup runs outside this worker so startup rollback can never deadlock on its own lock.
+                Writer.Write("Server update worker failed: " + ex, ConsoleColor.Red);
+                ThreadPool.QueueUserWorkItem(state => Stop());
+            }
             finally
             {
+                // Publish worker completion so a timed-out stop can eventually become restartable.
                 serverClock.Stop();
+                if (ReferenceEquals(updateThread, Thread.CurrentThread))
+                    updateThread = null;
+                if (Volatile.Read(ref serverLifecycleState) == ServerLifecycleStopping)
+                    ThreadPool.QueueUserWorkItem(state => Stop());
             }
         }
         #endregion
@@ -407,19 +450,27 @@ namespace NetSquare.Server
         /// <param name="CheckBlackList"> Check black list </param>
         public void Start(int port = -1, bool allowLocalIP = true, bool bindDispatcher = true, bool CheckBlackList = true)
         {
-            if (Debugger.IsAttached)
-                ServerRoutine(port, allowLocalIP, bindDispatcher, CheckBlackList);
-            else
+            lock (serverLifecycleLock)
             {
-                Loop:
+                if (Volatile.Read(ref serverLifecycleState) != ServerLifecycleStopped)
+                    throw new InvalidOperationException("The NetSquare server is already starting, started, or stopping.");
+
+                Volatile.Write(ref serverLifecycleState, ServerLifecycleStarting);
                 try
                 {
+                    // A successful transition publishes Started only after every required worker is alive.
                     ServerRoutine(port, allowLocalIP, bindDispatcher, CheckBlackList);
+                    Volatile.Write(ref serverLifecycleState, ServerLifecycleStarted);
                 }
                 catch (Exception ex)
                 {
-                    Writer.Write(ex.Message + Environment.NewLine + Environment.NewLine + ex.StackTrace, ConsoleColor.Red);
-                    goto Loop;
+                    Volatile.Write(ref serverLifecycleState, ServerLifecycleStopping);
+                    if (StopServerResources())
+                        Volatile.Write(ref serverLifecycleState, ServerLifecycleStopped);
+                    Writer.Write(
+                        ex.Message + Environment.NewLine + Environment.NewLine + ex.StackTrace,
+                        ConsoleColor.Red);
+                    throw;
                 }
             }
         }
@@ -468,25 +519,33 @@ namespace NetSquare.Server
                 }
             }
 
-            if (!IsStarted)
-                throw new InvalidOperationException("Port was already occupied for all network interfaces");
+            if (!HasActiveListener())
+                throw new InvalidOperationException("Port was already occupied for all network interfaces.");
 
             if (anyNicFailed)
             {
-                Stop();
-                throw new InvalidOperationException("Port was already occupied for one or more network interfaces.");
+                throw new InvalidOperationException(
+                    "Port was already occupied for one or more network interfaces.");
             }
 
-            if (IsStarted)
+            Writer.Write_Server("TCP server started Success (" + Listeners.Count + " IP)", ConsoleColor.Green);
+            return true;
+        }
+
+        /// <summary>
+        /// Returns whether at least one configured listener is currently active.
+        /// </summary>
+        /// <returns>True when an active listener exists.</returns>
+        private bool HasActiveListener()
+        {
+            // Listener state is inspected only while the lifecycle lock owns startup or shutdown.
+            foreach (TcpListener listener in Listeners)
             {
-                Writer.Write_Server("TCP server started Success (" + Listeners.Count + " IP)", ConsoleColor.Green);
-                return true;
+                if (listener != null && listener.Listener != null && listener.Listener.Active)
+                    return true;
             }
-            else
-            {
-                Writer.Write("FAIL", ConsoleColor.Red);
-                return false;
-            }
+
+            return false;
         }
 
         /// <summary>
@@ -494,17 +553,45 @@ namespace NetSquare.Server
         /// </summary>
         public void Stop()
         {
-            if (Interlocked.Exchange(ref stopStarted, 1) != 0)
-                return;
+            lock (serverLifecycleLock)
+            {
+                int lifecycleState = Volatile.Read(ref serverLifecycleState);
+                if (lifecycleState == ServerLifecycleStopped)
+                    return;
 
-            serverStopCancellation?.Cancel();
-            try { Statistics?.Stop(); }
-            catch (Exception ex) { Writer.Write("Statistics worker shutdown failed: " + ex, ConsoleColor.DarkYellow); }
+                // Repeated Stop calls may retry a worker that exceeded the previous wait timeout.
+                Volatile.Write(ref serverLifecycleState, ServerLifecycleStopping);
+                if (StopServerResources())
+                    Volatile.Write(ref serverLifecycleState, ServerLifecycleStopped);
+            }
+        }
+
+        /// <summary>
+        /// Releases listeners, queues, clients and workers acquired by server startup.
+        /// </summary>
+        /// <returns>True when every owned worker is confirmed stopped.</returns>
+        private bool StopServerResources()
+        {
+            // Shutdown remains incomplete until every owned worker confirms termination.
+            try { serverStopCancellation?.Cancel(); }
+            catch (ObjectDisposedException) { }
+
+            bool statisticsStopped = true;
+            try
+            {
+                Statistics?.Stop();
+                statisticsStopped = Statistics == null || !Statistics.HasLiveWorker;
+            }
+            catch (Exception ex)
+            {
+                statisticsStopped = false;
+                Writer.Write("Statistics worker shutdown failed: " + ex, ConsoleColor.DarkYellow);
+            }
 
             bool listenersStopped = true;
-            foreach (TcpListener listener in Listeners)
+            foreach (TcpListener listener in Listeners.ToArray())
             {
-                try { listenersStopped &= listener.Stop(); }
+                try { listenersStopped &= listener == null || listener.Stop(); }
                 catch (Exception ex)
                 {
                     listenersStopped = false;
@@ -513,25 +600,76 @@ namespace NetSquare.Server
             }
             if (!listenersStopped)
                 Writer.Write("One or more TCP listeners exceeded their shutdown timeout.", ConsoleColor.DarkYellow);
-            NotifyClientsDisconnecting(new DisconnectInfo(DisconnectReason.ServerShutdown));
+
+            try { NotifyClientsDisconnecting(new DisconnectInfo(DisconnectReason.ServerShutdown)); }
+            catch (Exception ex) { Writer.Write("Client shutdown notification failed: " + ex, ConsoleColor.DarkYellow); }
+
+            bool messageQueuesStopped = true;
             try
             {
                 if (MessageQueueManager != null && !MessageQueueManager.StopQueues())
+                {
+                    messageQueuesStopped = false;
                     Writer.Write("One or more message workers exceeded their shutdown timeout.", ConsoleColor.DarkYellow);
+                }
             }
-            catch (Exception ex) { Writer.Write("Message queue shutdown failed: " + ex, ConsoleColor.DarkYellow); }
+            catch (Exception ex)
+            {
+                messageQueuesStopped = false;
+                Writer.Write("Message queue shutdown failed: " + ex, ConsoleColor.DarkYellow);
+            }
+
+            bool updateWorkerStopped = WaitForUpdateWorkerStop();
+            try { DisconnectAllClientsWithoutNotice(); }
+            catch (Exception ex) { Writer.Write("Client shutdown failed: " + ex, ConsoleColor.DarkYellow); }
+            if (listenersStopped)
+                Listeners.Clear();
+
+            if (updateWorkerStopped)
+            {
+                updateThread = null;
+                serverStopCancellation?.Dispose();
+                serverStopCancellation = null;
+                serverClock.Stop();
+            }
+
+            return statisticsStopped && listenersStopped &&
+                messageQueuesStopped && updateWorkerStopped;
+        }
+
+        /// <summary>
+        /// Waits for the update worker without ever joining the current thread.
+        /// </summary>
+        /// <returns>True when no update worker remains alive.</returns>
+        private bool WaitForUpdateWorkerStop()
+        {
+            // Capture one generation so a future startup can never replace the worker being joined.
             Thread threadToJoin = updateThread;
-            if (threadToJoin != null && threadToJoin != Thread.CurrentThread)
+            if (threadToJoin == null)
+                return true;
+            if (threadToJoin == Thread.CurrentThread)
+                return false;
+            if (!threadToJoin.IsAlive)
+                return true;
+
+            int timeout = 5000;
+            try
             {
                 int configuredTimeout = NetSquareConfigurationManager
                     .Get<NetSquareConfiguration>().WorkerStopTimeoutMilliseconds;
-                int timeout = configuredTimeout > 0 ? configuredTimeout : 5000;
-                if (!threadToJoin.Join(timeout))
-                    Writer.Write("Server update worker did not stop in time.", ConsoleColor.DarkYellow);
+                if (configuredTimeout > 0)
+                    timeout = configuredTimeout;
             }
-            updateThread = null;
-            DisconnectAllClientsWithoutNotice();
-            Listeners.Clear();
+            catch (Exception ex)
+            {
+                Writer.Write("Unable to read the worker stop timeout: " + ex, ConsoleColor.DarkYellow);
+            }
+
+            if (threadToJoin.Join(timeout))
+                return true;
+
+            Writer.Write("Server update worker did not stop in time.", ConsoleColor.DarkYellow);
+            return false;
         }
 
         /// <summary>

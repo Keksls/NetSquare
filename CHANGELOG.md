@@ -2,6 +2,29 @@
 
 Notable changes to NetSquare are documented here. Versions follow Semantic Versioning, and all three NuGet packages are released together because the handshake currently requires exact Core version equality.
 
+## [1.0.17] - 2026-07-27
+
+### Changed
+
+- Moved heartbeat policy ownership to the Server, which now transmits the validated enabled state, interval, and timeout in the final handshake frame.
+- Added bounded, expiring Client reply callbacks through `MaxPendingReplyCallbacks` and `ReplyCallbackTimeoutMilliseconds`.
+- Added an explicit Server lifecycle state machine with deterministic startup rollback, shutdown retries, and restart-safe worker cleanup.
+- Applied heartbeat timeouts per connected Client instead of through one global static timeout.
+- Added finite-bound validation and a configurable maximum allocation count for chunked spatializers.
+- Increased the message wire protocol version to 4 for the extended `ServerConnected` frame.
+
+### Fixed
+
+- Pending reply callbacks are now cleared during transport teardown and late replies cannot invoke expired callbacks.
+- Listener, message queue, statistics, and update workers no longer report a fully stopped Server while a worker remains alive.
+- Failed or partial Server startup now releases acquired listeners and workers before allowing a retry.
+- Oversized or non-finite chunk grids are rejected before allocating spatialization arrays.
+
+### Compatibility
+
+- `NetSquare.Client`, `NetSquare.Server`, and `NetSquare.Core` must all use version `1.0.17`.
+- Wire protocol version 4 intentionally rejects older peers before connection establishment.
+- Client heartbeat timing is no longer locally configurable; the connected Server supplies the active policy.
 ## [1.0.16] - 2026-07-24
 
 ### Changed

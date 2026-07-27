@@ -7,11 +7,11 @@ The package targets .NET Standard 2.0, .NET 8 for Windows, and .NET Framework 4.
 ## Installation
 
 ```powershell
-Install-Package NetSquare.Server -Version 1.0.16
+Install-Package NetSquare.Server -Version 1.0.17
 ```
 
 ```bash
-dotnet add package NetSquare.Server --version 1.0.16
+dotnet add package NetSquare.Server --version 1.0.17
 ```
 
 The Server and Client must use the same package version.
@@ -103,11 +103,26 @@ Important settings include:
 
 - `Port`: default listener port.
 - `NbQueueThreads`: dispatcher worker count.
+- `HeartbeatEnabled`, `HeartbeatIntervalMilliseconds`, and `HeartbeatTimeoutMilliseconds`: heartbeat policy imposed on every Client.
 - `NbSendingThreads`: TCP send worker count.
 - `ReceivingBufferSize`: TCP receive buffer size.
 - `UpdateFrequencyHz`: Server update frequency.
-
 - `BlackListFilePath`: persisted blacklist state.
+
+## Heartbeat
+
+The Server exclusively owns the heartbeat policy:
+
+```csharp
+config.HeartbeatEnabled = true;
+config.HeartbeatIntervalMilliseconds = 10000;
+config.HeartbeatTimeoutMilliseconds = 30000;
+NetSquareConfigurationManager.Save();
+```
+
+When enabled, the interval must be at least 1000 milliseconds and the timeout must be greater than the interval. The final validated handshake frame sends this policy to the Client. The Client applies it before starting its heartbeat loop, while the Server uses the same timeout to disconnect silent TCP connections.
+
+When disabled, the Client does not start a heartbeat loop and the Server does not apply heartbeat timeout checks.
 
 ## TLS and authenticated UDP
 
@@ -358,10 +373,15 @@ ChunkedSpatializer spatializer = Spatializer.GetChunkedSpatializer(
     yStart: -500,
     xEnd: 500,
     yEnd: 500,
-    chunkHysteresis: 2);
+    chunkHysteresis: 2,
+    maximumChunkCount: 65536);
 ```
 
-`chunkHysteresis` prevents rapid chunk changes near cell edges. `MaxStoredFramesPerClient` bounds retained synchronization state; older frames are discarded when a producer outruns synchronization.
+`chunkHysteresis` prevents rapid chunk changes near cell edges. `maximumChunkCount` rejects an
+oversized grid before allocation; the overload without this argument uses
+`ChunkedSpatializer.DefaultMaximumChunkCount` (`65536`). Bounds and chunk size must be finite.
+`MaxStoredFramesPerClient` bounds retained synchronization state; older frames are discarded when
+a producer outruns synchronization.
 
 Stop a spatializer before replacing or discarding it.
 

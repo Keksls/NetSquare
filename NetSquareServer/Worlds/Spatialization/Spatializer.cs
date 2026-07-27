@@ -119,10 +119,71 @@ namespace NetSquare.Server.Worlds
         /// <param name="yStart"> start y of the world</param>
         /// <param name="xEnd"> end x of the world</param>
         /// <param name="yEnd"> end y of the world</param>
+        /// <param name="chunkHysteresis">Extra distance retained around the current chunk.</param>
         /// <returns> a chunked spatializer</returns>
-        public static ChunkedSpatializer GetChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd, float chunkHysteresis = 0f)
+        public static ChunkedSpatializer GetChunkedSpatializer(
+            NetSquareWorld world,
+            float spatializationFreq,
+            float synchFreq,
+            float chunkSize,
+            float xStart,
+            float yStart,
+            float xEnd,
+            float yEnd,
+            float chunkHysteresis = 0f)
         {
-            return new ChunkedSpatializer(world, spatializationFreq, synchFreq, chunkSize, xStart, yStart, xEnd, yEnd, chunkHysteresis);
+            // Preserve the established API while applying the safe default allocation ceiling.
+            return GetChunkedSpatializer(
+                world,
+                spatializationFreq,
+                synchFreq,
+                chunkSize,
+                xStart,
+                yStart,
+                xEnd,
+                yEnd,
+                chunkHysteresis,
+                ChunkedSpatializer.DefaultMaximumChunkCount);
+        }
+
+        /// <summary>
+        /// Gets a chunked spatializer with an explicit total allocation ceiling.
+        /// </summary>
+        /// <param name="world">World to spatialize.</param>
+        /// <param name="spatializationFreq">Spatialization frequency.</param>
+        /// <param name="synchFreq">Synchronization frequency.</param>
+        /// <param name="chunkSize">Size of one chunk.</param>
+        /// <param name="xStart">Minimum X coordinate.</param>
+        /// <param name="yStart">Minimum Y coordinate.</param>
+        /// <param name="xEnd">Maximum X coordinate.</param>
+        /// <param name="yEnd">Maximum Y coordinate.</param>
+        /// <param name="chunkHysteresis">Extra distance retained around the current chunk.</param>
+        /// <param name="maximumChunkCount">Maximum total chunks allocated by the spatializer.</param>
+        /// <returns>A bounded chunked spatializer.</returns>
+        public static ChunkedSpatializer GetChunkedSpatializer(
+            NetSquareWorld world,
+            float spatializationFreq,
+            float synchFreq,
+            float chunkSize,
+            float xStart,
+            float yStart,
+            float xEnd,
+            float yEnd,
+            float chunkHysteresis,
+            int maximumChunkCount)
+        {
+            // Forward the explicit allocation ceiling to the concrete spatializer.
+            return new ChunkedSpatializer(
+                world,
+                spatializationFreq,
+                synchFreq,
+                chunkSize,
+                xStart,
+                yStart,
+                xEnd,
+                yEnd,
+                chunkHysteresis,
+                maximumChunkCount);
         }
 
         /// <summary>

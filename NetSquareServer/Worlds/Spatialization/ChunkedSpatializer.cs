@@ -14,6 +14,11 @@ namespace NetSquare.Server.Worlds
     public class ChunkedSpatializer : Spatializer
     {
         /// <summary>
+        /// Stores the default maximum number of chunks allocated by one spatializer.
+        /// </summary>
+        public const int DefaultMaximumChunkCount = 65536;
+
+        /// <summary>
         /// Gets or sets the bounds value.
         /// </summary>
         public SpatialBounds Bounds { get; private set; }
@@ -21,6 +26,10 @@ namespace NetSquare.Server.Worlds
         /// Gets or sets the chunk size value.
         /// </summary>
         public float ChunkSize { get; private set; }
+        /// <summary>
+        /// Gets the maximum number of chunks this spatializer may allocate.
+        /// </summary>
+        public int MaximumChunkCount { get; private set; }
         /// <summary>
         /// Gets or sets the extra distance kept around the current chunk before moving to another chunk.
         /// </summary>
@@ -53,15 +62,60 @@ namespace NetSquare.Server.Worlds
         /// <summary>
         /// Initializes a new instance of the chunked spatializer class.
         /// </summary>
-        public ChunkedSpatializer(NetSquareWorld world, float spatializationFreq, float synchFreq, float chunkSize, float xStart, float yStart, float xEnd, float yEnd, float chunkHysteresis = 0f) : base(world, spatializationFreq, synchFreq)
+        public ChunkedSpatializer(
+            NetSquareWorld world,
+            float spatializationFreq,
+            float synchFreq,
+            float chunkSize,
+            float xStart,
+            float yStart,
+            float xEnd,
+            float yEnd,
+            float chunkHysteresis = 0f)
+            : this(
+                world,
+                spatializationFreq,
+                synchFreq,
+                chunkSize,
+                xStart,
+                yStart,
+                xEnd,
+                yEnd,
+                chunkHysteresis,
+                DefaultMaximumChunkCount)
         {
-            if (chunkSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(chunkSize), "Chunk size must be greater than zero.");
-            if (xEnd < xStart || yEnd < yStart)
-                throw new ArgumentException("Chunked spatializer bounds are invalid.");
+            // Preserve the established API while applying the safe default allocation ceiling.
+        }
+
+        /// <summary>
+        /// Initializes a chunked spatializer with an explicit total allocation ceiling.
+        /// </summary>
+        public ChunkedSpatializer(
+            NetSquareWorld world,
+            float spatializationFreq,
+            float synchFreq,
+            float chunkSize,
+            float xStart,
+            float yStart,
+            float xEnd,
+            float yEnd,
+            float chunkHysteresis,
+            int maximumChunkCount)
+            : base(world, spatializationFreq, synchFreq)
+        {
+            // Validate every allocation input before constructing any spatialization state.
+            if (float.IsNaN(chunkSize) || float.IsInfinity(chunkSize) || chunkSize <= 0f)
+                throw new ArgumentOutOfRangeException(nameof(chunkSize), "Chunk size must be finite and greater than zero.");
+            if (!AreFiniteBounds(xStart, yStart, xEnd, yEnd) || xEnd < xStart || yEnd < yStart)
+                throw new ArgumentException("Chunked spatializer bounds must be finite and ordered.");
+            if (maximumChunkCount <= 0)
+                throw new ArgumentOutOfRangeException(nameof(maximumChunkCount), "Maximum chunk count must be greater than zero.");
+            if (float.IsNaN(chunkHysteresis) || float.IsInfinity(chunkHysteresis))
+                throw new ArgumentOutOfRangeException(nameof(chunkHysteresis), "Chunk hysteresis must be finite.");
 
             Clients = new ConcurrentDictionary<uint, ChunkedClient>();
             ChunkSize = chunkSize;
+            MaximumChunkCount = maximumChunkCount;
             ChunkHysteresis = chunkHysteresis < 0f ? 0f : chunkHysteresis;
             Bounds = new SpatialBounds(xStart, yStart, xEnd, yEnd);
             CreateChunks(xStart, yStart, xEnd, yEnd);
@@ -460,18 +514,49 @@ namespace NetSquare.Server.Worlds
         }
 
         /// <summary>
-        /// Executes the create chunks operation.
+        /// Returns whether all spatial bounds are finite numbers.
+        /// </summary>
+        /// <param name="xStart">Minimum X coordinate.</param>
+        /// <param name="yStart">Minimum Y coordinate.</param>
+        /// <param name="xEnd">Maximum X coordinate.</param>
+        /// <param name="yEnd">Maximum Y coordinate.</param>
+        /// <returns>True when every coordinate is finite.</returns>
+        private static bool AreFiniteBounds(float xStart, float yStart, float xEnd, float yEnd)
+        {
+            // Reject NaN and infinity before dimension arithmetic or numeric casts.
+            return !float.IsNaN(xStart) && !float.IsInfinity(xStart) &&
+                !float.IsNaN(yStart) && !float.IsInfinity(yStart) &&
+                !float.IsNaN(xEnd) && !float.IsInfinity(xEnd) &&
+                !float.IsNaN(yEnd) && !float.IsInfinity(yEnd);
+        }
+
+        /// <summary>
+        /// Creates the bounded chunk grid and its neighbourhood links.
         /// </summary>
         private void CreateChunks(float xStart, float yStart, float xEnd, float yEnd)
         {
-            int width = (int)Math.Floor((xEnd - xStart) / ChunkSize) + 1;
-            int height = (int)Math.Floor((yEnd - yStart) / ChunkSize) + 1;
-            if (width <= 0 || height <= 0 || width > short.MaxValue || height > short.MaxValue)
+            double widthValue = Math.Floor(((double)xEnd - xStart) / ChunkSize) + 1d;
+            double heightValue = Math.Floor(((double)yEnd - yStart) / ChunkSize) + 1d;
+            if (widthValue < 1d || heightValue < 1d ||
+                widthValue > short.MaxValue || heightValue > short.MaxValue)
+            {
                 throw new ArgumentOutOfRangeException(nameof(ChunkSize), "Chunk grid dimensions are invalid.");
+            }
+
+            int width = (int)widthValue;
+            int height = (int)heightValue;
+            long totalChunkCount = (long)width * height;
+            if (totalChunkCount > MaximumChunkCount)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(MaximumChunkCount),
+                    "The chunk grid requires " + totalChunkCount +
+                    " chunks, exceeding the configured maximum of " + MaximumChunkCount + ".");
+            }
 
             Width = (short)width;
             Height = (short)height;
-            Chunks = new SpatialChunk[Width, Height];
+            Chunks = new SpatialChunk[width, height];
 
             // create empty chunks
             for (short x = 0; x < Width; x++)

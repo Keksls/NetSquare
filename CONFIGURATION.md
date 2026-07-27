@@ -57,7 +57,7 @@ Les principaux groupes de réglages client sont :
 
 - connexion : `Host`, `Port`, `ProtocoleType` et `ConnectionTimeoutMilliseconds` ;
 - sécurité : `UseTLS`, `TLSServerName` et `UseUdpAuthentication` ;
-- heartbeat : `HeartbeatEnabled`, `HeartbeatIntervalMilliseconds` et `HeartbeatTimeoutMilliseconds` ;
+- callbacks de réponse : `MaxPendingReplyCallbacks` et `ReplyCallbackTimeoutMilliseconds` ;
 - synchronisation temporelle : `SmoothServerTimeOffset`, `ServerTimeOffsetSmoothingSpeed`, `TimeSynchronizationRequestTimeoutMilliseconds` et `TimeSynchronizationMaxAttempts` ;
 - synchronisation du monde : `SynchronizationTransport`, `MaxStoredSynchronizationFrames` et `AutoSendSynchronizationFrames` ;
 - charge et arrêt : `MaxQueuedInboundMessages` et `MessageWorkerStopTimeoutMilliseconds`.
@@ -141,9 +141,12 @@ Les principaux groupes de réglages serveur sont :
 
 - écoute et sécurité : `Port`, `UseTLS`, `TLSCertificatePath`, `TLSCertificatePassword` et `UseUdpAuthentication` ;
 - traitement : `NbQueueThreads`, `MessageQueueCapacity`, `NbSendingThreads`, `ReceivingBufferSize` et `WorkerStopTimeoutMilliseconds` ;
+- heartbeat : `HeartbeatEnabled`, `HeartbeatIntervalMilliseconds` et `HeartbeatTimeoutMilliseconds` ;
 - boucle et synchronisation : `UpdateFrequencyHz` et `SynchronizingFrequency` ;
 - console : `LockConsole` ;
 - blacklist, politiques de hits, persistance et réputation externe : les propriétés préfixées par `BlackList`, `AbuseIPDB`, `BlockListDe`, `Spamhaus` et `DShield`.
+
+La politique heartbeat appartient au serveur. Le serveur la transmet au client dans la confirmation finale du handshake, puis le client l'utilise avant de lancer sa boucle heartbeat.
 
 Le fonctionnement détaillé de la blacklist est décrit dans [NetSquareServer/BLACKLIST.md](NetSquareServer/BLACKLIST.md).
 
@@ -159,6 +162,9 @@ NetSquareConfiguration configuration =
 configuration.Port = 5555;
 configuration.NbQueueThreads = 2;
 configuration.UpdateFrequencyHz = 30;
+configuration.HeartbeatEnabled = true;
+configuration.HeartbeatIntervalMilliseconds = 10000;
+configuration.HeartbeatTimeoutMilliseconds = 30000;
 
 NetSquareConfigurationManager.Save();
 ```

@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Client</id>
-    <version>1.0.16</version>
+    <version>1.0.17</version>
     <title>NetSquare.Client</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -11,18 +11,18 @@
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
     <description>NetSquare client networking with TCP, authenticated UDP, typed connections, request/reply messaging, time synchronization, and world synchronization.</description>
-    <releaseNotes>Updates to NetSquare.Core 1.0.16 with wire protocol version 3, removal of legacy application encryption, and conditional per-message Deflate compression.</releaseNotes>
+    <releaseNotes>Adds bounded expiring reply callbacks and applies the Server-owned heartbeat policy delivered by wire protocol version 4.</releaseNotes>
     <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
     <dependencies>
       <group targetFramework="netstandard2.0">
-        <dependency id="NetSquare.Core" version="[1.0.16]" />
+        <dependency id="NetSquare.Core" version="[1.0.17]" />
       </group>
       <group targetFramework="net8.0">
-        <dependency id="NetSquare.Core" version="[1.0.16]" />
+        <dependency id="NetSquare.Core" version="[1.0.17]" />
       </group>
       <group targetFramework="net48">
-        <dependency id="NetSquare.Core" version="[1.0.16]" />
+        <dependency id="NetSquare.Core" version="[1.0.17]" />
       </group>
     </dependencies>
   </metadata>

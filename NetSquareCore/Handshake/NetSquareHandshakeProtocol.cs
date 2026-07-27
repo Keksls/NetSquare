@@ -15,7 +15,7 @@ namespace NetSquare.Core
         #region Protocol constants
         public const byte HandshakeVersion = 2;
         public const int FrameMarkerLength = 8;
-        public const ushort WireProtocolVersion = 3;
+        public const ushort WireProtocolVersion = 4;
         public const int NonceLength = 16;
         public const int HashLength = 32;
         public const int ClientHelloLength = 42;
@@ -23,7 +23,8 @@ namespace NetSquare.Core
         public const int ClientProofLength = 49;
         public const int ServerAcceptLength = 64;
         public const int ClientReadyLength = 41;
-        public const int ServerConnectedLength = 45;
+        public const int ServerConnectedLength = 54;
+        public const int MinimumHeartbeatIntervalMilliseconds = 1000;
         public const byte MaximumProofOfWorkDifficulty = 24;
 
         public const HandshakeCapabilities SupportedCapabilities =
@@ -246,16 +247,34 @@ namespace NetSquare.Core
         /// Creates the definitive server confirmation after the client ready acknowledgement.
         /// </summary>
         /// <param name="clientID">Allocated client ID.</param>
+        /// <param name="heartbeatEnabled">Whether the client must start its heartbeat loop.</param>
+        /// <param name="heartbeatIntervalMilliseconds">Delay between heartbeat requests.</param>
+        /// <param name="heartbeatTimeoutMilliseconds">Maximum heartbeat reply wait.</param>
         /// <param name="clientReadyFrame">Validated client ready frame.</param>
         /// <returns>The serialized connected frame.</returns>
-        public static byte[] CreateServerConnected(uint clientID, byte[] clientReadyFrame)
+        public static byte[] CreateServerConnected(
+            uint clientID,
+            bool heartbeatEnabled,
+            int heartbeatIntervalMilliseconds,
+            int heartbeatTimeoutMilliseconds,
+            byte[] clientReadyFrame)
         {
             // Bind the allocated ID to the ready frame accepted by the server.
+            if (!heartbeatEnabled)
+            {
+                heartbeatIntervalMilliseconds = 0;
+                heartbeatTimeoutMilliseconds = 0;
+            }
+            ValidateHeartbeatPolicy(heartbeatEnabled, heartbeatIntervalMilliseconds, heartbeatTimeoutMilliseconds);
+
             byte[] frame = new byte[ServerConnectedLength];
             CopyMagic(ServerConnectedMagic, frame);
             frame[8] = HandshakeVersion;
             WriteUInt32(frame, 9, clientID);
-            Buffer.BlockCopy(ComputeHash(clientReadyFrame), 0, frame, 13, HashLength);
+            frame[13] = heartbeatEnabled ? (byte)1 : (byte)0;
+            WriteUInt32(frame, 14, checked((uint)heartbeatIntervalMilliseconds));
+            WriteUInt32(frame, 18, checked((uint)heartbeatTimeoutMilliseconds));
+            Buffer.BlockCopy(ComputeHash(clientReadyFrame), 0, frame, 22, HashLength);
             return frame;
         }
         #endregion
@@ -325,7 +344,16 @@ namespace NetSquare.Core
         public static HandshakeServerConnected DeserializeServerConnected(byte[] frame)
         {
             EnsureFrame(frame, ServerConnectedLength, ServerConnectedMagic, "server connected");
-            return new HandshakeServerConnected(ReadUInt32(frame, 9), CopyBytes(frame, 13, HashLength));
+            bool heartbeatEnabled = ReadBoolean(frame[13]);
+            int heartbeatIntervalMilliseconds = checked((int)ReadUInt32(frame, 14));
+            int heartbeatTimeoutMilliseconds = checked((int)ReadUInt32(frame, 18));
+            ValidateHeartbeatPolicy(heartbeatEnabled, heartbeatIntervalMilliseconds, heartbeatTimeoutMilliseconds);
+            return new HandshakeServerConnected(
+                ReadUInt32(frame, 9),
+                heartbeatEnabled,
+                heartbeatIntervalMilliseconds,
+                heartbeatTimeoutMilliseconds,
+                CopyBytes(frame, 22, HashLength));
         }
         #endregion
 
@@ -642,6 +670,42 @@ namespace NetSquare.Core
             if (!Enum.IsDefined(typeof(NetSquareProtocoleType), (int)value))
                 throw new InvalidOperationException("Unsupported NetSquare transport.");
             return (NetSquareProtocoleType)value;
+        }
+
+        /// <summary>
+        /// Reads a canonical boolean byte.
+        /// </summary>
+        /// <param name="value">Wire byte to decode.</param>
+        /// <returns>The decoded boolean value.</returns>
+        private static bool ReadBoolean(byte value)
+        {
+            // Only zero and one have canonical boolean representations on the wire.
+            if (value > 1)
+                throw new InvalidOperationException("Invalid NetSquare boolean value.");
+            return value == 1;
+        }
+
+        /// <summary>
+        /// Validates the canonical heartbeat policy carried by the final handshake frame.
+        /// </summary>
+        /// <param name="heartbeatEnabled">Whether heartbeat is enabled.</param>
+        /// <param name="heartbeatIntervalMilliseconds">Delay between requests.</param>
+        /// <param name="heartbeatTimeoutMilliseconds">Maximum reply wait and TCP silence.</param>
+        private static void ValidateHeartbeatPolicy(
+            bool heartbeatEnabled,
+            int heartbeatIntervalMilliseconds,
+            int heartbeatTimeoutMilliseconds)
+        {
+            // A disabled policy has no active timing values on the wire.
+            if (!heartbeatEnabled)
+            {
+                if (heartbeatIntervalMilliseconds != 0 || heartbeatTimeoutMilliseconds != 0)
+                    throw new InvalidOperationException("Disabled heartbeat timings must be zero.");
+                return;
+            }
+            if (heartbeatIntervalMilliseconds < MinimumHeartbeatIntervalMilliseconds ||
+                heartbeatTimeoutMilliseconds <= heartbeatIntervalMilliseconds)
+                throw new InvalidOperationException("Invalid NetSquare heartbeat policy.");
         }
 
         /// <summary>

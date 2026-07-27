@@ -2,7 +2,6 @@ using NetSquare.Core;
 using NetSquare.Core.Collections;
 using NetSquare.Core.Messages;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -169,17 +168,17 @@ namespace NetSquare.Client
         /// </summary>
         public ushort Ping { get; private set; }
         /// <summary>
-        /// Gets or sets whether the TCP heartbeat is enabled.
+        /// Gets whether the server requires TCP heartbeats.
         /// </summary>
-        public bool HeartbeatEnabled { get; set; }
+        public bool HeartbeatEnabled { get; private set; }
         /// <summary>
-        /// Gets or sets the heartbeat interval in milliseconds.
+        /// Gets the server-provided heartbeat interval in milliseconds.
         /// </summary>
-        public int HeartbeatIntervalMs { get; set; }
+        public int HeartbeatIntervalMs { get; private set; }
         /// <summary>
-        /// Gets or sets the heartbeat reply timeout in milliseconds.
+        /// Gets the server-provided heartbeat reply timeout in milliseconds.
         /// </summary>
-        public int HeartbeatTimeoutMs { get; set; }
+        public int HeartbeatTimeoutMs { get; private set; }
         /// <summary>
         /// Gets when the last heartbeat reply was received.
         /// </summary>
@@ -271,13 +270,30 @@ namespace NetSquare.Client
         /// </summary>
         private CancellationTokenSource messageProcessingCancellation;
         /// <summary>
-        /// Stores the reply call back value.
+        /// Stores pending reply callbacks under the reply ID lock.
         /// </summary>
-        private ConcurrentDictionary<uint, NetSquareAction> replyCallBack = new ConcurrentDictionary<uint, NetSquareAction>();
+        private readonly Dictionary<uint, PendingReplyCallback> pendingReplyCallbacks =
+            new Dictionary<uint, PendingReplyCallback>();
         /// <summary>
-        /// Stores reply callbacks that must run directly from the network processing thread.
+        /// Reuses reply IDs collected during expiration cleanup.
         /// </summary>
-        private ConcurrentDictionary<uint, bool> replyCallBackInlineExecution = new ConcurrentDictionary<uint, bool>();
+        private readonly List<uint> expiredReplyCallbackIDs = new List<uint>();
+        /// <summary>
+        /// Periodically removes callbacks whose remote reply never arrived.
+        /// </summary>
+        private Timer replyCallbackCleanupTimer;
+        /// <summary>
+        /// Stores the applied maximum number of pending reply callbacks.
+        /// </summary>
+        private int maxPendingReplyCallbacks = 4096;
+        /// <summary>
+        /// Stores the applied callback timeout in milliseconds.
+        /// </summary>
+        private int replyCallbackTimeoutMilliseconds = 30000;
+        /// <summary>
+        /// Stores the callback cleanup frequency in milliseconds.
+        /// </summary>
+        private const int ReplyCallbackCleanupIntervalMilliseconds = 1000;
         /// <summary>
         /// Stores the disconnect started value.
         /// </summary>
@@ -316,9 +332,6 @@ namespace NetSquare.Client
             TimeSynchronizationRequestTimeoutMs = 1500;
             TimeSynchronizationMaxAttempts = 0;
             AutoTimeSynchronizationIntervalMs = 30000;
-            HeartbeatEnabled = true;
-            HeartbeatIntervalMs = 10000;
-            HeartbeatTimeoutMs = 30000;
             ConnectionTimeoutMilliseconds = 30000;
             LastHeartbeatUtc = DateTime.MinValue;
             lastServerTimeOffsetUpdateUtc = DateTime.UtcNow;
@@ -386,12 +399,11 @@ namespace NetSquare.Client
             Port = configuration.Port;
             ProtocoleType = configuration.ProtocoleType;
             ConnectionTimeoutMilliseconds = configuration.ConnectionTimeoutMilliseconds;
+            maxPendingReplyCallbacks = configuration.MaxPendingReplyCallbacks;
+            replyCallbackTimeoutMilliseconds = configuration.ReplyCallbackTimeoutMilliseconds;
             UseTLS = configuration.UseTLS;
             UseUdpAuthentication = configuration.UseUdpAuthentication;
             TLSServerName = configuration.TLSServerName ?? string.Empty;
-            HeartbeatEnabled = configuration.HeartbeatEnabled;
-            HeartbeatIntervalMs = configuration.HeartbeatIntervalMilliseconds;
-            HeartbeatTimeoutMs = configuration.HeartbeatTimeoutMilliseconds;
             SmoothServerTimeOffset = configuration.SmoothServerTimeOffset;
             ServerTimeOffsetSmoothingSpeed = configuration.ServerTimeOffsetSmoothingSpeed;
             TimeSynchronizationRequestTimeoutMs =
@@ -749,7 +761,6 @@ namespace NetSquare.Client
                     NetSquareHandshakeProtocol.DeserializeServerChallenge(serverChallengeFrame);
 
                 HandshakeCapabilities requiredCapabilities =
-                    HandshakeCapabilities.Heartbeat |
                     HandshakeCapabilities.HighPrecisionTimeSynchronization;
                 if (ProtocoleType == NetSquareProtocoleType.TCP_AND_UDP && UseUdpAuthentication)
                     requiredCapabilities |= HandshakeCapabilities.AuthenticatedUdpDatagrams;
@@ -802,6 +813,8 @@ namespace NetSquare.Client
                 HandshakeServerConnected connected =
                     NetSquareHandshakeProtocol.DeserializeServerConnected(serverConnectedFrame);
                 if (connected.ClientID == 0 ||
+                    (connected.HeartbeatEnabled &&
+                        (accept.Capabilities & HandshakeCapabilities.Heartbeat) == 0) ||
                     !NetSquareHandshakeProtocol.ValidateServerConnected(clientReadyFrame, connected))
                 {
                     throw new InvalidOperationException("The server connected confirmation is invalid.");
@@ -818,6 +831,8 @@ namespace NetSquare.Client
 
                 if (accept.SelectedTransport == NetSquareProtocoleType.TCP_AND_UDP)
                     await WaitForUdpRegistrationAsync(initializedClient, cancellationToken).ConfigureAwait(false);
+
+                ApplyServerHeartbeatPolicy(connected);
 
                 // Heartbeats start only after every negotiated transport is fully usable.
                 StartHeartbeat();
@@ -1023,6 +1038,7 @@ namespace NetSquare.Client
             connectedClient.OnMessageReceived -= Client_OnMessageReceived;
             connectedClient.OnDisconected -= Client_OnDisconected;
             StopMessageProcessingWorker();
+            ClearPendingReplyCallbacks();
             if (ReferenceEquals(Client, connectedClient))
                 Client = null;
             Interlocked.Exchange(ref disconnectStarted, 1);
@@ -1186,6 +1202,7 @@ namespace NetSquare.Client
             }
 
             StopMessageProcessingWorker();
+            ClearPendingReplyCallbacks();
             Client = null;
             client?.CloseTcpTransport();
 
@@ -1213,6 +1230,22 @@ namespace NetSquare.Client
             {
                 OnException?.Invoke(ex);
             }
+        }
+
+        /// <summary>
+        /// Applies the heartbeat policy received in the validated final server handshake frame.
+        /// </summary>
+        /// <param name="connected">Validated final server confirmation.</param>
+        private void ApplyServerHeartbeatPolicy(HandshakeServerConnected connected)
+        {
+            if (connected == null)
+                throw new ArgumentNullException(nameof(connected));
+
+            // Runtime heartbeat behavior is owned exclusively by the connected server.
+            HeartbeatEnabled = connected.HeartbeatEnabled;
+            HeartbeatIntervalMs = connected.HeartbeatIntervalMilliseconds;
+            HeartbeatTimeoutMs = connected.HeartbeatTimeoutMilliseconds;
+            LastHeartbeatUtc = DateTime.MinValue;
         }
 
         /// <summary>
@@ -1262,7 +1295,13 @@ namespace NetSquare.Client
             }
 
             if (waitForStop && threadToWait != null && threadToWait != Thread.CurrentThread && threadToWait.IsAlive)
-                threadToWait.Join(Math.Max(1000, GetHeartbeatTimeoutMs() + 250));
+            {
+                int heartbeatTimeoutMs = GetHeartbeatTimeoutMs();
+                int joinTimeoutMs = heartbeatTimeoutMs > int.MaxValue - 250
+                    ? int.MaxValue
+                    : heartbeatTimeoutMs + 250;
+                threadToWait.Join(joinTimeoutMs);
+            }
         }
 
         /// <summary>
@@ -1284,7 +1323,7 @@ namespace NetSquare.Client
                         return;
                     }
 
-                    if (heartbeatStopSignal.Wait(Math.Max(1000, HeartbeatIntervalMs)))
+                    if (heartbeatStopSignal.Wait(HeartbeatIntervalMs))
                         return;
                 }
             }
@@ -1348,7 +1387,7 @@ namespace NetSquare.Client
                         {
                             received.Set();
                         }
-                    }, true);
+                    }, true, GetHeartbeatTimeoutMs());
                     hasReplyID = true;
                 }
                 catch (Exception ex)
@@ -1393,13 +1432,11 @@ namespace NetSquare.Client
         }
 
         /// <summary>
-        /// Gets the effective heartbeat timeout in milliseconds.
+        /// Gets the server-provided heartbeat timeout in milliseconds.
         /// </summary>
         private int GetHeartbeatTimeoutMs()
         {
-            int intervalMs = Math.Max(1000, HeartbeatIntervalMs);
-            int timeoutMs = HeartbeatTimeoutMs > 0 ? HeartbeatTimeoutMs : intervalMs * 3;
-            return Math.Max(intervalMs, timeoutMs);
+            return HeartbeatTimeoutMs;
         }
 
         /// <summary>
@@ -1471,15 +1508,13 @@ namespace NetSquare.Client
                     break;
 
                 case NetSquareMessageType.Reply:
-                    NetSquareAction callback;
-                    if (replyCallBack.TryRemove(message.ReplyID, out callback))
+                    PendingReplyCallback pendingReply;
+                    if (TryTakePendingReplyCallback(message.ReplyID, out pendingReply))
                     {
-                        bool executeInline;
-                        replyCallBackInlineExecution.TryRemove(message.ReplyID, out executeInline);
-                        if (executeInline)
-                            callback?.Invoke(message);
+                        if (pendingReply.ExecuteInline)
+                            pendingReply.Callback.Invoke(message);
                         else
-                            Dispatcher.ExecuteinMainThread(callback, message);
+                            Dispatcher.ExecuteinMainThread(pendingReply.Callback, message);
                     }
                     break;
 
@@ -1526,22 +1561,21 @@ namespace NetSquare.Client
         }
 
         /// <summary>
-        /// Executes the get next reply id operation.
+        /// Reserves the next non-zero reply ID while the reply lock is held.
         /// </summary>
-        private uint GetNextReplyID()
+        /// <returns>An unused reply ID.</returns>
+        private uint GetNextReplyIDLocked()
         {
-            lock (replyIDLock)
+            // IDs wrap inside the protocol range and skip every active reservation.
+            do
             {
-                do
-                {
-                    nbReplyAsked++;
-                    if (nbReplyAsked == 0 || nbReplyAsked > UInt24.MaxValue)
-                        nbReplyAsked = 1;
-                }
-                while (replyCallBack.ContainsKey(nbReplyAsked));
-
-                return nbReplyAsked;
+                nbReplyAsked++;
+                if (nbReplyAsked == 0 || nbReplyAsked > UInt24.MaxValue)
+                    nbReplyAsked = 1;
             }
+            while (pendingReplyCallbacks.ContainsKey(nbReplyAsked));
+
+            return nbReplyAsked;
         }
         #endregion
 
@@ -1611,13 +1645,26 @@ namespace NetSquare.Client
         /// <summary>
         /// Send a message to server and invoke callback when server responds.
         /// </summary>
-        private uint SendMessageWithReply(NetworkMessage msg, NetSquareAction callback, bool executeReplyInline)
+        /// <param name="msg">Message expecting a reply.</param>
+        /// <param name="callback">Callback invoked for the matching reply.</param>
+        /// <param name="executeReplyInline">Whether to invoke the callback on the network processing thread.</param>
+        /// <param name="callbackTimeoutMilliseconds">Optional callback lifetime override.</param>
+        private uint SendMessageWithReply(
+            NetworkMessage msg,
+            NetSquareAction callback,
+            bool executeReplyInline,
+            int callbackTimeoutMilliseconds = 0)
         {
-            uint rplID = GetNextReplyID();
+            if (msg == null)
+                throw new ArgumentNullException(nameof(msg));
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
+
+            int effectiveCallbackTimeoutMilliseconds = callbackTimeoutMilliseconds > 0
+                ? callbackTimeoutMilliseconds
+                : replyCallbackTimeoutMilliseconds;
+            uint rplID = RegisterReplyCallback(callback, executeReplyInline, effectiveCallbackTimeoutMilliseconds);
             msg.ReplyTo(rplID);
-            replyCallBack[rplID] = callback;
-            if (executeReplyInline)
-                replyCallBackInlineExecution[rplID] = true;
 
             try
             {
@@ -1636,10 +1683,168 @@ namespace NetSquare.Client
         /// </summary>
         private void RemoveReplyCallback(uint replyID)
         {
-            NetSquareAction callback;
-            bool executeInline;
-            replyCallBack.TryRemove(replyID, out callback);
-            replyCallBackInlineExecution.TryRemove(replyID, out executeInline);
+            // Removal and timer shutdown share the same lock as registration.
+            lock (replyIDLock)
+            {
+                pendingReplyCallbacks.Remove(replyID);
+                StopReplyCallbackCleanupTimerIfIdleLocked();
+            }
+        }
+
+        /// <summary>
+        /// Registers one callback after enforcing expiration and capacity limits.
+        /// </summary>
+        /// <param name="callback">Callback invoked for the matching reply.</param>
+        /// <param name="executeReplyInline">Whether to execute on the network processing thread.</param>
+        /// <param name="callbackTimeoutMilliseconds">Lifetime of this callback reservation.</param>
+        /// <returns>The reserved reply ID.</returns>
+        private uint RegisterReplyCallback(
+            NetSquareAction callback,
+            bool executeReplyInline,
+            int callbackTimeoutMilliseconds)
+        {
+            // Expired entries are reclaimed before enforcing the hard capacity.
+            long currentTimestamp = Stopwatch.GetTimestamp();
+            long expirationTimestamp = GetReplyCallbackExpirationTimestamp(currentTimestamp, callbackTimeoutMilliseconds);
+            lock (replyIDLock)
+            {
+                CleanupExpiredReplyCallbacksLocked(currentTimestamp);
+                if (pendingReplyCallbacks.Count >= maxPendingReplyCallbacks)
+                {
+                    throw new InvalidOperationException(
+                        "The maximum number of pending NetSquare reply callbacks has been reached.");
+                }
+
+                uint replyID = GetNextReplyIDLocked();
+                pendingReplyCallbacks.Add(
+                    replyID,
+                    new PendingReplyCallback(callback, executeReplyInline, expirationTimestamp));
+                EnsureReplyCallbackCleanupTimerLocked();
+                return replyID;
+            }
+        }
+
+        /// <summary>
+        /// Removes and returns a non-expired callback for one reply.
+        /// </summary>
+        /// <param name="replyID">Reply ID received from the server.</param>
+        /// <param name="pendingReply">Registered callback when it is still valid.</param>
+        /// <returns>True when a valid callback was removed.</returns>
+        private bool TryTakePendingReplyCallback(uint replyID, out PendingReplyCallback pendingReply)
+        {
+            // Taking removes the reservation exactly once, including late replies.
+            lock (replyIDLock)
+            {
+                if (!pendingReplyCallbacks.TryGetValue(replyID, out pendingReply))
+                    return false;
+
+                pendingReplyCallbacks.Remove(replyID);
+                StopReplyCallbackCleanupTimerIfIdleLocked();
+                if (!pendingReply.IsExpired(Stopwatch.GetTimestamp()))
+                    return true;
+
+                pendingReply = null;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Computes a monotonic expiration timestamp for a newly registered callback.
+        /// </summary>
+        /// <param name="currentTimestamp">Current monotonic timestamp.</param>
+        /// <param name="callbackTimeoutMilliseconds">Callback lifetime in milliseconds.</param>
+        /// <returns>Expiration timestamp with overflow saturation.</returns>
+        private long GetReplyCallbackExpirationTimestamp(
+            long currentTimestamp,
+            int callbackTimeoutMilliseconds)
+        {
+            double timeoutTicks =
+                (double)callbackTimeoutMilliseconds * Stopwatch.Frequency / 1000d;
+            long timeoutTimestampDelta = timeoutTicks >= long.MaxValue
+                ? long.MaxValue
+                : Math.Max(1L, (long)Math.Ceiling(timeoutTicks));
+
+            // Saturation keeps very large configured timeouts from wrapping into the past.
+            return timeoutTimestampDelta >= long.MaxValue - currentTimestamp
+                ? long.MaxValue
+                : currentTimestamp + timeoutTimestampDelta;
+        }
+
+        /// <summary>
+        /// Starts the shared low-frequency cleanup timer when callbacks are pending.
+        /// </summary>
+        private void EnsureReplyCallbackCleanupTimerLocked()
+        {
+            if (replyCallbackCleanupTimer != null)
+                return;
+
+            // One timer per connected client bounds cleanup overhead independently of request volume.
+            replyCallbackCleanupTimer = new Timer(
+                CleanupExpiredReplyCallbacks,
+                null,
+                ReplyCallbackCleanupIntervalMilliseconds,
+                ReplyCallbackCleanupIntervalMilliseconds);
+        }
+
+        /// <summary>
+        /// Removes expired callbacks from the timer thread.
+        /// </summary>
+        /// <param name="state">Unused timer state.</param>
+        private void CleanupExpiredReplyCallbacks(object state)
+        {
+            // Timer callbacks only hold the lock for bounded dictionary maintenance.
+            lock (replyIDLock)
+            {
+                CleanupExpiredReplyCallbacksLocked(Stopwatch.GetTimestamp());
+                StopReplyCallbackCleanupTimerIfIdleLocked();
+            }
+        }
+
+        /// <summary>
+        /// Removes expired callbacks without allocating a collection on every timer tick.
+        /// </summary>
+        /// <param name="currentTimestamp">Current monotonic timestamp.</param>
+        private void CleanupExpiredReplyCallbacksLocked(long currentTimestamp)
+        {
+            // Reuse one ID list because dictionary entries cannot be removed during enumeration.
+            expiredReplyCallbackIDs.Clear();
+            foreach (KeyValuePair<uint, PendingReplyCallback> callback in pendingReplyCallbacks)
+            {
+                if (callback.Value.IsExpired(currentTimestamp))
+                    expiredReplyCallbackIDs.Add(callback.Key);
+            }
+
+            foreach (uint replyID in expiredReplyCallbackIDs)
+                pendingReplyCallbacks.Remove(replyID);
+            expiredReplyCallbackIDs.Clear();
+        }
+
+        /// <summary>
+        /// Stops the cleanup timer when no callback remains.
+        /// </summary>
+        private void StopReplyCallbackCleanupTimerIfIdleLocked()
+        {
+            // No periodic work remains useful after the final reservation disappears.
+            if (pendingReplyCallbacks.Count != 0 || replyCallbackCleanupTimer == null)
+                return;
+
+            Timer timer = replyCallbackCleanupTimer;
+            replyCallbackCleanupTimer = null;
+            timer.Dispose();
+        }
+
+        /// <summary>
+        /// Clears all callbacks and stops their cleanup timer during transport teardown.
+        /// </summary>
+        private void ClearPendingReplyCallbacks()
+        {
+            // Transport teardown invalidates every outstanding request/reply association.
+            lock (replyIDLock)
+            {
+                pendingReplyCallbacks.Clear();
+                expiredReplyCallbackIDs.Clear();
+                StopReplyCallbackCleanupTimerIfIdleLocked();
+            }
         }
 
         /// <summary>

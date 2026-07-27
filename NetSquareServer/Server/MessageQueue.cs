@@ -115,8 +115,10 @@ namespace NetSquare.Server.Server
                 queueToComplete?.CompleteAdding();
             }
 
-            if (threadToJoin == null || threadToJoin == Thread.CurrentThread)
+            if (threadToJoin == null)
                 return true;
+            if (threadToJoin == Thread.CurrentThread)
+                return false;
 
             int timeout = Math.Max(1, timeoutMilliseconds);
             if (threadToJoin.Join(timeout))
@@ -174,7 +176,19 @@ namespace NetSquare.Server.Server
             }
             finally
             {
+                // Release only the generation owned by this worker before a later restart.
+                CancellationTokenSource cancellationToDispose = null;
                 Volatile.Write(ref started, 0);
+                lock (lifecycleLock)
+                {
+                    if (ProcessQueueThread == Thread.CurrentThread)
+                    {
+                        ProcessQueueThread = null;
+                        cancellationToDispose = workerCancellation;
+                        workerCancellation = null;
+                    }
+                }
+                cancellationToDispose?.Dispose();
             }
         }
 

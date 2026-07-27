@@ -34,9 +34,9 @@ namespace NetSquare.Core
         /// </summary>
         public static int TcpBackpressureTimeoutMilliseconds = 5000;
         /// <summary>
-        /// Stores the heartbeat timeout in milliseconds. Use 0 to disable heartbeat timeout checks.
+        /// Gets or sets the heartbeat timeout in milliseconds. Use 0 to disable heartbeat timeout checks.
         /// </summary>
-        public static int HeartbeatTimeoutMs = 30000;
+        public int HeartbeatTimeoutMilliseconds { get; set; }
 
         // events
         /// <summary>
@@ -152,7 +152,7 @@ namespace NetSquare.Core
         {
             get
             {
-                int timeoutMs = HeartbeatTimeoutMs;
+                int timeoutMs = HeartbeatTimeoutMilliseconds;
                 return timeoutMs > 0 && (DateTime.UtcNow - LastMessageReceivedUtc).TotalMilliseconds > timeoutMs;
             }
         }

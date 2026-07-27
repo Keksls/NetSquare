@@ -115,6 +115,17 @@ namespace NetSquare.Server.Server
         /// </summary>
         public bool Running { get { return Volatile.Read(ref running) != 0; } }
         /// <summary>
+        /// Gets whether the statistics worker thread has fully terminated.
+        /// </summary>
+        internal bool HasLiveWorker
+        {
+            get
+            {
+                lock (lifecycleLock)
+                    return statisticsThread != null && statisticsThread.IsAlive;
+            }
+        }
+        /// <summary>
         /// Gets or sets the current statistics value.
         /// </summary>
         public ServerStatistics CurrentStatistics { get; private set; }

@@ -42,6 +42,7 @@ namespace NetSquare.Server
                 // Each manager owns a dedicated generic store, so client and server configurations cannot collide.
                 NetSquareConfigurationStore<T> store =
                     new NetSquareConfigurationStore<T>(resolvedPath);
+                store.Configuration.Validate();
                 configuration = store.Configuration;
                 configurationType = typeof(T);
                 configurationPath = store.FilePath;
@@ -119,6 +120,8 @@ namespace NetSquare.Server
             lock (SynchronizationLock)
             {
                 EnsureInitialized();
+                // Never persist a server configuration known to be unusable.
+                configuration.Validate();
                 // Resolve tokens set by the consuming project before configuration becomes runtime state.
                 ResolveRuntimePaths(configuration);
                 saveConfiguration();
