@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- This is the single version source for every NetSquare assembly and NuGet package. -->
-    <NetSquareVersion>1.0.17</NetSquareVersion>
+    <NetSquareVersion>1.0.18</NetSquareVersion>
     <Version>$(NetSquareVersion)</Version>
     <PackageVersion>$(NetSquareVersion)</PackageVersion>
     <AssemblyVersion>$(NetSquareVersion).0</AssemblyVersion>

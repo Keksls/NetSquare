@@ -35,7 +35,11 @@ namespace NetSquare.Core.Messages
         /// <summary>
         ///    Internal TCP heartbeat used to measure ping and detect dead peers.
         /// </summary>
-        Heartbeat = 65525
+        Heartbeat = 65525,
+        /// <summary>
+        ///    Server notifies clients that their current world was removed.
+        /// </summary>
+        WorldRemoved = 65524
     }
 }
 #endregion

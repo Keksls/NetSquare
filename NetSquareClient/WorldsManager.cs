@@ -33,6 +33,10 @@ namespace NetSquare.Client
         /// </summary>
         public event Action<uint> OnClientLeaveWorld;
         /// <summary>
+        /// Occurs when the server removes the current world.
+        /// </summary>
+        public event Action<ushort> OnWorldRemoved;
+        /// <summary>
         /// Occurs when receive synch frames is raised.
         /// </summary>
         public event Action<uint, INetSquareSynchFrame[]> OnReceiveSynchFrames;
@@ -88,6 +92,7 @@ namespace NetSquare.Client
             client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientJoinWorld, "ClientJoinCurrentWorld", ClientJoinCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientLeaveWorld, "ClientLeaveCurrentWorld", ClientLeaveCurrentWorld);
             client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientsLeaveWorld, "ClientsLeaveCurrentWorld", ClientsLeaveCurrentWorld);
+            client.Dispatcher.AddHeadAction(NetSquareMessageID.WorldRemoved, "CurrentWorldRemoved", CurrentWorldRemoved);
             client.Dispatcher.AddHeadAction(NetSquareMessageID.ClientsJoinWorld, "ClientsJoinCurrentWorld", ClientsJoinCurrentWorld);
 
             client.Dispatcher.AddHeadAction(NetSquareMessageID.SetSynchFrame, "SetSynchFrame", SetSynchFrame);
@@ -383,6 +388,28 @@ namespace NetSquare.Client
 
             while (message.Serializer.CanGetUInt())
                 OnClientLeaveWorld(message.Serializer.GetUInt());
+        }
+
+        /// <summary>
+        /// Resets local membership after the server removes the current world.
+        /// </summary>
+        /// <param name="message">Message containing the removed world identifier.</param>
+        private void CurrentWorldRemoved(NetworkMessage message)
+        {
+            ushort removedWorldID = message.Serializer.GetUShort();
+            if (!IsInWorld || CurrentWorldID != removedWorldID)
+                return;
+
+            IsInWorld = false;
+            CurrentWorldID = 0;
+            lock (currentClientFramesLock)
+            {
+                // Pending frames belong to the removed world and must never reach its successor.
+                currentClientFrames.Clear();
+                reusableClientFrames.Clear();
+            }
+
+            OnWorldRemoved?.Invoke(removedWorldID);
         }
 
         /// <summary>

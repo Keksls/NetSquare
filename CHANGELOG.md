@@ -2,6 +2,27 @@
 
 Notable changes to NetSquare are documented here. Versions follow Semantic Versioning, and all three NuGet packages are released together because the handshake currently requires exact Core version equality.
 
+## [1.0.18] - 2026-07-28
+
+### Added
+
+- Added atomic world removal with lifecycle states, worker cleanup, membership cleanup, and client expiration notification.
+- Added `OnWorldRemoved` Client and Server events so applications can react after world expiration.
+- Added a repeatable world lifecycle endurance scenario with world, session, membership, and memory samples.
+
+### Improved
+
+- Server shutdown now removes every world and releases its synchronizer and spatializer resources.
+- Scheduler coordinator and worker frames now release completed runner references before waiting.
+- IP reputation downloads now reuse one `HttpClient` and enforce per-request cancellation timeouts.
+- Removed world identifiers can be reused safely after the allocator wraps.
+
+### Compatibility
+
+- `NetSquare.Client`, `NetSquare.Server`, and `NetSquare.Core` must all use version `1.0.18`.
+- The message wire protocol remains at version 4; the exact assembly-version handshake still rejects mismatched package releases.
+- Removing a world clears the affected Clients' local membership and pending synchronization frames before raising `OnWorldRemoved`.
+
 ## [1.0.17] - 2026-07-27
 
 ### Changed
@@ -25,6 +46,7 @@ Notable changes to NetSquare are documented here. Versions follow Semantic Versi
 - `NetSquare.Client`, `NetSquare.Server`, and `NetSquare.Core` must all use version `1.0.17`.
 - Wire protocol version 4 intentionally rejects older peers before connection establishment.
 - Client heartbeat timing is no longer locally configurable; the connected Server supplies the active policy.
+
 ## [1.0.16] - 2026-07-24
 
 ### Changed

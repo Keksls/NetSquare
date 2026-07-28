@@ -2,6 +2,7 @@ using NetSquare.Core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace NetSquare.Server.Worlds
 {
@@ -22,6 +23,17 @@ namespace NetSquare.Server.Worlds
         /// Occurs when client join world is raised.
         /// </summary>
         public event Action<uint, NetsquareTransformFrame> OnClientJoinWorld;
+        /// <summary>
+        /// Gets the current lifecycle state.
+        /// </summary>
+        public NetSquareWorldLifecycleState LifecycleState
+        {
+            get { return (NetSquareWorldLifecycleState)Volatile.Read(ref lifecycleState); }
+        }
+        /// <summary>
+        /// Gets whether this world still accepts operations.
+        /// </summary>
+        public bool IsActive { get { return LifecycleState == NetSquareWorldLifecycleState.Active; } }
         /// <summary>
         /// Gets or sets the id value.
         /// </summary>
@@ -58,6 +70,14 @@ namespace NetSquare.Server.Worlds
         /// Stores the server value.
         /// </summary>
         internal NetSquareServer server;
+        /// <summary>
+        /// Coordinates synchronizer and spatializer lifecycle changes.
+        /// </summary>
+        private readonly object lifecycleLock = new object();
+        /// <summary>
+        /// Stores the atomic lifecycle state.
+        /// </summary>
+        private int lifecycleState;
 
         /// <summary>
         /// instantiate a new World
@@ -102,14 +122,23 @@ namespace NetSquare.Server.Worlds
         /// <param name="frequency">frequency of the synchronization (Hz => times / s)</param>
         public void StartSynchronizer(int frequency = -1, bool synchronizeUsingUdp = false)
         {
-            if (frequency <= 0)
-                // Read the shared server setting through the initialized configuration contract.
-                frequency = NetSquareConfigurationManager.Get<NetSquareConfiguration>().SynchronizingFrequency;
-            if (frequency > 60)
-                frequency = 60;
-            Synchronizer = new Synchronizer(server, this, synchronizeUsingUdp);
-            Synchronizer.StartSynchronizing(frequency);
-            UseSynchronizer = true;
+            lock (lifecycleLock)
+            {
+                EnsureActive();
+                if (UseSynchronizer)
+                    return;
+
+                if (frequency <= 0)
+                    // Read the shared server setting through the initialized configuration contract.
+                    frequency = NetSquareConfigurationManager.Get<NetSquareConfiguration>().SynchronizingFrequency;
+                if (frequency > 60)
+                    frequency = 60;
+
+                Synchronizer synchronizer = new Synchronizer(server, this, synchronizeUsingUdp);
+                synchronizer.StartSynchronizing(frequency);
+                Synchronizer = synchronizer;
+                UseSynchronizer = true;
+            }
         }
 
         /// <summary>
@@ -117,8 +146,16 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public void StopUsingSynchronizer()
         {
-            Synchronizer.Stop();
-            UseSynchronizer = false;
+            lock (lifecycleLock)
+            {
+                Synchronizer synchronizer = Synchronizer;
+                if (synchronizer == null)
+                    return;
+
+                synchronizer.Stop();
+                Synchronizer = null;
+                UseSynchronizer = false;
+            }
         }
 
         /// <summary>
@@ -127,30 +164,115 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         public void SetSpatializer(Spatializer spatializer)
         {
-            // if spatializer is null, stop using spatializer
-            if (spatializer == null)
+            lock (lifecycleLock)
             {
-                if (Spatializer != null)
+                if (spatializer != null)
+                    EnsureActive();
+
+                // A null value releases the currently installed spatializer.
+                if (spatializer == null)
                 {
-                    Spatializer.Stop();
-                    Spatializer = null;
+                    if (Spatializer != null)
+                    {
+                        Spatializer.Stop();
+                        Spatializer = null;
+                    }
+                    UseSpatializer = false;
+                    return;
                 }
-                UseSpatializer = false;
-                return;
+
+                // Replace the previous worker only after the new instance was created successfully.
+                if (Spatializer != null && Spatializer != spatializer)
+                    Spatializer.Stop();
+
+                Spatializer = spatializer;
+                UseSpatializer = true;
+                foreach (uint clientID in Clients.Keys)
+                {
+                    ConnectedClient client = server.SafeGetClient(clientID);
+                    if (client != null)
+                        Spatializer.AddClient(client);
+                }
             }
+        }
 
-            // if spatializer is not null, start using spatializer
-            if (Spatializer != null && Spatializer != spatializer)
-                Spatializer.Stop();
-
-            Spatializer = spatializer;
-            UseSpatializer = true;
-            foreach (uint clientID in Clients.Keys)
+        /// <summary>
+        /// Atomically reserves this world for manager-owned removal.
+        /// </summary>
+        /// <returns>True when the world transitioned from active to removing.</returns>
+        internal bool TryBeginRemoval()
+        {
+            lock (lifecycleLock)
             {
-                ConnectedClient client = server.SafeGetClient(clientID);
-                if (client != null)
-                    Spatializer.AddClient(client);
+                if (!IsActive)
+                    return false;
+
+                Volatile.Write(
+                    ref lifecycleState,
+                    (int)NetSquareWorldLifecycleState.Removing);
+                return true;
             }
+        }
+
+        /// <summary>
+        /// Restores an active state when the manager could not detach the world.
+        /// </summary>
+        internal void CancelRemoval()
+        {
+            Interlocked.CompareExchange(
+                ref lifecycleState,
+                (int)NetSquareWorldLifecycleState.Active,
+                (int)NetSquareWorldLifecycleState.Removing);
+        }
+
+        /// <summary>
+        /// Stops every owned worker and releases retained world state after manager detachment.
+        /// </summary>
+        internal void CompleteRemoval()
+        {
+            List<Exception> exceptions = null;
+            lock (lifecycleLock)
+            {
+                try
+                {
+                    Synchronizer?.Stop();
+                }
+                catch (Exception exception)
+                {
+                    exceptions = new List<Exception> { exception };
+                }
+
+                try
+                {
+                    Spatializer?.Stop();
+                }
+                catch (Exception exception)
+                {
+                    if (exceptions == null)
+                        exceptions = new List<Exception>();
+                    exceptions.Add(exception);
+                }
+
+                Synchronizer = null;
+                Spatializer = null;
+                UseSynchronizer = false;
+                UseSpatializer = false;
+                Clients.Clear();
+                Volatile.Write(ref lifecycleState, (int)NetSquareWorldLifecycleState.Removed);
+            }
+
+            if (exceptions != null)
+                throw new AggregateException("World resources failed to stop cleanly.", exceptions);
+        }
+
+        /// <summary>
+        /// Rejects operations that would reactivate a removing or removed world.
+        /// </summary>
+        private void EnsureActive()
+        {
+            if (!IsActive)
+                throw new InvalidOperationException(
+                    "World " + ID + " is " + LifecycleState.ToString().ToLowerInvariant() + ".");
         }
 
         /// <summary>
@@ -161,43 +283,46 @@ namespace NetSquare.Server.Worlds
         /// <returns>true if success</returns>
         public bool TryJoinWorld(uint clientID, NetsquareTransformFrame clientTransform)
         {
-            if (Clients.Count >= MaxClientsInWorld)
-                return false;
-
-            if (!Clients.TryAdd(clientID, clientTransform))
-                return false;
-
-            if (Clients.Count > MaxClientsInWorld)
+            lock (lifecycleLock)
             {
-                NetsquareTransformFrame removedTransform;
-                Clients.TryRemove(clientID, out removedTransform);
-                return false;
-            }
+                if (!IsActive || Clients.Count >= MaxClientsInWorld)
+                    return false;
 
-            try
-            {
-                if (Spatializer != null)
+                if (!Clients.TryAdd(clientID, clientTransform))
+                    return false;
+
+                if (Clients.Count > MaxClientsInWorld)
                 {
-                    ConnectedClient client = server.SafeGetClient(clientID);
-                    if (client == null)
-                    {
-                        NetsquareTransformFrame removedTransform;
-                        Clients.TryRemove(clientID, out removedTransform);
-                        return false;
-                    }
-
-                    Spatializer.AddClient(client);
+                    NetsquareTransformFrame removedTransform;
+                    Clients.TryRemove(clientID, out removedTransform);
+                    return false;
                 }
-            }
-            catch
-            {
-                NetsquareTransformFrame removedTransform;
-                Clients.TryRemove(clientID, out removedTransform);
-                throw;
-            }
 
-            OnClientJoinWorld?.Invoke(clientID, clientTransform);
-            return true;
+                try
+                {
+                    if (Spatializer != null)
+                    {
+                        ConnectedClient client = server.SafeGetClient(clientID);
+                        if (client == null)
+                        {
+                            NetsquareTransformFrame removedTransform;
+                            Clients.TryRemove(clientID, out removedTransform);
+                            return false;
+                        }
+
+                        Spatializer.AddClient(client);
+                    }
+                }
+                catch
+                {
+                    NetsquareTransformFrame removedTransform;
+                    Clients.TryRemove(clientID, out removedTransform);
+                    throw;
+                }
+
+                OnClientJoinWorld?.Invoke(clientID, clientTransform);
+                return true;
+            }
         }
 
         /// <summary>
@@ -207,12 +332,15 @@ namespace NetSquare.Server.Worlds
         /// <returns>true if success</returns>
         public bool TryLeaveWorld(uint clientID)
         {
-            NetsquareTransformFrame clientTransform;
-            if (!Clients.TryRemove(clientID, out clientTransform))
-                return false;
+            lock (lifecycleLock)
+            {
+                NetsquareTransformFrame clientTransform;
+                if (!Clients.TryRemove(clientID, out clientTransform))
+                    return false;
 
-            Spatializer?.RemoveClient(clientID);
-            return true;
+                Spatializer?.RemoveClient(clientID);
+                return true;
+            }
         }
 
         /// <summary>
@@ -233,6 +361,9 @@ namespace NetSquare.Server.Worlds
         /// <param name="transform"> new transform of the client</param>
         public void SetClientTransform(uint clientID, NetsquareTransformFrame transform)
         {
+            if (!IsActive)
+                return;
+
             NetsquareTransformFrame currentTransform;
             while (Clients.TryGetValue(clientID, out currentTransform))
             {
@@ -311,6 +442,9 @@ namespace NetSquare.Server.Worlds
         /// </summary>
         private HashSet<uint> GetBroadcastTargets(uint clientID, bool useSpatialization, bool excludeSelf)
         {
+            if (!IsActive)
+                return new HashSet<uint>();
+
             HashSet<uint> clients = null;
 
             if (UseSpatializer && useSpatialization && Spatializer != null && clientID != 0)

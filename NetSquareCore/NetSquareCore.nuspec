@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Core</id>
-    <version>1.0.17</version>
+    <version>1.0.18</version>
     <title>NetSquare.Core</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -11,7 +11,7 @@
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
     <description>Core message, serialization, dispatcher, conditional compression and synchronization primitives for NetSquare.</description>
-    <releaseNotes>Introduces wire protocol version 4 with Server-owned heartbeat policy, per-connection heartbeat timeouts, and stricter final handshake validation.</releaseNotes>
+    <releaseNotes>Adds the world-expiration message contract and scheduler frames that release completed callback references promptly.</releaseNotes>
     <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity Core</tags>
     <dependencies>

@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>NetSquare.Server</id>
-    <version>1.0.17</version>
+    <version>1.0.18</version>
     <title>NetSquare.Server</title>
     <authors>VRDTMStudio</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
@@ -11,18 +11,18 @@
     <readme>README.md</readme>
     <projectUrl>https://github.com/Keksls/NetSquare</projectUrl>
     <description>NetSquare server networking with TCP, authenticated UDP, dispatching, client management, blacklist policies, worlds, and spatialization.</description>
-    <releaseNotes>Adds Server-owned heartbeat negotiation, restart-safe lifecycle cleanup, and bounded finite chunk-grid allocation with wire protocol version 4.</releaseNotes>
+    <releaseNotes>Adds atomic world removal, lifecycle state enforcement, deterministic worker and membership cleanup, and reusable reputation HTTP connections.</releaseNotes>
     <copyright>Copyright (c) 2022</copyright>
     <tags>TCP UDP Server Client Network MMORPG URPG Unity</tags>
     <dependencies>
       <group targetFramework="netstandard2.0">
-        <dependency id="NetSquare.Core" version="[1.0.17]" />
+        <dependency id="NetSquare.Core" version="[1.0.18]" />
       </group>
       <group targetFramework="net8.0-windows7.0">
-        <dependency id="NetSquare.Core" version="[1.0.17]" />
+        <dependency id="NetSquare.Core" version="[1.0.18]" />
       </group>
       <group targetFramework="net48">
-        <dependency id="NetSquare.Core" version="[1.0.17]" />
+        <dependency id="NetSquare.Core" version="[1.0.18]" />
       </group>
     </dependencies>
   </metadata>

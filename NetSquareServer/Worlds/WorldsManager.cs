@@ -4,7 +4,6 @@ using NetSquare.Server.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Threading;
 
 namespace NetSquare.Server.Worlds
 {
@@ -17,6 +16,18 @@ namespace NetSquare.Server.Worlds
         /// Gets or sets the worlds value.
         /// </summary>
         public ConcurrentDictionary<ushort, NetSquareWorld> Worlds = new ConcurrentDictionary<ushort, NetSquareWorld>(); // worldID => World object
+        /// <summary>
+        /// Gets the number of active worlds.
+        /// </summary>
+        public int WorldCount { get { return Worlds.Count; } }
+        /// <summary>
+        /// Gets the number of clients currently attached to a world.
+        /// </summary>
+        public int SessionCount { get { return ClientsWorlds.Count; } }
+        /// <summary>
+        /// Occurs after a world has been removed and its resources have been released.
+        /// </summary>
+        public event Action<NetSquareWorld> OnWorldRemoved;
         /// <summary>
         /// WorldID, ClientID, Transform of the client, Message to broadcast. Send new client data to already conneced clients
         /// </summary>
@@ -87,43 +98,159 @@ namespace NetSquare.Server.Worlds
         /// <returns>ID of the world</returns>
         public NetSquareWorld AddWorld(string name = "", ushort nbMaxClients = 128)
         {
-            int id = Interlocked.Increment(ref nextWorldId);
-            if (id > ushort.MaxValue)
-                throw new InvalidOperationException("No world ID is available.");
+            lock (worldMembershipLock)
+            {
+                // Removed identifiers are reused after the allocator wraps.
+                for (int attempt = 0; attempt < ushort.MaxValue; attempt++)
+                {
+                    nextWorldId++;
+                    if (nextWorldId > ushort.MaxValue)
+                        nextWorldId = 1;
 
-            return AddWorld((ushort)id, name, nbMaxClients);
+                    ushort id = (ushort)nextWorldId;
+                    if (!Worlds.ContainsKey(id))
+                        return AddWorldCore(id, name, nbMaxClients);
+                }
+
+                throw new InvalidOperationException("No world ID is available.");
+            }
         }
 
         /// <summary>
         /// Add a world
         /// </summary>
+        /// <param name="id">Unique world identifier.</param>
         /// <param name="name">Name of the world to add</param>
         /// <param name="nbMaxClients">Maximum clients that can join this world</param>
-        /// <returns>ID of the world</returns>
+        /// <returns>Created world.</returns>
         public NetSquareWorld AddWorld(ushort id, string name = "", ushort nbMaxClients = 128)
+        {
+            lock (worldMembershipLock)
+                return AddWorldCore(id, name, nbMaxClients);
+        }
+
+        /// <summary>
+        /// Creates and registers a world while the manager lifecycle lock is held.
+        /// </summary>
+        /// <param name="id">Unique world identifier.</param>
+        /// <param name="name">World name.</param>
+        /// <param name="nbMaxClients">Maximum world population.</param>
+        /// <returns>Created world.</returns>
+        private NetSquareWorld AddWorldCore(ushort id, string name, ushort nbMaxClients)
         {
             NetSquareWorld world = new NetSquareWorld(server, id, name, nbMaxClients);
             if (!Worlds.TryAdd(id, world))
                 throw new InvalidOperationException("World " + id + " already exists.");
 
-            TrackWorldId(id);
+            if (id > nextWorldId)
+                nextWorldId = id;
             Writer.Write("World " + id + " added", ConsoleColor.Green);
             return world;
         }
 
         /// <summary>
-        /// Executes the track world id operation.
+        /// Removes a world, stops its background workers, and detaches every client session.
         /// </summary>
-        private void TrackWorldId(ushort id)
+        /// <param name="id">Identifier of the world to remove.</param>
+        /// <returns>True when the world existed and was removed.</returns>
+        public bool RemoveWorld(ushort id)
         {
-            int current;
-            do
+            NetSquareWorld world;
+            HashSet<uint> clientIDs = new HashSet<uint>();
+
+            lock (worldMembershipLock)
             {
-                current = nextWorldId;
-                if (id <= current)
-                    return;
+                if (!Worlds.TryGetValue(id, out world) || world == null || !world.TryBeginRemoval())
+                    return false;
+
+                NetSquareWorld removedWorld;
+                if (!Worlds.TryRemove(id, out removedWorld))
+                {
+                    world.CancelRemoval();
+                    return false;
+                }
+                if (!ReferenceEquals(world, removedWorld))
+                {
+                    // Preserve an externally replaced entry when the public dictionary was mutated.
+                    Worlds.TryAdd(id, removedWorld);
+                    world.CancelRemoval();
+                    return false;
+                }
+
+                // Remove every matching membership while world joins and leaves are blocked.
+                foreach (KeyValuePair<uint, ushort> membership in ClientsWorlds)
+                {
+                    if (membership.Value != id)
+                        continue;
+
+                    ushort removedWorldID;
+                    if (ClientsWorlds.TryRemove(membership.Key, out removedWorldID))
+                        clientIDs.Add(membership.Key);
+                }
+
+                foreach (uint clientID in world.Clients.Keys)
+                    clientIDs.Add(clientID);
             }
-            while (Interlocked.CompareExchange(ref nextWorldId, id, current) != current);
+
+            Exception cleanupException = null;
+            try
+            {
+                world.CompleteRemoval();
+            }
+            catch (Exception exception)
+            {
+                cleanupException = exception;
+            }
+
+            if (clientIDs.Count > 0)
+            {
+                // Let connected clients reset their local membership before another world is created.
+                server.SendToClients(
+                    new NetworkMessage(NetSquareMessageID.WorldRemoved).Set(id),
+                    clientIDs);
+            }
+
+            OnWorldRemoved?.Invoke(world);
+            Writer.Write("World " + id + " removed", ConsoleColor.DarkYellow);
+
+            if (cleanupException != null)
+                throw new InvalidOperationException(
+                    "World " + id + " was removed but one or more resources failed to stop.",
+                    cleanupException);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Removes every registered world and releases their owned resources.
+        /// </summary>
+        /// <returns>Number of worlds removed.</returns>
+        public int RemoveAllWorlds()
+        {
+            List<Exception> exceptions = null;
+            int removedCount = 0;
+            ushort[] worldIDs = new List<ushort>(Worlds.Keys).ToArray();
+            for (int index = 0; index < worldIDs.Length; index++)
+            {
+                try
+                {
+                    if (RemoveWorld(worldIDs[index]))
+                        removedCount++;
+                }
+                catch (Exception exception)
+                {
+                    if (exceptions == null)
+                        exceptions = new List<Exception>();
+                    exceptions.Add(exception);
+                }
+            }
+
+            if (exceptions != null)
+                throw new AggregateException(
+                    "One or more worlds failed to release all resources.",
+                    exceptions);
+
+            return removedCount;
         }
 
         /// <summary>
@@ -147,7 +274,8 @@ namespace NetSquare.Server.Worlds
             if (!ClientsWorlds.TryGetValue(clientID, out worldID))
                 return false;
 
-            return Worlds.TryGetValue(worldID, out world) && world != null;
+            return Worlds.TryGetValue(worldID, out world) &&
+                world != null && world.IsActive;
         }
 
         /// <summary>
@@ -251,12 +379,16 @@ namespace NetSquare.Server.Worlds
                 bool added = false;
                 lock (worldMembershipLock)
                 {
-                    if (!ClientsWorlds.ContainsKey(message.ClientID))
+                    NetSquareWorld activeWorld;
+                    if (!ClientsWorlds.ContainsKey(message.ClientID) &&
+                        Worlds.TryGetValue(worldID, out activeWorld) &&
+                        ReferenceEquals(world, activeWorld) &&
+                        activeWorld.IsActive)
                     {
-                        added = world.TryJoinWorld(message.ClientID, clientTransform);
+                        added = activeWorld.TryJoinWorld(message.ClientID, clientTransform);
                         if (added && !ClientsWorlds.TryAdd(message.ClientID, worldID))
                         {
-                            world.TryLeaveWorld(message.ClientID);
+                            activeWorld.TryLeaveWorld(message.ClientID);
                             added = false;
                         }
                     }

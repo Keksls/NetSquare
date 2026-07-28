@@ -107,6 +107,12 @@ namespace NetSquareDiagnostics
                     return 0;
                 }
 
+                if (HasArg(args, "--world-lifecycle-endurance"))
+                {
+                    InitializeServerConfiguration();
+                    return WorldLifecycleEnduranceRunner.Run(args);
+                }
+
                 if (HasArg(args, "--load-scenario"))
                 {
                     InitializeServerConfiguration();

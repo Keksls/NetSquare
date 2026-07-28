@@ -622,6 +622,16 @@ namespace NetSquare.Server
             bool updateWorkerStopped = WaitForUpdateWorkerStop();
             try { DisconnectAllClientsWithoutNotice(); }
             catch (Exception ex) { Writer.Write("Client shutdown failed: " + ex, ConsoleColor.DarkYellow); }
+            bool worldsStopped = true;
+            try
+            {
+                Worlds?.RemoveAllWorlds();
+            }
+            catch (Exception ex)
+            {
+                worldsStopped = false;
+                Writer.Write("World shutdown failed: " + ex, ConsoleColor.DarkYellow);
+            }
             if (listenersStopped)
                 Listeners.Clear();
 
@@ -634,7 +644,7 @@ namespace NetSquare.Server
             }
 
             return statisticsStopped && listenersStopped &&
-                messageQueuesStopped && updateWorkerStopped;
+                messageQueuesStopped && updateWorkerStopped && worldsStopped;
         }
 
         /// <summary>

@@ -37,6 +37,7 @@
     </Reference>
     <Reference Include="System.ComponentModel.DataAnnotations" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Runtime.CompilerServices.Unsafe">
       <HintPath>..\packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
@@ -66,6 +67,7 @@
     <Compile Include="Worlds\StaticEntity.cs" />
     <Compile Include="Worlds\SynchronizedMessage.cs" />
     <Compile Include="Worlds\NetSquareWorldDebugSnapshot.cs" />
+    <Compile Include="Worlds\NetSquareWorldLifecycleState.cs" />
     <Compile Include="Worlds\WorldsManager.cs" />
     <Compile Include="Worlds\NetSquareWorld.cs" />
     <Compile Include="Worlds\Synchronizer.cs" />

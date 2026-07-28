@@ -7,11 +7,11 @@ The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It is ins
 ## Installation
 
 ```powershell
-Install-Package NetSquare.Core -Version 1.0.17
+Install-Package NetSquare.Core -Version 1.0.18
 ```
 
 ```bash
-dotnet add package NetSquare.Core --version 1.0.17
+dotnet add package NetSquare.Core --version 1.0.18
 ```
 
 Install Core directly when building shared contracts or tools. Applications normally install `NetSquare.Client` or `NetSquare.Server`, which reference the exact matching Core version.

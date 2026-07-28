@@ -11,7 +11,7 @@ This document is the release checklist for `NetSquare.Core`, `NetSquare.Client`,
 - Never place a NuGet API key in the repository, a script, command history, or release notes.
 - Publish `Core` before `Client` and `Server`.
 
-A package version such as `1.0.17` produces package and informational version `1.0.17`, assembly and file version `1.0.17.0`, and exact Client and Server dependencies on `NetSquare.Core` version `[1.0.17]`.
+A package version such as `1.0.18` produces package and informational version `1.0.18`, assembly and file version `1.0.18.0`, and exact Client and Server dependencies on `NetSquare.Core` version `[1.0.18]`.
 
 The exact version relationship is required by the current handshake compatibility check.
 
@@ -36,9 +36,9 @@ Always use `Pack-NetSquare.ps1`. It synchronizes version metadata and installati
 ```powershell
 # Explicit versions are preferred for reproducible releases.
 .\Pack-NetSquare.ps1 `
-    -Version 1.0.17 `
+    -Version 1.0.18 `
     -Obfuscate `
-    -OutputDirectory .\Build\NuGet\1.0.17
+    -OutputDirectory .\Build\NuGet\1.0.18
 ```
 
 Other supported version modes:
@@ -83,7 +83,7 @@ Review `git diff` after packaging. Version metadata, package notes, documentatio
 Commit the reviewed release metadata and documentation, then create an annotated tag:
 
 ```powershell
-git tag -a v1.0.17 -m "NetSquare 1.0.17"
+git tag -a v1.0.18 -m "NetSquare 1.0.18"
 ```
 
 Push the release commit and tag before publishing the immutable NuGet versions. If package publication later fails, fix the publication issue and retry the same artifacts; never reuse the version for different content.
@@ -113,15 +113,15 @@ NuGet package versions are immutable. Obtain an explicit publication confirmatio
 
 ```powershell
 $source = "https://api.nuget.org/v3/index.json"
-$directory = ".\Build\NuGet\1.0.17"
+$directory = ".\Build\NuGet\1.0.18"
 
-.\nuget6.exe push "$directory\NetSquare.Core.1.0.17.nupkg" `
+.\nuget6.exe push "$directory\NetSquare.Core.1.0.18.nupkg" `
     -Source $source -ApiKey $nugetApiKey -NonInteractive
 
-.\nuget6.exe push "$directory\NetSquare.Client.1.0.17.nupkg" `
+.\nuget6.exe push "$directory\NetSquare.Client.1.0.18.nupkg" `
     -Source $source -ApiKey $nugetApiKey -NonInteractive
 
-.\nuget6.exe push "$directory\NetSquare.Server.1.0.17.nupkg" `
+.\nuget6.exe push "$directory\NetSquare.Server.1.0.18.nupkg" `
     -Source $source -ApiKey $nugetApiKey -NonInteractive
 ```
 

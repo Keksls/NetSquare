@@ -7,11 +7,11 @@ The package targets .NET Standard 2.0, .NET 8 for Windows, and .NET Framework 4.
 ## Installation
 
 ```powershell
-Install-Package NetSquare.Server -Version 1.0.17
+Install-Package NetSquare.Server -Version 1.0.18
 ```
 
 ```bash
-dotnet add package NetSquare.Server --version 1.0.17
+dotnet add package NetSquare.Server --version 1.0.18
 ```
 
 The Server and Client must use the same package version.
@@ -326,6 +326,13 @@ NetSquareWorld arena = server.Worlds.AddWorld(1, "Arena", 32);
 
 bool inWorld = server.Worlds.IsInWorld(clientID);
 ushort worldID = server.Worlds.GetClientWorldID(clientID);
+
+// Removal atomically rejects new joins, stops the world's synchronizer and
+// spatializer, detaches memberships, and notifies connected clients.
+bool removed = server.Worlds.RemoveWorld(arena.ID);
+
+int activeWorlds = server.Worlds.WorldCount;
+int attachedSessions = server.Worlds.SessionCount;
 ```
 
 World events expose joins, leaves, and movement. Broadcast through `WorldsManager` when the sender already belongs to a world:

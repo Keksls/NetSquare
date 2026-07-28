@@ -7,11 +7,11 @@ The package targets .NET Standard 2.0, .NET 8, and .NET Framework 4.8. It instal
 ## Installation
 
 ```powershell
-Install-Package NetSquare.Client -Version 1.0.17
+Install-Package NetSquare.Client -Version 1.0.18
 ```
 
 ```bash
-dotnet add package NetSquare.Client --version 1.0.17
+dotnet add package NetSquare.Client --version 1.0.18
 ```
 
 The Server and Client must use the same package version.
@@ -275,11 +275,17 @@ client.WorldsManager.OnReceiveSynchFrames += (clientID, frames) =>
         Console.WriteLine(clientID + ": " + frame.SynchFrameType);
 };
 
+client.WorldsManager.OnWorldRemoved += removedWorldID =>
+    Console.WriteLine("World removed: " + removedWorldID);
+
 client.WorldsManager.SendSynchFrame(
     new NetsquareTransformFrame(_x: 10, _y: 0, _z: 5, _time: 1.25f));
 ```
 
 Batch multiple frames with `StoreSynchFrame(...)` followed by `SendFrames()`. Configure `MaxStoredSynchronizationFrames` to bound client-side pending state.
+
+When the Server removes the active world, the Client clears its local membership and pending
+synchronization frames before raising `OnWorldRemoved`.
 
 ## Typed connection feedback
 

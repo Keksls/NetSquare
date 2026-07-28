@@ -62,6 +62,8 @@
     <Compile Include="Program.cs" />
     <Compile Include="WriterBenchmarkOutput.cs" />
     <Compile Include="WriterPerformanceBenchmark.cs" />
+    <Compile Include="WorldLifecycleEnduranceRunner.cs" />
+    <Compile Include="WorldLifecycleEnduranceSample.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

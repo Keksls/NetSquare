@@ -105,29 +105,39 @@ namespace NetSquare.Core
         {
             while (true)
             {
-                int waitMilliseconds = 1000;
-                long nowTimestamp = Stopwatch.GetTimestamp();
-                lock (RunnersLock)
-                {
-                    for (int index = 0; index < Runners.Count; index++)
-                    {
-                        NetSquareScheduledActionRunner runner = Runners[index];
-                        if (runner.TryQueue(nowTimestamp))
-                        {
-                            lock (ReadyQueueLock)
-                                ReadyQueue.Enqueue(runner);
-                            WorkAvailable.Release();
-                            continue;
-                        }
-
-                        int runnerDelay = runner.GetDelayMilliseconds(nowTimestamp);
-                        if (runnerDelay < waitMilliseconds)
-                            waitMilliseconds = runnerDelay;
-                    }
-                }
-
+                int waitMilliseconds = QueueDueActions();
                 ScheduleChanged.WaitOne(Math.Max(1, waitMilliseconds));
             }
+        }
+
+        /// <summary>
+        /// Queues due runners and releases all local runner references before the coordinator waits.
+        /// </summary>
+        /// <returns>Delay before the next scheduler scan.</returns>
+        private static int QueueDueActions()
+        {
+            int waitMilliseconds = 1000;
+            lock (RunnersLock)
+            {
+                long nowTimestamp = Stopwatch.GetTimestamp();
+                for (int index = 0; index < Runners.Count; index++)
+                {
+                    NetSquareScheduledActionRunner runner = Runners[index];
+                    if (runner.TryQueue(nowTimestamp))
+                    {
+                        lock (ReadyQueueLock)
+                            ReadyQueue.Enqueue(runner);
+                        WorkAvailable.Release();
+                        continue;
+                    }
+
+                    int runnerDelay = runner.GetDelayMilliseconds(nowTimestamp);
+                    if (runnerDelay < waitMilliseconds)
+                        waitMilliseconds = runnerDelay;
+                }
+            }
+
+            return waitMilliseconds;
         }
 
         /// <summary>
@@ -138,14 +148,23 @@ namespace NetSquare.Core
             while (true)
             {
                 WorkAvailable.WaitOne();
-                NetSquareScheduledActionRunner runner = null;
-                lock (ReadyQueueLock)
-                {
-                    if (ReadyQueue.Count > 0)
-                        runner = ReadyQueue.Dequeue();
-                }
-                runner?.ExecuteQueued();
+                ExecuteNextRunner();
             }
+        }
+
+        /// <summary>
+        /// Executes one queued runner in a short-lived frame so idle workers retain no world callbacks.
+        /// </summary>
+        private static void ExecuteNextRunner()
+        {
+            NetSquareScheduledActionRunner runner = null;
+            lock (ReadyQueueLock)
+            {
+                if (ReadyQueue.Count > 0)
+                    runner = ReadyQueue.Dequeue();
+            }
+
+            runner?.ExecuteQueued();
         }
         #endregion
     }
